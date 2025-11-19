@@ -9,6 +9,7 @@ import Search from "./pages/Search";
 import Categories from "./pages/Categories";
 import Profile from "./pages/Profile";
 import Inbox from "./pages/Inbox";
+import Video from "./pages/Video";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/:userId" element={<Profile />} />
+          <Route path="/video/:videoId" element={<Video />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
