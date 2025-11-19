@@ -275,6 +275,7 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
         isOpen={isCommentsOpen}
         onClose={() => setIsCommentsOpen(false)}
         currentUserId={currentUserId}
+        onCommentAdded={() => setCommentsCount(commentsCount + 1)}
       />
 
       {/* Share drawer */}

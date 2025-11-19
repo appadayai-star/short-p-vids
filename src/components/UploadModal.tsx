@@ -191,7 +191,10 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
           onClick={() => setShowFullPreview(false)}
         >
           <button
-            onClick={() => setShowFullPreview(false)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowFullPreview(false);
+            }}
             className="absolute top-4 right-4 bg-white/10 text-white rounded-full p-2 hover:bg-white/20 transition-colors z-10"
             aria-label="Close preview"
           >

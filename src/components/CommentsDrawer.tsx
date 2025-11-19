@@ -21,9 +21,10 @@ interface CommentsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   currentUserId: string | null;
+  onCommentAdded?: () => void;
 }
 
-export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId }: CommentsDrawerProps) => {
+export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onCommentAdded }: CommentsDrawerProps) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -86,6 +87,7 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId }: Comm
       setNewComment("");
       toast.success("Comment posted!");
       fetchComments();
+      onCommentAdded?.();
     } catch (error) {
       console.error("Error posting comment:", error);
       toast.error("Failed to post comment");
