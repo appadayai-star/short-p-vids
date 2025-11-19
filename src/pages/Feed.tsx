@@ -38,9 +38,9 @@ const Feed = () => {
   }
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="h-screen bg-black overflow-hidden">
       <VideoFeed searchQuery="" userId={user?.id || null} />
-      <BottomNav 
+      <BottomNav
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!user}
       />
