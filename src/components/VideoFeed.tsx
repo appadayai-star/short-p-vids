@@ -66,9 +66,15 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
         }
         setHasMore((filtered.length || 0) === 10);
       } else if (userId) {
-        // For You feed - call recommendation function only if logged in
-        const { data, error } = await supabase.functions.invoke("get-for-you-feed", {
-          body: { userId, page: pageNum, limit: 10 },
+        // For You feed - call sophisticated recommendation algorithm
+        const excludeVideoIds = videos.map(v => v.id);
+        const { data, error } = await supabase.functions.invoke("get-recommended-feed", {
+          body: { 
+            userId, 
+            page: pageNum, 
+            limit: 10,
+            excludeVideoIds 
+          },
         });
 
         if (error) throw error;
