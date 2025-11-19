@@ -81,7 +81,7 @@ serve(async (req) => {
         comments_count,
         tags,
         created_at,
-        profiles:user_id (
+        profiles!inner (
           username,
           avatar_url
         )
@@ -155,8 +155,8 @@ serve(async (req) => {
         }
 
         // Username match bonus (5pts)
-        if (Array.isArray(video.profiles) && video.profiles.length > 0) {
-          const username = video.profiles[0].username.toLowerCase();
+        if (video.profiles && video.profiles.username) {
+          const username = video.profiles.username.toLowerCase();
           if (username.includes(searchTerm)) {
             score += 5;
           }
@@ -195,16 +195,24 @@ serve(async (req) => {
 
         return {
           ...video,
-          profiles: Array.isArray(video.profiles) && video.profiles.length > 0
-            ? video.profiles[0]
-            : { username: "Unknown", avatar_url: null },
+          profiles: video.profiles || { username: "Unknown", avatar_url: null },
           relevanceScore: score,
         };
       })
       .filter((v): v is ScoredVideo => v !== null && v.relevanceScore > 0);
 
-    // Sort videos by score
+    // Sort videos by score and remove duplicates
     scoredVideos.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    
+    // Remove duplicate videos based on ID
+    const seenIds = new Set<string>();
+    const uniqueVideos = scoredVideos.filter(video => {
+      if (seenIds.has(video.id)) {
+        return false;
+      }
+      seenIds.add(video.id);
+      return true;
+    });
 
     // Score and filter users
     const scoredUsers: ScoredProfile[] = (users || [])
@@ -248,8 +256,8 @@ serve(async (req) => {
     // Sort users by score
     scoredUsers.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    // Return top results
-    const topVideos = scoredVideos.slice(0, limit).map(({ relevanceScore, ...video }) => video);
+    // Return top results - remove duplicates and map
+    const topVideos = uniqueVideos.slice(0, limit).map(({ relevanceScore, ...video }) => video);
     const topUsers = scoredUsers.slice(0, Math.min(limit, 10)).map(({ relevanceScore, ...user }) => user);
 
     console.log(`Found ${topVideos.length} videos and ${topUsers.length} users`);
