@@ -26,16 +26,26 @@ interface VideoModalProps {
   onClose: () => void;
   initialVideoId: string;
   userId: string | null;
+  videos?: Video[]; // Optional: use provided videos instead of fetching
 }
 
-export const VideoModal = ({ isOpen, onClose, initialVideoId, userId }: VideoModalProps) => {
+export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: providedVideos }: VideoModalProps) => {
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
-      fetchVideos();
+      if (providedVideos && providedVideos.length > 0) {
+        // Use provided videos (e.g., from search results)
+        setVideos(providedVideos);
+        const index = providedVideos.findIndex(v => v.id === initialVideoId);
+        setCurrentIndex(index >= 0 ? index : 0);
+        setIsLoading(false);
+      } else {
+        // Fetch all videos
+        fetchVideos();
+      }
       // Prevent body scroll when modal is open
       document.body.style.overflow = 'hidden';
     } else {
@@ -45,7 +55,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId }: VideoMod
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [isOpen, initialVideoId]);
+  }, [isOpen, initialVideoId, providedVideos]);
 
   const fetchVideos = async () => {
     setIsLoading(true);
