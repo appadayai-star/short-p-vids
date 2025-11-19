@@ -268,7 +268,8 @@ const Search = () => {
                 <button
                   key={idx}
                   onClick={() => {
-                    window.location.href = `/feed?search=${encodeURIComponent(tag)}`;
+                    setInputValue(tag);
+                    handleSearch(tag);
                   }}
                   className="w-full flex items-center justify-between p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors border border-white/10"
                 >
