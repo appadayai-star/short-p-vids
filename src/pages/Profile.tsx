@@ -8,7 +8,7 @@ import { FollowersModal } from "@/components/FollowersModal";
 import { VideoModal } from "@/components/VideoModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, ArrowLeft, UserPlus, UserMinus, Search } from "lucide-react";
+import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, Trash2 } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 
 const Profile = () => {
@@ -196,6 +196,29 @@ const Profile = () => {
     }
   };
 
+  const handleDeleteVideo = async (videoId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (!confirm("Are you sure you want to delete this video?")) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("videos")
+        .delete()
+        .eq("id", videoId);
+
+      if (error) throw error;
+
+      toast.success("Video deleted successfully");
+      setMyVideos(myVideos.filter(v => v.id !== videoId));
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete video");
+      console.error("Delete error:", error);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -354,7 +377,7 @@ const Profile = () => {
                 myVideos.map((video) => (
                   <div
                     key={video.id}
-                    className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative"
+                    className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative group"
                     onClick={() => {
                       setSelectedVideoId(video.id);
                       setVideoModalOpen(true);
@@ -367,6 +390,15 @@ const Profile = () => {
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                       <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                     </div>
+                    {isOwnProfile && (
+                      <button
+                        onClick={(e) => handleDeleteVideo(video.id, e)}
+                        className="absolute top-2 right-2 bg-destructive/90 text-destructive-foreground p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive z-10"
+                        aria-label="Delete video"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 ))
               )}

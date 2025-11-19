@@ -45,6 +45,10 @@ const Categories = () => {
           <h1 className="text-3xl font-bold text-white">Categories</h1>
         </div>
 
+        <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+          Most Popular 🔥
+        </h2>
+
         <div className="grid grid-cols-2 gap-4">
           {categories.map((category) => (
             <button
