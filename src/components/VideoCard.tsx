@@ -398,9 +398,16 @@ export const VideoCard = ({ video, currentUserId, onDelete }: VideoCardProps) =>
           {video.tags && video.tags.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {video.tags.map((tag, idx) => (
-                <span key={idx} className="text-primary text-sm font-semibold">
+                <button
+                  key={idx}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/?category=${tag}`);
+                  }}
+                  className="text-primary text-sm font-semibold hover:underline cursor-pointer"
+                >
                   #{tag}
-                </span>
+                </button>
               ))}
             </div>
           )}
