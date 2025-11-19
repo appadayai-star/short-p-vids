@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { VideoFeed } from "@/components/VideoFeed";
 import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
+import { Search } from "lucide-react";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const searchQuery = searchParams.get('search') || '';
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -46,7 +48,18 @@ const Feed = () => {
   }
 
   return (
-    <div className="h-screen bg-black overflow-hidden">
+    <div className="h-screen bg-black overflow-hidden flex flex-col">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-black border-b border-white/10 p-4 flex items-center justify-between flex-shrink-0">
+        <h1 className="text-white text-xl font-bold">Feed</h1>
+        <button
+          onClick={() => navigate("/search")}
+          className="p-2 hover:bg-white/5 rounded-full transition-colors"
+        >
+          <Search className="h-6 w-6 text-white" />
+        </button>
+      </div>
+
       <VideoFeed key={refreshKey} searchQuery={searchQuery} userId={user?.id || null} />
       <BottomNav
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined}

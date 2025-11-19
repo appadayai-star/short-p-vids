@@ -1,4 +1,4 @@
-import { Home, Search, PlusSquare, User, Grid3x3, LogIn } from "lucide-react";
+import { Home, PlusSquare, User, LogIn, Inbox, Grid3x3 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -33,12 +33,12 @@ export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh }: Bot
         </NavLink>
 
         <NavLink
-          to="/search"
+          to="/categories"
           className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
           activeClassName="text-primary"
         >
-          <Search className="h-6 w-6" />
-          <span className="text-xs">Search</span>
+          <Grid3x3 className="h-6 w-6" />
+          <span className="text-xs">Categories</span>
         </NavLink>
 
         {isAuthenticated && onUploadClick && (
@@ -56,12 +56,12 @@ export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh }: Bot
         )}
 
         <NavLink
-          to="/categories"
+          to="/inbox"
           className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
           activeClassName="text-primary"
         >
-          <Grid3x3 className="h-6 w-6" />
-          <span className="text-xs">Categories</span>
+          <Inbox className="h-6 w-6" />
+          <span className="text-xs">Inbox</span>
         </NavLink>
 
         {isAuthenticated ? (
