@@ -198,9 +198,7 @@ serve(async (req) => {
 
       return {
         ...video,
-        profiles: Array.isArray(video.profiles) && video.profiles.length > 0
-          ? video.profiles[0]
-          : { username: "Unknown", avatar_url: null },
+        profiles: video.profiles || { username: "Unknown", avatar_url: null },
         recommendationScore: score,
       };
     });
