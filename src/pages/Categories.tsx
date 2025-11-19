@@ -4,7 +4,7 @@ import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
-import { Grid3x3 } from "lucide-react";
+import { Grid3x3, Search } from "lucide-react";
 
 const Categories = () => {
   const navigate = useNavigate();

@@ -7,7 +7,7 @@ import { UploadModal } from "@/components/UploadModal";
 import { FollowersModal } from "@/components/FollowersModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, ArrowLeft, UserPlus, UserMinus } from "lucide-react";
+import { LogOut, ArrowLeft, UserPlus, UserMinus, Search } from "lucide-react";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -211,20 +211,29 @@ const Profile = () => {
     <div className="min-h-screen bg-black pb-20">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-white/10">
-        {userId && (
-          <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-            <ArrowLeft className="h-6 w-6 text-white" />
+        <div className="flex items-center gap-3">
+          {userId && (
+            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+              <ArrowLeft className="h-6 w-6 text-white" />
+            </button>
+          )}
+          <h1 className="text-white text-xl font-bold">
+            {isOwnProfile ? "Profile" : profile?.username}
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate("/search")}
+            className="p-2 hover:bg-white/5 rounded-full transition-colors"
+          >
+            <Search className="h-6 w-6 text-white" />
           </button>
-        )}
-        <h1 className="text-white text-xl font-bold flex-1 text-center">
-          {profile?.username}
-        </h1>
-        {isOwnProfile && (
-          <button onClick={handleLogout} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-            <LogOut className="h-6 w-6 text-white" />
-          </button>
-        )}
-        {!isOwnProfile && !userId && <div className="w-10" />}
+          {isOwnProfile && (
+            <button onClick={handleLogout} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+              <LogOut className="h-6 w-6 text-white" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
