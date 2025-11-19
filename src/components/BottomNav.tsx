@@ -5,16 +5,17 @@ import { useNavigate, useLocation } from "react-router-dom";
 interface BottomNavProps {
   onUploadClick?: () => void;
   isAuthenticated: boolean;
+  onHomeRefresh?: () => void;
 }
 
-export const BottomNav = ({ onUploadClick, isAuthenticated }: BottomNavProps) => {
+export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh }: BottomNavProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
   const handleHomeClick = (e: React.MouseEvent) => {
     if (location.pathname === "/feed" || location.pathname === "/") {
       e.preventDefault();
-      window.location.reload();
+      onHomeRefresh?.();
     }
   };
 

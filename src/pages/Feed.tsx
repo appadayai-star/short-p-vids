@@ -13,6 +13,7 @@ const Feed = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     // Set up auth state listener
@@ -32,6 +33,10 @@ const Feed = () => {
     return () => subscription.unsubscribe();
   }, []);
 
+  const handleRefresh = () => {
+    setRefreshKey(prev => prev + 1);
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -42,10 +47,11 @@ const Feed = () => {
 
   return (
     <div className="h-screen bg-black overflow-hidden">
-      <VideoFeed searchQuery={searchQuery} userId={user?.id || null} />
+      <VideoFeed key={refreshKey} searchQuery={searchQuery} userId={user?.id || null} />
       <BottomNav
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!user}
+        onHomeRefresh={handleRefresh}
       />
       {user && (
         <UploadModal 

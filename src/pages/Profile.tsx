@@ -424,6 +424,7 @@ const Profile = () => {
       <BottomNav 
         onUploadClick={currentUser ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!currentUser}
+        onHomeRefresh={undefined}
       />
       
       {currentUser && (
@@ -441,6 +442,11 @@ const Profile = () => {
         currentUserId={currentUser?.id || ""}
         profileId={profile?.id || ""}
         isOwnProfile={isOwnProfile}
+        onCountUpdate={() => {
+          if (profile?.id) {
+            fetchProfile(profile.id);
+          }
+        }}
       />
     </div>
   );
