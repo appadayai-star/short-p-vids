@@ -14,20 +14,12 @@ const Categories = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const unreadCount = useUnreadNotifications(user?.id || null);
 
-  // Placeholder categories - these will be customizable
   const categories = [
-    { id: "comedy", name: "Comedy", emoji: "😂" },
-    { id: "dance", name: "Dance", emoji: "💃" },
-    { id: "music", name: "Music", emoji: "🎵" },
-    { id: "food", name: "Food", emoji: "🍔" },
-    { id: "sports", name: "Sports", emoji: "⚽" },
-    { id: "gaming", name: "Gaming", emoji: "🎮" },
-    { id: "fashion", name: "Fashion", emoji: "👗" },
-    { id: "beauty", name: "Beauty", emoji: "💄" },
-    { id: "travel", name: "Travel", emoji: "✈️" },
-    { id: "fitness", name: "Fitness", emoji: "💪" },
-    { id: "education", name: "Education", emoji: "📚" },
-    { id: "art", name: "Art", emoji: "🎨" },
+    { id: "beauty", name: "Beauty" },
+    { id: "real", name: "Real" },
+    { id: "public", name: "Public" },
+    { id: "homemade", name: "Homemade" },
+    { id: "pov", name: "POV" },
   ];
 
   useEffect(() => {
@@ -56,23 +48,13 @@ const Categories = () => {
           {categories.map((category) => (
             <button
               key={category.id}
-              className="aspect-square bg-white/5 rounded-2xl border-2 border-white/10 hover:border-primary transition-colors flex flex-col items-center justify-center gap-4 group"
+              className="aspect-square bg-white/5 rounded-2xl border-2 border-white/10 hover:border-primary transition-colors flex items-center justify-center group"
             >
-              <span className="text-6xl group-hover:scale-110 transition-transform">
-                {category.emoji}
-              </span>
-              <span className="text-lg font-semibold text-white group-hover:text-primary transition-colors">
+              <span className="text-xl font-semibold text-white group-hover:text-primary transition-colors">
                 {category.name}
               </span>
             </button>
           ))}
-        </div>
-
-        <div className="mt-12 p-6 bg-white/5 rounded-xl border border-white/10">
-          <h2 className="text-xl font-semibold text-primary mb-3">Coming Soon</h2>
-          <p className="text-white/50">
-            Custom categories will be available soon. Each category will have its own curated feed of videos!
-          </p>
         </div>
       </div>
 
