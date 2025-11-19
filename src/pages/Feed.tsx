@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { VideoFeed } from "@/components/VideoFeed";
 import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
 
 const Feed = () => {
+  const [searchParams] = useSearchParams();
+  const searchQuery = searchParams.get('search') || '';
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -39,7 +42,7 @@ const Feed = () => {
 
   return (
     <div className="h-screen bg-black overflow-hidden">
-      <VideoFeed searchQuery="" userId={user?.id || null} />
+      <VideoFeed searchQuery={searchQuery} userId={user?.id || null} />
       <BottomNav
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!user}

@@ -142,13 +142,13 @@ const Search = () => {
   return (
     <div className="min-h-screen bg-black pb-20">
       {/* Search bar */}
-      <div className="sticky top-0 z-40 bg-black border-b border-border p-4">
+      <div className="sticky top-0 z-40 bg-black border-b border-white/10 p-4">
         <div className="relative">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-white/40" />
           <Input
             type="search"
             placeholder="Search videos, users, hashtags..."
-            className="pl-10 bg-secondary border-border text-foreground h-12"
+            className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/40 h-12 focus:border-primary"
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
           />
@@ -159,25 +159,29 @@ const Search = () => {
         {/* Search Results */}
         {searchQuery && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-foreground">
+            <h2 className="text-lg font-semibold text-white">
               {isSearching ? "Searching..." : `${searchResults.length} results`}
             </h2>
             <div className="grid grid-cols-3 gap-2">
               {searchResults.map((video) => (
                 <button
                   key={video.id}
-                  onClick={() => navigate("/feed")}
-                  className="aspect-[9/16] bg-muted rounded-lg overflow-hidden relative group"
+                  onClick={() => {
+                    // Navigate to feed with search results
+                    window.location.href = `/feed?search=${encodeURIComponent(searchQuery)}`;
+                  }}
+                  className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden relative group hover:opacity-80 transition-opacity"
                 >
                   <video
                     src={video.video_url}
                     className="w-full h-full object-cover"
                     preload="metadata"
                   />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
                     <div className="text-white text-xs">
-                      <p className="font-semibold line-clamp-2">{video.title}</p>
-                      <p className="text-white/70">@{video.profiles.username}</p>
+                      <p className="font-semibold line-clamp-1 text-white">{video.title}</p>
+                      <p className="text-white/80 text-[10px]">@{video.profiles.username}</p>
+                      <p className="text-white/60 text-[10px]">{video.views_count} views</p>
                     </div>
                   </div>
                 </button>
@@ -197,12 +201,14 @@ const Search = () => {
               {trendingHashtags.map((tag, idx) => (
                 <button
                   key={idx}
-                  onClick={() => handleSearch(tag)}
-                  className="w-full flex items-center justify-between p-4 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors"
+                  onClick={() => {
+                    window.location.href = `/feed?search=${encodeURIComponent(tag)}`;
+                  }}
+                  className="w-full flex items-center justify-between p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors border border-white/10"
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-primary font-bold text-xl">#{idx + 1}</span>
-                    <span className="text-foreground font-semibold">#{tag}</span>
+                    <span className="text-white font-semibold">#{tag}</span>
                   </div>
                   <TrendingUp className="h-4 w-4 text-primary" />
                 </button>
@@ -215,7 +221,7 @@ const Search = () => {
         {!searchQuery && recentSearches.length > 0 && (
           <div className="space-y-4 mt-8">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-foreground">
+              <div className="flex items-center gap-2 text-white">
                 <Clock className="h-5 w-5" />
                 <h2 className="text-lg font-semibold">Recent Searches</h2>
               </div>
@@ -231,7 +237,7 @@ const Search = () => {
                 <button
                   key={idx}
                   onClick={() => handleSearch(search)}
-                  className="w-full text-left p-4 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors text-foreground"
+                  className="w-full text-left p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-white border border-white/10"
                 >
                   {search}
                 </button>

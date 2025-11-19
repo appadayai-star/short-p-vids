@@ -32,12 +32,12 @@ export const BottomNav = ({ onUploadClick, isAuthenticated }: BottomNavProps) =>
         </NavLink>
 
         <NavLink
-          to="/categories"
+          to="/search"
           className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
           activeClassName="text-primary"
         >
-          <Grid3x3 className="h-6 w-6" />
-          <span className="text-xs">Categories</span>
+          <Search className="h-6 w-6" />
+          <span className="text-xs">Search</span>
         </NavLink>
 
         {isAuthenticated && onUploadClick && (
@@ -59,12 +59,12 @@ export const BottomNav = ({ onUploadClick, isAuthenticated }: BottomNavProps) =>
         )}
 
         <NavLink
-          to="/search"
+          to="/categories"
           className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
           activeClassName="text-primary"
         >
-          <Search className="h-6 w-6" />
-          <span className="text-xs">Search</span>
+          <Grid3x3 className="h-6 w-6" />
+          <span className="text-xs">Categories</span>
         </NavLink>
 
         {isAuthenticated ? (
