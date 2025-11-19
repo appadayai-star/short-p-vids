@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Send, Heart } from "lucide-react";
+import { X, Send, Heart, MessageCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
@@ -11,10 +11,13 @@ interface Comment {
   content: string;
   created_at: string;
   likes_count: number;
+  replies_count: number;
+  parent_comment_id: string | null;
   profiles: {
     username: string;
     avatar_url: string | null;
   };
+  replies?: Comment[];
 }
 
 interface CommentsDrawerProps {
@@ -31,6 +34,8 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyContent, setReplyContent] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -44,6 +49,7 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
   const fetchComments = async () => {
     setIsLoading(true);
     try {
+      // Fetch all comments
       const { data, error } = await supabase
         .from("comments")
         .select(`
@@ -51,16 +57,39 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
           content,
           created_at,
           likes_count,
+          replies_count,
+          parent_comment_id,
           profiles (
             username,
             avatar_url
           )
         `)
         .eq("video_id", videoId)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false});
 
       if (error) throw error;
-      setComments(data || []);
+
+      // Organize comments into threads
+      const commentMap = new Map<string, Comment>();
+      const rootComments: Comment[] = [];
+
+      data?.forEach((comment: any) => {
+        commentMap.set(comment.id, { ...comment, replies: [] });
+      });
+
+      data?.forEach((comment: any) => {
+        if (comment.parent_comment_id) {
+          const parent = commentMap.get(comment.parent_comment_id);
+          if (parent) {
+            parent.replies = parent.replies || [];
+            parent.replies.push(commentMap.get(comment.id)!);
+          }
+        } else {
+          rootComments.push(commentMap.get(comment.id)!);
+        }
+      });
+
+      setComments(rootComments);
     } catch (error) {
       console.error("Error fetching comments:", error);
       toast.error("Failed to load comments");
@@ -95,7 +124,6 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
 
     try {
       if (isLiked) {
-        // Unlike
         const { error } = await supabase
           .from("comment_likes")
           .delete()
@@ -109,14 +137,7 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
           newSet.delete(commentId);
           return newSet;
         });
-
-        setComments(prev => prev.map(comment => 
-          comment.id === commentId 
-            ? { ...comment, likes_count: comment.likes_count - 1 }
-            : comment
-        ));
       } else {
-        // Like
         const { error } = await supabase
           .from("comment_likes")
           .insert({
@@ -125,15 +146,10 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
           });
 
         if (error) throw error;
-
         setLikedComments(prev => new Set(prev).add(commentId));
-
-        setComments(prev => prev.map(comment => 
-          comment.id === commentId 
-            ? { ...comment, likes_count: comment.likes_count + 1 }
-            : comment
-        ));
       }
+
+      fetchComments(); // Refresh to update counts
     } catch (error) {
       console.error("Error liking comment:", error);
       toast.error("Failed to like comment");
@@ -157,6 +173,7 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
         video_id: videoId,
         user_id: currentUserId,
         content: newComment.trim(),
+        parent_comment_id: null,
       });
 
       if (error) throw error;
@@ -170,6 +187,38 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
       toast.error("Failed to post comment");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSubmitReply = async (parentId: string) => {
+    if (!currentUserId) {
+      toast.error("Please login to reply");
+      return;
+    }
+
+    if (!replyContent.trim()) {
+      toast.error("Reply cannot be empty");
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from("comments").insert({
+        video_id: videoId,
+        user_id: currentUserId,
+        content: replyContent.trim(),
+        parent_comment_id: parentId,
+      });
+
+      if (error) throw error;
+
+      setReplyContent("");
+      setReplyingTo(null);
+      toast.success("Reply posted!");
+      fetchComments();
+      onCommentAdded?.();
+    } catch (error) {
+      console.error("Error posting reply:", error);
+      toast.error("Failed to post reply");
     }
   };
 
@@ -187,6 +236,85 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
     if (diffMin > 0) return `${diffMin}m ago`;
     return "Just now";
   };
+
+  const renderComment = (comment: Comment, isReply: boolean = false) => (
+    <div key={comment.id} className={`${isReply ? 'ml-12 mt-3' : ''}`}>
+      <div className="flex gap-3">
+        <div className="w-8 h-8 rounded-full bg-primary overflow-hidden flex-shrink-0">
+          {comment.profiles.avatar_url ? (
+            <img
+              src={comment.profiles.avatar_url}
+              alt={comment.profiles.username}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground text-sm font-bold">
+              {comment.profiles.username[0].toUpperCase()}
+            </div>
+          )}
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sm">{comment.profiles.username}</span>
+            <span className="text-xs text-muted-foreground">{formatTimeAgo(comment.created_at)}</span>
+          </div>
+          <p className="text-sm mt-1">{comment.content}</p>
+          <div className="flex items-center gap-4 mt-2">
+            <button
+              onClick={() => handleLikeComment(comment.id)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Heart
+                className={`h-4 w-4 ${likedComments.has(comment.id) ? 'fill-red-500 text-red-500' : ''}`}
+              />
+              {comment.likes_count > 0 && comment.likes_count}
+            </button>
+            {!isReply && (
+              <button
+                onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <MessageCircle className="h-4 w-4" />
+                {comment.replies_count > 0 && comment.replies_count} Reply
+              </button>
+            )}
+          </div>
+
+          {/* Reply input */}
+          {replyingTo === comment.id && (
+            <div className="mt-3 flex gap-2">
+              <Textarea
+                value={replyContent}
+                onChange={(e) => setReplyContent(e.target.value)}
+                placeholder="Write a reply..."
+                className="min-h-[60px] text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmitReply(comment.id);
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => handleSubmitReply(comment.id)}
+                disabled={!replyContent.trim()}
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* Render replies */}
+          {comment.replies && comment.replies.length > 0 && (
+            <div className="mt-3 space-y-3">
+              {comment.replies.map((reply) => renderComment(reply, true))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   if (!isOpen) return null;
 
@@ -213,49 +341,7 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
             </div>
           ) : (
             <div className="space-y-4">
-              {comments.map((comment) => (
-                <div key={comment.id} className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-secondary overflow-hidden flex-shrink-0">
-                    {comment.profiles.avatar_url ? (
-                      <img
-                        src={comment.profiles.avatar_url}
-                        alt={comment.profiles.username}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground text-sm font-bold">
-                        {comment.profiles.username[0].toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm">{comment.profiles.username}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {formatTimeAgo(comment.created_at)}
-                      </span>
-                    </div>
-                    <p className="text-sm mt-1">{comment.content}</p>
-                    <div className="flex items-center gap-4 mt-2">
-                      <button
-                        onClick={() => handleLikeComment(comment.id)}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <Heart
-                          className={`h-4 w-4 ${
-                            likedComments.has(comment.id)
-                              ? "fill-red-500 text-red-500"
-                              : ""
-                          }`}
-                        />
-                        {comment.likes_count > 0 && (
-                          <span>{comment.likes_count}</span>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              {comments.map((comment) => renderComment(comment))}
             </div>
           )}
         </ScrollArea>

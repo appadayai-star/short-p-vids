@@ -56,6 +56,8 @@ export type Database = {
           created_at: string
           id: string
           likes_count: number
+          parent_comment_id: string | null
+          replies_count: number
           user_id: string
           video_id: string
         }
@@ -64,6 +66,8 @@ export type Database = {
           created_at?: string
           id?: string
           likes_count?: number
+          parent_comment_id?: string | null
+          replies_count?: number
           user_id: string
           video_id: string
         }
@@ -72,10 +76,19 @@ export type Database = {
           created_at?: string
           id?: string
           likes_count?: number
+          parent_comment_id?: string | null
+          replies_count?: number
           user_id?: string
           video_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "comments_parent_comment_id_fkey"
+            columns: ["parent_comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "comments_user_id_fkey"
             columns: ["user_id"]
