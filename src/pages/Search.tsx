@@ -36,19 +36,11 @@ const Search = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      
-      if (!session) {
-        navigate("/auth");
-      }
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      
-      if (!session) {
-        navigate("/auth");
-      }
     });
 
     return () => subscription.unsubscribe();
@@ -146,10 +138,6 @@ const Search = () => {
     setRecentSearches([]);
     localStorage.removeItem("recentSearches");
   };
-
-  if (!user || !session) {
-    return null;
-  }
 
   return (
     <div className="min-h-screen bg-black pb-20">
@@ -253,12 +241,17 @@ const Search = () => {
         )}
       </div>
 
-      <BottomNav onUploadClick={() => setIsUploadOpen(true)} />
-      <UploadModal 
-        open={isUploadOpen} 
-        onOpenChange={setIsUploadOpen}
-        userId={user.id}
+      <BottomNav 
+        onUploadClick={user ? () => setIsUploadOpen(true) : undefined} 
+        isAuthenticated={!!user} 
       />
+      {user && (
+        <UploadModal 
+          open={isUploadOpen} 
+          onOpenChange={setIsUploadOpen}
+          userId={user.id}
+        />
+      )}
     </div>
   );
 };
