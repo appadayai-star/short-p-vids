@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
 import { FollowersModal } from "@/components/FollowersModal";
+import { VideoModal } from "@/components/VideoModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, ArrowLeft, UserPlus, UserMinus, Search } from "lucide-react";
@@ -26,6 +27,8 @@ const Profile = () => {
   const [followersModalOpen, setFollowersModalOpen] = useState(false);
   const [followersModalType, setFollowersModalType] = useState<"followers" | "following">("followers");
   const unreadCount = useUnreadNotifications(currentUser?.id || null);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
 
   const isOwnProfile = !userId || userId === currentUser?.id;
 
@@ -351,17 +354,18 @@ const Profile = () => {
                 myVideos.map((video) => (
                   <div
                     key={video.id}
-                    className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative group"
-                    onClick={() => navigate(`/video/${video.id}`)}
+                    className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative"
+                    onClick={() => {
+                      setSelectedVideoId(video.id);
+                      setVideoModalOpen(true);
+                    }}
                   >
                     <video
                       src={video.video_url}
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                      <div className="text-white text-xs">
-                        <div className="font-semibold">{video.views_count} views</div>
-                      </div>
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                      <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                     </div>
                   </div>
                 ))
@@ -380,17 +384,18 @@ const Profile = () => {
                   likedVideos.map((video) => (
                     <div
                       key={video.id}
-                      className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative group"
-                      onClick={() => navigate(`/video/${video.id}`)}
+                      className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative"
+                      onClick={() => {
+                        setSelectedVideoId(video.id);
+                        setVideoModalOpen(true);
+                      }}
                     >
                       <video
                         src={video.video_url}
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                        <div className="text-white text-xs">
-                          <div className="font-semibold">{video.views_count} views</div>
-                        </div>
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                        <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                       </div>
                     </div>
                   ))
@@ -410,17 +415,18 @@ const Profile = () => {
                   savedVideos.map((video) => (
                     <div
                       key={video.id}
-                      className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative group"
-                      onClick={() => navigate(`/video/${video.id}`)}
+                      className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative"
+                      onClick={() => {
+                        setSelectedVideoId(video.id);
+                        setVideoModalOpen(true);
+                      }}
                     >
                       <video
                         src={video.video_url}
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                        <div className="text-white text-xs">
-                          <div className="font-semibold">{video.views_count} views</div>
-                        </div>
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                        <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                       </div>
                     </div>
                   ))
@@ -460,6 +466,18 @@ const Profile = () => {
           }
         }}
       />
+
+      {selectedVideoId && (
+        <VideoModal
+          isOpen={videoModalOpen}
+          onClose={() => {
+            setVideoModalOpen(false);
+            setSelectedVideoId(null);
+          }}
+          initialVideoId={selectedVideoId}
+          userId={currentUser?.id || null}
+        />
+      )}
     </div>
   );
 };
