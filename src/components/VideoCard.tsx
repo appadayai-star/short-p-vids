@@ -276,7 +276,7 @@ export const VideoCard = ({ video, currentUserId, onDelete }: VideoCardProps) =>
       <video
         ref={videoRef}
         src={video.video_url}
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover md:object-contain"
         loop
         playsInline
         onClick={togglePlay}
