@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.get-recommended-feed]
 verify_jwt = false
+
+[functions.smart-search]
+verify_jwt = false

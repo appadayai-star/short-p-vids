@@ -25,6 +25,15 @@ interface Video {
   };
 }
 
+interface UserResult {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+  bio: string | null;
+  followers_count: number;
+  following_count: number;
+}
+
 const Search = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
@@ -34,6 +43,7 @@ const Search = () => {
   const [inputValue, setInputValue] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Video[]>([]);
+  const [userResults, setUserResults] = useState<UserResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [trendingHashtags, setTrendingHashtags] = useState<string[]>([]);
@@ -105,6 +115,7 @@ const Search = () => {
   const handleSearch = async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
+      setUserResults([]);
       setSearchQuery("");
       return;
     }
@@ -112,41 +123,21 @@ const Search = () => {
     setIsSearching(true);
     setSearchQuery(query);
 
-    // Save to recent searches only on executed searches
+    // Save to recent searches
     const updated = [query, ...recentSearches.filter((s) => s !== query)].slice(0, 10);
     setRecentSearches(updated);
     localStorage.setItem("recentSearches", JSON.stringify(updated));
 
     try {
-      const { data, error } = await supabase
-        .from("videos")
-        .select(`
-          id,
-          title,
-          description,
-          tags,
-          video_url,
-          thumbnail_url,
-          views_count,
-          likes_count,
-          profiles!inner(username, avatar_url)
-        `)
-        .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
-        .order("likes_count", { ascending: false })
-        .limit(50);
+      // Use the smart search edge function
+      const { data, error } = await supabase.functions.invoke("smart-search", {
+        body: { query, limit: 20 },
+      });
 
       if (error) throw error;
       
-      // Filter by username or tags on the client side
-      const filtered = data?.filter(video => {
-        const matchesUsername = video.profiles.username.toLowerCase().includes(query.toLowerCase());
-        const matchesTags = video.tags?.some(tag => tag.toLowerCase().includes(query.toLowerCase()));
-        const matchesTitle = video.title.toLowerCase().includes(query.toLowerCase());
-        const matchesDescription = video.description?.toLowerCase().includes(query.toLowerCase());
-        return matchesUsername || matchesTags || matchesTitle || matchesDescription;
-      }) || [];
-      
-      setSearchResults(filtered.slice(0, 20));
+      setSearchResults(data.videos || []);
+      setUserResults(data.users || []);
     } catch (error: any) {
       toast.error("Search failed");
       console.error(error);
@@ -186,11 +177,49 @@ const Search = () => {
       <div className="container max-w-2xl mx-auto px-4 py-6">
         {/* Search Results */}
         {searchQuery && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <h2 className="text-lg font-semibold text-white">
-              {isSearching ? "Searching..." : `${searchResults.length} results`}
+              {isSearching ? "Searching..." : `Results for "${searchQuery}"`}
             </h2>
-            <div className="grid grid-cols-3 gap-2">
+
+            {/* User Results */}
+            {userResults.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-white/70">Users</h3>
+                <div className="space-y-2">
+                  {userResults.map((user) => (
+                    <button
+                      key={user.id}
+                      onClick={() => navigate(`/profile/${user.id}`)}
+                      className="w-full flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
+                    >
+                      <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10 flex-shrink-0">
+                        {user.avatar_url ? (
+                          <img src={user.avatar_url} alt={user.username} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg">
+                            {user.username[0].toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 text-left">
+                        <p className="text-white font-semibold">@{user.username}</p>
+                        {user.bio && (
+                          <p className="text-white/50 text-sm line-clamp-1">{user.bio}</p>
+                        )}
+                        <p className="text-white/40 text-xs">{user.followers_count} followers</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Video Results */}
+            {searchResults.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-white/70">Videos</h3>
+                <div className="grid grid-cols-3 gap-2">
               {searchResults.map((video) => (
                 <button
                   key={video.id}
@@ -215,6 +244,15 @@ const Search = () => {
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+            {/* No results */}
+            {!isSearching && searchResults.length === 0 && userResults.length === 0 && (
+              <div className="text-center py-12 text-white/50">
+                No results found for "{searchQuery}"
+              </div>
+            )}
           </div>
         )}
 
