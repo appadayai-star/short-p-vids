@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Heart, MessageCircle, Share2, Pause, Play } from "lucide-react";
+import { Heart, MessageCircle, Share2, Pause, Play, Bookmark } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -31,6 +31,7 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [commentsCount, setCommentsCount] = useState(video.comments_count);
+  const [isSaved, setIsSaved] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasViewed, setHasViewed] = useState(false);
   const [showPauseIcon, setShowPauseIcon] = useState(false);
@@ -53,7 +54,21 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
       setIsLiked(!!data);
     };
 
+    const checkSavedStatus = async () => {
+      if (!currentUserId) return;
+      
+      const { data } = await supabase
+        .from("saved_videos")
+        .select("id")
+        .eq("video_id", video.id)
+        .eq("user_id", currentUserId)
+        .single();
+      
+      setIsSaved(!!data);
+    };
+
     checkLikeStatus();
+    checkSavedStatus();
   }, [video.id, currentUserId]);
 
   useEffect(() => {
@@ -107,7 +122,7 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
 
   const toggleLike = async () => {
     if (!currentUserId) {
-      toast.error("Please login to like videos");
+      navigate("/auth");
       return;
     }
 
@@ -140,6 +155,41 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
     }
   };
 
+  const toggleSave = async () => {
+    if (!currentUserId) {
+      navigate("/auth");
+      return;
+    }
+
+    try {
+      if (isSaved) {
+        const { error } = await supabase
+          .from("saved_videos")
+          .delete()
+          .eq("video_id", video.id)
+          .eq("user_id", currentUserId);
+
+        if (error) throw error;
+        
+        setIsSaved(false);
+        toast.success("Removed from saved");
+      } else {
+        const { error } = await supabase.from("saved_videos").insert({
+          video_id: video.id,
+          user_id: currentUserId,
+        });
+
+        if (error) throw error;
+        
+        setIsSaved(true);
+        toast.success("Saved to your profile");
+      }
+    } catch (error: any) {
+      toast.error("Failed to save video");
+      console.error("Error toggling save:", error);
+    }
+  };
+
   const togglePlay = () => {
     if (videoRef.current) {
       if (isPlaying) {
@@ -159,6 +209,10 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
   };
 
   const handleComment = () => {
+    if (!currentUserId) {
+      navigate("/auth");
+      return;
+    }
     setIsCommentsOpen(true);
   };
 
@@ -194,7 +248,7 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
       )}
 
       {/* Right side actions (TikTok style) - moved higher */}
-      <div className="absolute right-4 bottom-32 flex flex-col gap-6 z-10">
+      <div className="absolute right-4 bottom-40 flex flex-col gap-6 z-10">
         <button
           onClick={toggleLike}
           className="flex flex-col items-center gap-1"
@@ -218,6 +272,20 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
             <MessageCircle className="h-7 w-7 text-white" />
           </div>
           <span className="text-white text-xs font-semibold">{commentsCount}</span>
+        </button>
+
+        <button
+          onClick={toggleSave}
+          className="flex flex-col items-center gap-1"
+        >
+          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+            <Bookmark
+              className={cn(
+                "h-7 w-7",
+                isSaved ? "fill-white text-white" : "text-white"
+              )}
+            />
+          </div>
         </button>
 
         <button
