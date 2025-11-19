@@ -7,6 +7,7 @@ import { UploadModal } from "@/components/UploadModal";
 import { Heart, MessageCircle, Bookmark, UserPlus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 
 interface Notification {
   id: string;
@@ -32,6 +33,7 @@ const Inbox = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const unreadCount = useUnreadNotifications(user?.id || null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -170,6 +172,7 @@ const Inbox = () => {
         <BottomNav
           isAuthenticated={false}
           onHomeRefresh={undefined}
+          unreadCount={0}
         />
       </div>
     );
@@ -252,6 +255,7 @@ const Inbox = () => {
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!user}
         onHomeRefresh={undefined}
+        unreadCount={unreadCount}
       />
 
       {user && (

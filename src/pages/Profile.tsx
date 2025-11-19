@@ -8,6 +8,7 @@ import { FollowersModal } from "@/components/FollowersModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, ArrowLeft, UserPlus, UserMinus, Search } from "lucide-react";
+import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ const Profile = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [followersModalOpen, setFollowersModalOpen] = useState(false);
   const [followersModalType, setFollowersModalType] = useState<"followers" | "following">("followers");
+  const unreadCount = useUnreadNotifications(currentUser?.id || null);
 
   const isOwnProfile = !userId || userId === currentUser?.id;
 
@@ -434,6 +436,7 @@ const Profile = () => {
         onUploadClick={currentUser ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!currentUser}
         onHomeRefresh={undefined}
+        unreadCount={unreadCount}
       />
       
       {currentUser && (

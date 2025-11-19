@@ -32,6 +32,7 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [commentsCount, setCommentsCount] = useState(video.comments_count);
   const [isSaved, setIsSaved] = useState(false);
+  const [savesCount, setSavesCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasViewed, setHasViewed] = useState(false);
   const [showPauseIcon, setShowPauseIcon] = useState(false);
@@ -67,8 +68,18 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
       setIsSaved(!!data);
     };
 
+    const fetchSavesCount = async () => {
+      const { count } = await supabase
+        .from("saved_videos")
+        .select("*", { count: "exact", head: true })
+        .eq("video_id", video.id);
+      
+      setSavesCount(count || 0);
+    };
+
     checkLikeStatus();
     checkSavedStatus();
+    fetchSavesCount();
   }, [video.id, currentUserId]);
 
   useEffect(() => {
@@ -172,6 +183,7 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
         if (error) throw error;
         
         setIsSaved(false);
+        setSavesCount((prev) => prev - 1);
         toast.success("Removed from saved");
       } else {
         const { error } = await supabase.from("saved_videos").insert({
@@ -182,6 +194,7 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
         if (error) throw error;
         
         setIsSaved(true);
+        setSavesCount((prev) => prev + 1);
         toast.success("Saved to your profile");
       }
     } catch (error: any) {
@@ -282,10 +295,11 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
             <Bookmark
               className={cn(
                 "h-7 w-7",
-                isSaved ? "fill-white text-white" : "text-white"
+                isSaved ? "fill-yellow-500 text-yellow-500" : "text-white"
               )}
             />
           </div>
+          <span className="text-white text-xs font-semibold">{savesCount}</span>
         </button>
 
         <button

@@ -5,12 +5,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
 import { Grid3x3, Search } from "lucide-react";
+import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 
 const Categories = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const unreadCount = useUnreadNotifications(user?.id || null);
 
   // Placeholder categories - these will be customizable
   const categories = [
@@ -78,6 +80,7 @@ const Categories = () => {
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined} 
         isAuthenticated={!!user}
         onHomeRefresh={undefined}
+        unreadCount={unreadCount}
       />
       {user && (
         <UploadModal 

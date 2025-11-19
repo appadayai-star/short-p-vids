@@ -7,6 +7,7 @@ import { UploadModal } from "@/components/UploadModal";
 import { Input } from "@/components/ui/input";
 import { Search as SearchIcon, TrendingUp, Clock } from "lucide-react";
 import { toast } from "sonner";
+import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 
 interface Video {
   id: string;
@@ -28,6 +29,7 @@ const Search = () => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const unreadCount = useUnreadNotifications(user?.id || null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Video[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -265,6 +267,7 @@ const Search = () => {
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined} 
         isAuthenticated={!!user}
         onHomeRefresh={undefined}
+        unreadCount={unreadCount}
       />
       {user && (
         <UploadModal 

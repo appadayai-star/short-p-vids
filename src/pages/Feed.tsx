@@ -5,7 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { VideoFeed } from "@/components/VideoFeed";
 import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
-import { Search } from "lucide-react";
+import { Search, Home } from "lucide-react";
+import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
@@ -16,6 +17,7 @@ const Feed = () => {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const unreadCount = useUnreadNotifications(user?.id || null);
 
   useEffect(() => {
     // Set up auth state listener
@@ -51,7 +53,9 @@ const Feed = () => {
     <div className="h-screen bg-black overflow-hidden flex flex-col">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-black border-b border-white/10 p-4 flex items-center justify-between flex-shrink-0">
-        <h1 className="text-white text-xl font-bold">Feed</h1>
+        <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
+          <Home className="h-5 w-5 text-black" />
+        </div>
         <button
           onClick={() => navigate("/search")}
           className="p-2 hover:bg-white/5 rounded-full transition-colors"
@@ -65,6 +69,7 @@ const Feed = () => {
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!user}
         onHomeRefresh={handleRefresh}
+        unreadCount={unreadCount}
       />
       {user && (
         <UploadModal 

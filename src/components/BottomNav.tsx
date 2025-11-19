@@ -6,9 +6,10 @@ interface BottomNavProps {
   onUploadClick?: () => void;
   isAuthenticated: boolean;
   onHomeRefresh?: () => void;
+  unreadCount?: number;
 }
 
-export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh }: BottomNavProps) => {
+export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh, unreadCount = 0 }: BottomNavProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -57,10 +58,17 @@ export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh }: Bot
 
         <NavLink
           to="/inbox"
-          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
+          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px] relative"
           activeClassName="text-primary"
         >
-          <Inbox className="h-6 w-6" />
+          <div className="relative">
+            <Inbox className="h-6 w-6" />
+            {unreadCount > 0 && (
+              <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </div>
+            )}
+          </div>
           <span className="text-xs">Inbox</span>
         </NavLink>
 
