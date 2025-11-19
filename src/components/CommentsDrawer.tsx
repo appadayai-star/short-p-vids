@@ -112,7 +112,7 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId }: Comm
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-end md:items-center md:justify-center">
+    <div className="fixed inset-0 z-[100] bg-black/80 flex items-end md:items-center md:justify-center">
       <div className="bg-background w-full md:max-w-lg md:rounded-t-2xl rounded-t-2xl h-[70vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">

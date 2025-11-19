@@ -55,7 +55,7 @@ export const ShareDrawer = ({ videoTitle, username, isOpen, onClose }: ShareDraw
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-end md:items-center md:justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] bg-black/80 flex items-end md:items-center md:justify-center" onClick={onClose}>
       <div className="bg-background w-full md:max-w-lg md:rounded-t-2xl rounded-t-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="text-lg font-semibold">Share</h2>
