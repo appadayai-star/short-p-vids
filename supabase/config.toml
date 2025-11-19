@@ -1,0 +1,4 @@
+project_id = "mbuajcicosojebakdtsn"
+
+[functions.get-for-you-feed]
+verify_jwt = false
