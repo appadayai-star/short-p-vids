@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { Navbar } from "@/components/Navbar";
 import { VideoFeed } from "@/components/VideoFeed";
 import { UploadModal } from "@/components/UploadModal";
+import { BottomNav } from "@/components/BottomNav";
 
 const Feed = () => {
   const navigate = useNavigate();
@@ -43,11 +43,8 @@ const Feed = () => {
 
   return (
     <div className="min-h-screen bg-black">
-      <Navbar 
-        onUploadClick={() => setIsUploadOpen(true)} 
-        onSearch={setSearchQuery}
-      />
       <VideoFeed searchQuery={searchQuery} userId={user.id} />
+      <BottomNav onUploadClick={() => setIsUploadOpen(true)} />
       <UploadModal 
         open={isUploadOpen} 
         onOpenChange={setIsUploadOpen}
