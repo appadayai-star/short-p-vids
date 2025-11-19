@@ -189,70 +189,107 @@ const Search = () => {
               {isSearching ? "Searching..." : `Results for "${searchQuery}"`}
             </h2>
 
-            {/* User Results */}
-            {userResults.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-white/70">Users</h3>
-                <div className="space-y-2">
-                  {userResults.map((user) => (
-                    <button
-                      key={user.id}
-                      onClick={() => navigate(`/profile/${user.id}`)}
-                      className="w-full flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
-                    >
-                      <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10 flex-shrink-0">
-                        {user.avatar_url ? (
-                          <img src={user.avatar_url} alt={user.username} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg">
-                            {user.username[0].toUpperCase()}
+            {/* Search Results - Smart Interleaved Layout */}
+            {(searchResults.length > 0 || userResults.length > 0) && (
+              <div className="space-y-4">
+                {/* Top Accounts Section - Show first 3 users */}
+                {userResults.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-white/70">Top Accounts</h3>
+                    <div className="space-y-2">
+                      {userResults.slice(0, 3).map((user) => (
+                        <button
+                          key={user.id}
+                          onClick={() => navigate(`/profile/${user.id}`)}
+                          className="w-full flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
+                        >
+                          <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10 flex-shrink-0">
+                            {user.avatar_url ? (
+                              <img src={user.avatar_url} alt={user.username} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg">
+                                {user.username[0].toUpperCase()}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                      <div className="flex-1 text-left">
-                        <p className="text-white font-semibold">@{user.username}</p>
-                        {user.bio && (
-                          <p className="text-white/50 text-sm line-clamp-1">{user.bio}</p>
-                        )}
-                        <p className="text-white/40 text-xs">{user.followers_count} followers</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Video Results */}
-            {searchResults.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-white/70">Videos</h3>
-                <div className="grid grid-cols-3 gap-2">
-              {searchResults.map((video) => (
-                <button
-                  key={video.id}
-                  onClick={() => {
-                    setSelectedVideoId(video.id);
-                    setVideoModalOpen(true);
-                  }}
-                  className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden relative group hover:opacity-80 transition-opacity"
-                >
-                  <video
-                    src={video.video_url}
-                    className="w-full h-full object-cover"
-                    preload="metadata"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                    <div className="text-white text-xs">
-                      <p className="font-semibold line-clamp-1 text-white">{video.title}</p>
-                      <p className="text-white/80 text-[10px]">@{video.profiles.username}</p>
-                      <p className="text-white/60 text-[10px]">{video.views_count} views</p>
+                          <div className="flex-1 text-left">
+                            <p className="text-white font-semibold">@{user.username}</p>
+                            {user.bio && (
+                              <p className="text-white/50 text-sm line-clamp-1">{user.bio}</p>
+                            )}
+                            <p className="text-white/40 text-xs">{user.followers_count} followers</p>
+                          </div>
+                        </button>
+                      ))}
                     </div>
                   </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+                )}
+
+                {/* Top Videos Section */}
+                {searchResults.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-white/70">Videos</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      {searchResults.map((video) => (
+                        <button
+                          key={video.id}
+                          onClick={() => {
+                            setSelectedVideoId(video.id);
+                            setVideoModalOpen(true);
+                          }}
+                          className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden relative group hover:opacity-80 transition-opacity"
+                        >
+                          <video
+                            src={video.video_url}
+                            className="w-full h-full object-cover"
+                            preload="metadata"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                            <div className="text-white text-xs">
+                              <p className="text-white/80 text-[10px]">@{video.profiles.username}</p>
+                              <p className="text-white/60 text-[10px]">{video.views_count} views</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* More Accounts - Show remaining users if any */}
+                {userResults.length > 3 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-white/70">More Accounts</h3>
+                    <div className="space-y-2">
+                      {userResults.slice(3).map((user) => (
+                        <button
+                          key={user.id}
+                          onClick={() => navigate(`/profile/${user.id}`)}
+                          className="w-full flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
+                        >
+                          <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10 flex-shrink-0">
+                            {user.avatar_url ? (
+                              <img src={user.avatar_url} alt={user.username} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg">
+                                {user.username[0].toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 text-left">
+                            <p className="text-white font-semibold">@{user.username}</p>
+                            {user.bio && (
+                              <p className="text-white/50 text-sm line-clamp-1">{user.bio}</p>
+                            )}
+                            <p className="text-white/40 text-xs">{user.followers_count} followers</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* No results */}
             {!isSearching && searchResults.length === 0 && userResults.length === 0 && (
