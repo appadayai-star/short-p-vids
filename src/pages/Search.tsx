@@ -11,6 +11,8 @@ import { toast } from "sonner";
 interface Video {
   id: string;
   title: string;
+  description: string | null;
+  tags: string[] | null;
   video_url: string;
   thumbnail_url: string | null;
   views_count: number;
@@ -114,18 +116,30 @@ const Search = () => {
         .select(`
           id,
           title,
+          description,
+          tags,
           video_url,
           thumbnail_url,
           views_count,
           likes_count,
           profiles!inner(username, avatar_url)
         `)
-        .or(`title.ilike.%${query}%,tags.cs.{${query}},profiles.username.ilike.%${query}%`)
+        .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
         .order("likes_count", { ascending: false })
-        .limit(20);
+        .limit(50);
 
       if (error) throw error;
-      setSearchResults(data || []);
+      
+      // Filter by username or tags on the client side
+      const filtered = data?.filter(video => {
+        const matchesUsername = video.profiles.username.toLowerCase().includes(query.toLowerCase());
+        const matchesTags = video.tags?.some(tag => tag.toLowerCase().includes(query.toLowerCase()));
+        const matchesTitle = video.title.toLowerCase().includes(query.toLowerCase());
+        const matchesDescription = video.description?.toLowerCase().includes(query.toLowerCase());
+        return matchesUsername || matchesTags || matchesTitle || matchesDescription;
+      }) || [];
+      
+      setSearchResults(filtered.slice(0, 20));
     } catch (error: any) {
       toast.error("Search failed");
       console.error(error);

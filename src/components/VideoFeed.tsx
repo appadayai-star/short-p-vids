@@ -37,25 +37,34 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
     setIsLoading(true);
     try {
       if (query.trim()) {
-        // Search mode
+        // Search mode - search by description, title, tags, and username
         const { data, error } = await supabase
           .from("videos")
           .select(`
             *,
             profiles!inner(username, avatar_url)
           `)
-          .or(`title.ilike.%${query}%,tags.cs.{${query}},profiles.username.ilike.%${query}%`)
+          .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
           .order("created_at", { ascending: false })
           .range(pageNum * 10, (pageNum + 1) * 10 - 1);
 
         if (error) throw error;
         
+        // Filter by username or tags on the client side since we can't use .or() with joined tables
+        const filtered = data?.filter(video => {
+          const matchesUsername = video.profiles.username.toLowerCase().includes(query.toLowerCase());
+          const matchesTags = video.tags?.some(tag => tag.toLowerCase().includes(query.toLowerCase()));
+          const matchesTitle = video.title.toLowerCase().includes(query.toLowerCase());
+          const matchesDescription = video.description?.toLowerCase().includes(query.toLowerCase());
+          return matchesUsername || matchesTags || matchesTitle || matchesDescription;
+        }) || [];
+        
         if (pageNum === 0) {
-          setVideos(data || []);
+          setVideos(filtered);
         } else {
-          setVideos((prev) => [...prev, ...(data || [])]);
+          setVideos((prev) => [...prev, ...filtered]);
         }
-        setHasMore((data?.length || 0) === 10);
+        setHasMore((filtered.length || 0) === 10);
       } else if (userId) {
         // For You feed - call recommendation function only if logged in
         const { data, error } = await supabase.functions.invoke("get-for-you-feed", {
