@@ -84,52 +84,50 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
     fetchVideos(0, searchQuery);
   }, [searchQuery, fetchVideos]);
 
-  const loadMore = () => {
-    if (!isLoading && hasMore) {
-      const nextPage = page + 1;
-      setPage(nextPage);
-      fetchVideos(nextPage, searchQuery);
-    }
-  };
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollHeight = document.documentElement.scrollHeight;
+      const scrollTop = document.documentElement.scrollTop;
+      const clientHeight = document.documentElement.clientHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 100 && !isLoading && hasMore) {
+        const nextPage = page + 1;
+        setPage(nextPage);
+        fetchVideos(nextPage, searchQuery);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [page, isLoading, hasMore, searchQuery, fetchVideos]);
 
   return (
-    <div className="container max-w-2xl mx-auto py-4 px-4">
+    <div className="w-full snap-y snap-mandatory overflow-y-scroll h-[calc(100vh-64px)]">
       {searchQuery && (
-        <div className="mb-4">
-          <p className="text-sm text-muted-foreground">
-            Search results for: <span className="font-semibold text-foreground">{searchQuery}</span>
+        <div className="absolute top-0 left-0 right-0 z-20 bg-black/80 backdrop-blur-sm p-3">
+          <p className="text-sm text-primary text-center">
+            Search results for: <span className="font-semibold">{searchQuery}</span>
           </p>
         </div>
       )}
 
-      <div className="space-y-6">
-        {videos.map((video) => (
-          <VideoCard key={video.id} video={video} currentUserId={userId} />
-        ))}
-      </div>
+      {videos.map((video) => (
+        <VideoCard key={video.id} video={video} currentUserId={userId} />
+      ))}
 
       {isLoading && (
-        <div className="flex justify-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="flex justify-center items-center h-screen bg-black">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
         </div>
       )}
 
       {!isLoading && videos.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">
-            {searchQuery ? "No videos found" : "No videos yet. Be the first to upload!"}
-          </p>
-        </div>
-      )}
-
-      {!isLoading && hasMore && videos.length > 0 && (
-        <div className="flex justify-center py-8">
-          <button
-            onClick={loadMore}
-            className="px-6 py-2 bg-primary text-primary-foreground rounded-full hover:opacity-90 transition-opacity"
-          >
-            Load More
-          </button>
+        <div className="flex items-center justify-center h-screen bg-black">
+          <div className="text-center">
+            <p className="text-primary text-lg">
+              {searchQuery ? "No videos found" : "No videos yet. Be the first to upload!"}
+            </p>
+          </div>
         </div>
       )}
     </div>

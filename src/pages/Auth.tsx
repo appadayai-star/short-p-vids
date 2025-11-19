@@ -64,11 +64,11 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-screen flex items-center justify-center bg-black p-4">
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center gap-2 mb-8">
           <Video className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-tiktok-pink to-tiktok-blue bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold text-primary">
             ShortPV
           </h1>
         </div>
