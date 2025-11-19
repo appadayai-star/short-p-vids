@@ -19,6 +19,8 @@ interface Video {
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
+  comments_count: number;
+  user_id: string;
   profiles: {
     username: string;
     avatar_url: string | null;
@@ -136,7 +138,12 @@ const Search = () => {
 
       if (error) throw error;
       
-      setSearchResults(data.videos || []);
+      // Deduplicate results on the client side as well
+      const uniqueVideos = (data.videos || []).filter((video: Video, index: number, self: Video[]) => 
+        index === self.findIndex((v) => v.id === video.id)
+      );
+      
+      setSearchResults(uniqueVideos);
       setUserResults(data.users || []);
     } catch (error: any) {
       toast.error("Search failed");
@@ -340,6 +347,7 @@ const Search = () => {
           }}
           initialVideoId={selectedVideoId}
           userId={user?.id || null}
+          videos={searchResults}
         />
       )}
     </div>
