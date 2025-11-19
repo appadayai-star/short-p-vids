@@ -54,10 +54,6 @@ export const BottomNav = ({ onUploadClick, isAuthenticated }: BottomNavProps) =>
           </button>
         )}
 
-        {!isAuthenticated && (
-          <div className="relative -mt-4 mx-2 w-[68px]" />
-        )}
-
         <NavLink
           to="/categories"
           className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"

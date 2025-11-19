@@ -65,19 +65,6 @@ export const ShareDrawer = ({ videoTitle, username, isOpen, onClose }: ShareDraw
         </div>
 
         <div className="p-4 space-y-2">
-          {navigator.share && (
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-3 h-14"
-              onClick={handleNativeShare}
-            >
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <Share2 className="h-5 w-5 text-primary" />
-              </div>
-              <span>Share via...</span>
-            </Button>
-          )}
-
           <Button
             variant="ghost"
             className="w-full justify-start gap-3 h-14"
@@ -87,28 +74,6 @@ export const ShareDrawer = ({ videoTitle, username, isOpen, onClose }: ShareDraw
               <Link2 className="h-5 w-5 text-primary" />
             </div>
             <span>Copy link</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-3 h-14"
-            onClick={handleShareToTwitter}
-          >
-            <div className="w-10 h-10 rounded-full bg-[#1DA1F2]/10 flex items-center justify-center">
-              <Twitter className="h-5 w-5 text-[#1DA1F2]" />
-            </div>
-            <span>Share to Twitter</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-3 h-14"
-            onClick={handleShareToFacebook}
-          >
-            <div className="w-10 h-10 rounded-full bg-[#1877F2]/10 flex items-center justify-center">
-              <Facebook className="h-5 w-5 text-[#1877F2]" />
-            </div>
-            <span>Share to Facebook</span>
           </Button>
 
           <Button
