@@ -6,6 +6,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Loader2, Upload, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+
+const CATEGORIES = [
+  { id: "beauty", name: "Beauty" },
+  { id: "real", name: "Real" },
+  { id: "public", name: "Public" },
+  { id: "homemade", name: "Homemade" },
+  { id: "pov", name: "POV" },
+  { id: "mom", name: "Mom" },
+];
 
 interface UploadModalProps {
   open: boolean;
@@ -19,6 +29,7 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [showFullPreview, setShowFullPreview] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -75,7 +86,7 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
         title: `Video ${Date.now()}`,
         description: description.trim() || null,
         video_url: publicUrl,
-        tags: null,
+        tags: selectedCategories.length > 0 ? selectedCategories : null,
       });
 
       if (dbError) throw dbError;
@@ -86,6 +97,7 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
       // Reset form
       handleRemoveVideo();
       setDescription("");
+      setSelectedCategories([]);
       
       // Reload page to show new video
       window.location.reload();
@@ -97,9 +109,17 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
     }
   };
 
+  const toggleCategory = (categoryId: string) => {
+    setSelectedCategories(prev => 
+      prev.includes(categoryId) 
+        ? prev.filter(id => id !== categoryId)
+        : [...prev, categoryId]
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg rounded-2xl">
         <DialogHeader>
           <DialogTitle>Upload Video</DialogTitle>
         </DialogHeader>
@@ -161,9 +181,34 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Add a description..."
-              className="resize-none"
+              className="resize-none rounded-xl"
               rows={3}
             />
+          </div>
+
+          {/* Categories */}
+          <div className="space-y-3">
+            <Label>Categories</Label>
+            <div className="grid grid-cols-2 gap-3">
+              {CATEGORIES.map((category) => (
+                <div
+                  key={category.id}
+                  className="flex items-center space-x-2"
+                >
+                  <Checkbox
+                    id={`category-${category.id}`}
+                    checked={selectedCategories.includes(category.id)}
+                    onCheckedChange={() => toggleCategory(category.id)}
+                  />
+                  <label
+                    htmlFor={`category-${category.id}`}
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    {category.name}
+                  </label>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Upload Button */}
