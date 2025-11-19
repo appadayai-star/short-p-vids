@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Heart, Eye, Play } from "lucide-react";
+import { Heart, MessageCircle, Share2, Pause, Play } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ interface VideoCardProps {
     video_url: string;
     views_count: number;
     likes_count: number;
+    tags: string[] | null;
     profiles: {
       username: string;
       avatar_url: string | null;
@@ -25,10 +26,11 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasViewed, setHasViewed] = useState(false);
+  const [showPauseIcon, setShowPauseIcon] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Check if user has liked this video
     const checkLikeStatus = async () => {
       const { data } = await supabase
         .from("likes")
@@ -47,18 +49,30 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting && !hasViewed) {
-            // Track view
-            trackView();
-            setHasViewed(true);
+          if (entry.isIntersecting) {
+            if (!hasViewed) {
+              trackView();
+              setHasViewed(true);
+            }
+            // Autoplay when in view
+            if (videoRef.current) {
+              videoRef.current.play();
+              setIsPlaying(true);
+            }
+          } else {
+            // Pause when out of view
+            if (videoRef.current) {
+              videoRef.current.pause();
+              setIsPlaying(false);
+            }
           }
         });
       },
       { threshold: 0.5 }
     );
 
-    if (videoRef.current) {
-      observer.observe(videoRef.current);
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
     }
 
     return () => observer.disconnect();
@@ -71,7 +85,6 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
         user_id: currentUserId,
       });
 
-      // Increment view count
       await supabase
         .from("videos")
         .update({ views_count: video.views_count + 1 })
@@ -115,59 +128,132 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
+        setIsPlaying(false);
       } else {
         videoRef.current.play();
+        setIsPlaying(true);
       }
-      setIsPlaying(!isPlaying);
+      setShowPauseIcon(true);
+      setTimeout(() => setShowPauseIcon(false), 500);
     }
   };
 
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: video.title,
+        text: `Check out this video by @${video.profiles.username}`,
+        url: window.location.href,
+      });
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      toast.success("Link copied to clipboard!");
+    }
+  };
+
+  const handleComment = () => {
+    toast.info("Comments feature coming soon!");
+  };
+
   return (
-    <div className="bg-card rounded-lg overflow-hidden border border-border">
-      <div className="relative aspect-[9/16] bg-muted">
-        <video
-          ref={videoRef}
-          src={video.video_url}
-          className="w-full h-full object-contain"
-          loop
-          playsInline
-          onClick={togglePlay}
-        />
-        {!isPlaying && (
-          <button
-            onClick={togglePlay}
-            className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors"
-          >
-            <Play className="h-16 w-16 text-white fill-white" />
-          </button>
-        )}
+    <div
+      ref={containerRef}
+      className="relative w-full h-screen snap-start snap-always bg-black"
+    >
+      <video
+        ref={videoRef}
+        src={video.video_url}
+        className="absolute inset-0 w-full h-full object-contain"
+        loop
+        playsInline
+        onClick={togglePlay}
+      />
+
+      {/* Pause/Play overlay indicator */}
+      {showPauseIcon && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="bg-black/50 rounded-full p-4 animate-scale-in">
+            {isPlaying ? (
+              <Play className="h-12 w-12 text-white fill-white" />
+            ) : (
+              <Pause className="h-12 w-12 text-white fill-white" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Right side actions (TikTok style) */}
+      <div className="absolute right-4 bottom-24 flex flex-col gap-6 z-10">
+        <button
+          onClick={toggleLike}
+          className="flex flex-col items-center gap-1"
+        >
+          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+            <Heart
+              className={cn(
+                "h-7 w-7",
+                isLiked ? "fill-primary text-primary" : "text-white"
+              )}
+            />
+          </div>
+          <span className="text-white text-xs font-semibold">{likesCount}</span>
+        </button>
+
+        <button
+          onClick={handleComment}
+          className="flex flex-col items-center gap-1"
+        >
+          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+            <MessageCircle className="h-7 w-7 text-white" />
+          </div>
+          <span className="text-white text-xs font-semibold">0</span>
+        </button>
+
+        <button
+          onClick={handleShare}
+          className="flex flex-col items-center gap-1"
+        >
+          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+            <Share2 className="h-7 w-7 text-white" />
+          </div>
+        </button>
       </div>
 
-      <div className="p-4 space-y-3">
-        <div>
-          <h3 className="font-semibold text-lg">{video.title}</h3>
-          <p className="text-sm text-muted-foreground">@{video.profiles.username}</p>
-        </div>
-
-        {video.description && (
-          <p className="text-sm text-foreground">{video.description}</p>
-        )}
-
-        <div className="flex items-center gap-4 pt-2">
-          <button
-            onClick={toggleLike}
-            className="flex items-center gap-2 text-sm hover:text-primary transition-colors"
-          >
-            <Heart
-              className={cn("h-5 w-5", isLiked && "fill-primary text-primary")}
-            />
-            <span>{likesCount}</span>
-          </button>
-
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Eye className="h-5 w-5" />
-            <span>{video.views_count}</span>
+      {/* Bottom info */}
+      <div className="absolute bottom-0 left-0 right-16 p-4 pb-20 z-10 bg-gradient-to-t from-black/80 to-transparent">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
+              {video.profiles.avatar_url ? (
+                <img
+                  src={video.profiles.avatar_url}
+                  alt={video.profiles.username}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
+                  {video.profiles.username[0].toUpperCase()}
+                </div>
+              )}
+            </div>
+            <span className="text-white font-semibold">@{video.profiles.username}</span>
           </div>
+
+          <h3 className="text-white font-semibold text-lg">{video.title}</h3>
+          
+          {video.description && (
+            <p className="text-white/90 text-sm line-clamp-2">{video.description}</p>
+          )}
+
+          {video.tags && video.tags.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {video.tags.map((tag, idx) => (
+                <span key={idx} className="text-primary text-sm font-semibold">
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

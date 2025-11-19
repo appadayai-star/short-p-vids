@@ -47,8 +47,8 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        'tiktok-pink': "hsl(var(--tiktok-pink))",
-        'tiktok-blue': "hsl(var(--tiktok-blue))",
+        'yellow-primary': "hsl(var(--yellow-primary))",
+        'yellow-dark': "hsl(var(--yellow-dark))",
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -42,7 +42,7 @@ const Feed = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-black">
       <Navbar 
         onUploadClick={() => setIsUploadOpen(true)} 
         onSearch={setSearchQuery}
