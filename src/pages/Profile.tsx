@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
+import { FollowersModal } from "@/components/FollowersModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, ArrowLeft, UserPlus, UserMinus } from "lucide-react";
@@ -17,11 +18,12 @@ const Profile = () => {
   const [myVideos, setMyVideos] = useState<any[]>([]);
   const [likedVideos, setLikedVideos] = useState<any[]>([]);
   const [savedVideos, setSavedVideos] = useState<any[]>([]);
-  const [following, setFollowing] = useState<any[]>([]);
   const [totalLikes, setTotalLikes] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [followersModalOpen, setFollowersModalOpen] = useState(false);
+  const [followersModalType, setFollowersModalType] = useState<"followers" | "following">("followers");
 
   const isOwnProfile = !userId || userId === currentUser?.id;
 
@@ -48,7 +50,6 @@ const Profile = () => {
       await fetchLikedVideos(user.id);
       await fetchSavedVideos(user.id);
     }
-    await fetchFollowing(profileId);
     setIsLoading(false);
   };
 
@@ -145,27 +146,6 @@ const Profile = () => {
       setSavedVideos(videos);
     } catch (error) {
       console.error("Error fetching saved videos:", error);
-    }
-  };
-
-  const fetchFollowing = async (profileId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("follows")
-        .select(`
-          id,
-          following_id,
-          profiles!follows_following_id_fkey (
-            username,
-            avatar_url
-          )
-        `)
-        .eq("follower_id", profileId);
-
-      if (error) throw error;
-      setFollowing(data || []);
-    } catch (error) {
-      console.error("Error fetching following:", error);
     }
   };
 
@@ -275,14 +255,26 @@ const Profile = () => {
 
         {/* Stats */}
         <div className="flex justify-center gap-8 mb-6">
-          <div className="text-center">
+          <button
+            onClick={() => {
+              setFollowersModalType("following");
+              setFollowersModalOpen(true);
+            }}
+            className="text-center hover:opacity-80 transition-opacity"
+          >
             <div className="text-white text-xl font-bold">{profile?.following_count || 0}</div>
             <div className="text-white/50 text-xs">Following</div>
-          </div>
-          <div className="text-center">
+          </button>
+          <button
+            onClick={() => {
+              setFollowersModalType("followers");
+              setFollowersModalOpen(true);
+            }}
+            className="text-center hover:opacity-80 transition-opacity"
+          >
             <div className="text-white text-xl font-bold">{profile?.followers_count || 0}</div>
             <div className="text-white/50 text-xs">Followers</div>
-          </div>
+          </button>
           <div className="text-center">
             <div className="text-white text-xl font-bold">{totalLikes}</div>
             <div className="text-white/50 text-xs">Likes</div>
@@ -313,7 +305,7 @@ const Profile = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="videos" className="w-full mt-6">
-          <TabsList className="w-full grid bg-transparent border-b border-white/10 rounded-none h-auto p-0" style={{ gridTemplateColumns: isOwnProfile ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)' }}>
+          <TabsList className="w-full grid bg-transparent border-b border-white/10 rounded-none h-auto p-0" style={{ gridTemplateColumns: isOwnProfile ? 'repeat(3, 1fr)' : 'repeat(1, 1fr)' }}>
             <TabsTrigger 
               value="videos"
               className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
@@ -336,12 +328,6 @@ const Profile = () => {
                 Saved
               </TabsTrigger>
             )}
-            <TabsTrigger 
-              value="following"
-              className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
-            >
-              Following
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="videos" className="mt-4">
@@ -432,40 +418,6 @@ const Profile = () => {
             </TabsContent>
           )}
 
-          <TabsContent value="following" className="mt-4">
-            <div className="space-y-2">
-              {following.length === 0 ? (
-                <div className="text-center py-12 text-white/50">
-                  Not following anyone yet
-                </div>
-              ) : (
-                following.map((follow: any) => (
-                  <div
-                    key={follow.id}
-                    className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
-                    onClick={() => navigate(`/profile/${follow.following_id}`)}
-                  >
-                    <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10">
-                      {follow.profiles.avatar_url ? (
-                        <img
-                          src={follow.profiles.avatar_url}
-                          alt={follow.profiles.username}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-white font-bold">
-                          {follow.profiles.username[0].toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-white font-semibold">{follow.profiles.username}</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </TabsContent>
         </Tabs>
       </div>
 
@@ -481,6 +433,15 @@ const Profile = () => {
           userId={currentUser.id}
         />
       )}
+
+      <FollowersModal
+        isOpen={followersModalOpen}
+        onClose={() => setFollowersModalOpen(false)}
+        type={followersModalType}
+        currentUserId={currentUser?.id || ""}
+        profileId={profile?.id || ""}
+        isOwnProfile={isOwnProfile}
+      />
     </div>
   );
 };
