@@ -122,7 +122,7 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
   }, [page, isLoading, hasMore, searchQuery, fetchVideos]);
 
   return (
-    <div className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scroll-smooth">
+    <div className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scroll-smooth scrollbar-hide">
       {searchQuery && (
         <div className="absolute top-0 left-0 right-0 z-20 bg-black/80 backdrop-blur-sm p-3">
           <p className="text-sm text-primary text-center">

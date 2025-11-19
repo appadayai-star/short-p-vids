@@ -193,8 +193,8 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
         </div>
       )}
 
-      {/* Right side actions (TikTok style) */}
-      <div className="absolute right-4 bottom-24 flex flex-col gap-6 z-10">
+      {/* Right side actions (TikTok style) - moved higher */}
+      <div className="absolute right-4 bottom-32 flex flex-col gap-6 z-10">
         <button
           onClick={toggleLike}
           className="flex flex-col items-center gap-1"
@@ -253,10 +253,8 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
             <span className="text-white font-semibold">@{video.profiles.username}</span>
           </div>
 
-          <h3 className="text-white font-semibold text-lg">{video.title}</h3>
-          
           {video.description && (
-            <p className="text-white/90 text-sm line-clamp-2">{video.description}</p>
+            <p className="text-white/90 text-sm">{video.description}</p>
           )}
 
           {video.tags && video.tags.length > 0 && (

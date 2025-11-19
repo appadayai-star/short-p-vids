@@ -87,11 +87,13 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    overflow: hidden;
   }
 
   html {
     @apply dark;
     scroll-behavior: smooth;
+    overflow: hidden;
   }
 
   /* TikTok-style smooth scrolling */
@@ -103,5 +105,16 @@ All colors MUST be HSL.
   .snap-start {
     scroll-snap-align: start;
     scroll-snap-stop: always;
+  }
+
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
   }
 }
