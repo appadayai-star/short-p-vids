@@ -396,28 +396,6 @@ const Profile = () => {
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                       <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                     </div>
-                    {isOwnProfile && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70 z-10"
-                            aria-label="Video options"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem
-                            onClick={(e) => handleDeleteVideo(video.id, e as any)}
-                            className="text-destructive focus:text-destructive cursor-pointer"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
                   </div>
                 ))
               )}
@@ -527,6 +505,7 @@ const Profile = () => {
           }}
           initialVideoId={selectedVideoId}
           userId={currentUser?.id || null}
+          videos={[...myVideos, ...likedVideos, ...savedVideos].find(v => v.id === selectedVideoId) ? [[...myVideos, ...likedVideos, ...savedVideos].find(v => v.id === selectedVideoId)!] : undefined}
         />
       )}
     </div>

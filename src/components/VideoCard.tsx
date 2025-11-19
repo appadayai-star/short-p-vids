@@ -1,11 +1,17 @@
 import { useState, useRef, useEffect } from "react";
-import { Heart, MessageCircle, Share2, Pause, Play, Bookmark } from "lucide-react";
+import { Heart, MessageCircle, Share2, Pause, Play, Bookmark, MoreVertical, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CommentsDrawer } from "./CommentsDrawer";
 import { ShareDrawer } from "./ShareDrawer";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface VideoCardProps {
   video: {
@@ -24,9 +30,10 @@ interface VideoCardProps {
     };
   };
   currentUserId: string | null;
+  onDelete?: (videoId: string) => void;
 }
 
-export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
+export const VideoCard = ({ video, currentUserId, onDelete }: VideoCardProps) => {
   const navigate = useNavigate();
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
@@ -221,6 +228,34 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
     setIsShareOpen(true);
   };
 
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (!currentUserId || video.user_id !== currentUserId) {
+      toast.error("You can only delete your own videos");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("videos")
+        .delete()
+        .eq("id", video.id);
+
+      if (error) throw error;
+
+      toast.success("Video deleted successfully");
+      if (onDelete) {
+        onDelete(video.id);
+      }
+    } catch (error: any) {
+      console.error("Error deleting video:", error);
+      toast.error(error.message || "Failed to delete video");
+    }
+  };
+
+  const isOwnVideo = currentUserId === video.user_id;
+
   const handleComment = () => {
     if (!currentUserId) {
       navigate("/auth");
@@ -310,6 +345,27 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
             <Share2 className="h-7 w-7 text-white" />
           </div>
         </button>
+
+        {isOwnVideo && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex flex-col items-center gap-1">
+                <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+                  <MoreVertical className="h-7 w-7 text-white" />
+                </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-background border-border z-50">
+              <DropdownMenuItem
+                onClick={handleDelete}
+                className="text-destructive focus:text-destructive cursor-pointer"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {/* Bottom info - positioned to leave space for action buttons */}
