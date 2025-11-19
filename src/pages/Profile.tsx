@@ -3,9 +3,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { BottomNav } from "@/components/BottomNav";
+import { UploadModal } from "@/components/UploadModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, Edit, ArrowLeft, UserPlus, UserMinus } from "lucide-react";
+import { LogOut, ArrowLeft, UserPlus, UserMinus } from "lucide-react";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ const Profile = () => {
   const [totalLikes, setTotalLikes] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
 
   const isOwnProfile = !userId || userId === currentUser?.id;
 
@@ -34,14 +36,14 @@ const Profile = () => {
     const profileId = userId || user?.id;
     
     if (!profileId) {
-      navigate("/auth");
+      setIsLoading(false);
       return;
     }
 
     await fetchProfile(profileId);
     await fetchUserVideos(profileId);
-    if (userId) {
-      await checkFollowStatus(user?.id, userId);
+    if (userId && user) {
+      await checkFollowStatus(user.id, userId);
     } else if (user) {
       await fetchLikedVideos(user.id);
     }
@@ -50,9 +52,7 @@ const Profile = () => {
     setIsLoading(false);
   };
 
-  const checkFollowStatus = async (currentUserId: string | undefined, targetUserId: string) => {
-    if (!currentUserId) return;
-
+  const checkFollowStatus = async (currentUserId: string, targetUserId: string) => {
     const { data } = await supabase
       .from("follows")
       .select("id")
@@ -82,7 +82,7 @@ const Profile = () => {
     try {
       const { data, error } = await supabase
         .from("videos")
-        .select("id, title, video_url, thumbnail_url, views_count, likes_count")
+        .select("id, title, video_url, views_count, likes_count")
         .eq("user_id", profileId)
         .order("created_at", { ascending: false });
 
@@ -106,7 +106,6 @@ const Profile = () => {
             id,
             title,
             video_url,
-            thumbnail_url,
             views_count,
             likes_count
           )
@@ -184,7 +183,7 @@ const Profile = () => {
 
         if (error) throw error;
         setIsFollowing(false);
-        toast.success("Unfollowed successfully");
+        toast.success("Unfollowed");
       } else {
         const { error } = await supabase
           .from("follows")
@@ -195,13 +194,13 @@ const Profile = () => {
 
         if (error) throw error;
         setIsFollowing(true);
-        toast.success("Following successfully");
+        toast.success("Following");
       }
       
       await fetchProfile(userId);
     } catch (error) {
       console.error("Error toggling follow:", error);
-      toast.error("Failed to update follow status");
+      toast.error("Failed to update");
     } finally {
       setIsFollowLoading(false);
     }
@@ -209,146 +208,157 @@ const Profile = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-white text-lg">Loading...</div>
       </div>
     );
   }
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-lg">Profile not found</div>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-white text-lg">Profile not found</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background pb-20">
-      <div className="max-w-2xl mx-auto p-4">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-2">
-            {userId && (
-              <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
+    <div className="min-h-screen bg-black pb-20">
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-white/10">
+        {userId && (
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+            <ArrowLeft className="h-6 w-6 text-white" />
+          </button>
+        )}
+        <h1 className="text-white text-xl font-bold flex-1 text-center">
+          {profile?.username}
+        </h1>
+        {isOwnProfile && (
+          <button onClick={handleLogout} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+            <LogOut className="h-6 w-6 text-white" />
+          </button>
+        )}
+        {!isOwnProfile && !userId && <div className="w-10" />}
+      </div>
+
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        {/* Profile Avatar */}
+        <div className="flex justify-center mb-4">
+          <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-white/20">
+            {profile?.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={profile.username}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-primary text-primary-foreground text-3xl font-bold">
+                {profile.username[0].toUpperCase()}
+              </div>
             )}
-            <h1 className="text-2xl font-bold">{isOwnProfile ? "Profile" : profile?.username}</h1>
           </div>
-          {isOwnProfile && (
-            <Button variant="ghost" size="icon" onClick={handleLogout}>
-              <LogOut className="h-5 w-5" />
-            </Button>
-          )}
         </div>
 
-        {/* Profile Info */}
-        <div className="space-y-6 mb-6">
-          <div className="flex items-center gap-4">
-            <div className="w-24 h-24 rounded-full bg-secondary overflow-hidden">
-              {profile?.avatar_url ? (
-                <img
-                  src={profile.avatar_url}
-                  alt={profile.username}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground text-3xl font-bold">
-                  {profile.username[0].toUpperCase()}
-                </div>
-              )}
-            </div>
-            
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold">{profile?.username}</h2>
-              {profile?.bio && (
-                <p className="text-muted-foreground mt-1">{profile.bio}</p>
-              )}
-            </div>
-          </div>
+        {/* Username */}
+        <h2 className="text-white text-center text-2xl font-bold mb-2">@{profile?.username}</h2>
+        
+        {/* Bio */}
+        {profile?.bio && (
+          <p className="text-white/70 text-center text-sm mb-6">{profile.bio}</p>
+        )}
 
-          {/* Stats */}
-          <div className="flex gap-6">
-            <div className="text-center">
-              <div className="text-2xl font-bold">{myVideos.length}</div>
-              <div className="text-sm text-muted-foreground">Videos</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold">{profile?.followers_count || 0}</div>
-              <div className="text-sm text-muted-foreground">Followers</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold">{profile?.following_count || 0}</div>
-              <div className="text-sm text-muted-foreground">Following</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold">{totalLikes}</div>
-              <div className="text-sm text-muted-foreground">Likes</div>
-            </div>
+        {/* Stats */}
+        <div className="flex justify-center gap-8 mb-6">
+          <div className="text-center">
+            <div className="text-white text-xl font-bold">{profile?.following_count || 0}</div>
+            <div className="text-white/60 text-xs">Following</div>
           </div>
-
-          {/* Action Button */}
-          {isOwnProfile ? (
-            <Button variant="outline" className="w-full">
-              <Edit className="h-4 w-4 mr-2" />
-              Edit Profile
-            </Button>
-          ) : (
-            <Button 
-              variant={isFollowing ? "outline" : "default"}
-              className="w-full"
-              onClick={handleFollowToggle}
-              disabled={isFollowLoading}
-            >
-              {isFollowing ? (
-                <>
-                  <UserMinus className="h-4 w-4 mr-2" />
-                  Unfollow
-                </>
-              ) : (
-                <>
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Follow
-                </>
-              )}
-            </Button>
-          )}
+          <div className="text-center">
+            <div className="text-white text-xl font-bold">{profile?.followers_count || 0}</div>
+            <div className="text-white/60 text-xs">Followers</div>
+          </div>
+          <div className="text-center">
+            <div className="text-white text-xl font-bold">{totalLikes}</div>
+            <div className="text-white/60 text-xs">Likes</div>
+          </div>
         </div>
+
+        {/* Action Button */}
+        {!isOwnProfile && (
+          <Button 
+            variant={isFollowing ? "outline" : "default"}
+            className="w-full mb-6"
+            onClick={handleFollowToggle}
+            disabled={isFollowLoading}
+          >
+            {isFollowing ? (
+              <>
+                <UserMinus className="h-4 w-4 mr-2" />
+                Unfollow
+              </>
+            ) : (
+              <>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Follow
+              </>
+            )}
+          </Button>
+        )}
 
         {/* Tabs */}
         <Tabs defaultValue="videos" className="w-full">
-          <TabsList className="w-full grid grid-cols-4">
-            <TabsTrigger value="videos">{isOwnProfile ? "My Videos" : "Videos"}</TabsTrigger>
-            {isOwnProfile && <TabsTrigger value="liked">Liked</TabsTrigger>}
-            <TabsTrigger value="followers">Followers</TabsTrigger>
-            <TabsTrigger value="following">Following</TabsTrigger>
+          <TabsList className="w-full grid grid-cols-4 bg-transparent border-b border-white/10 rounded-none h-auto p-0">
+            <TabsTrigger 
+              value="videos"
+              className="text-white/60 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-white rounded-none pb-3"
+            >
+              Videos
+            </TabsTrigger>
+            {isOwnProfile && (
+              <TabsTrigger 
+                value="liked"
+                className="text-white/60 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-white rounded-none pb-3"
+              >
+                Liked
+              </TabsTrigger>
+            )}
+            <TabsTrigger 
+              value="followers"
+              className="text-white/60 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-white rounded-none pb-3"
+            >
+              Followers
+            </TabsTrigger>
+            <TabsTrigger 
+              value="following"
+              className="text-white/60 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-white rounded-none pb-3"
+            >
+              Following
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="videos">
+          <TabsContent value="videos" className="mt-4">
             <div className="grid grid-cols-3 gap-1">
               {myVideos.length === 0 ? (
-                <div className="col-span-3 text-center py-8 text-muted-foreground">
+                <div className="col-span-3 text-center py-12 text-white/60">
                   No videos yet
                 </div>
               ) : (
                 myVideos.map((video) => (
                   <div
                     key={video.id}
-                    className="aspect-[9/16] bg-muted rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative group"
                     onClick={() => navigate(`/video/${video.id}`)}
                   >
-                    {video.thumbnail_url ? (
-                      <img
-                        src={video.thumbnail_url}
-                        alt={video.title}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-secondary">
-                        <span className="text-secondary-foreground">No thumbnail</span>
+                    <video
+                      src={video.video_url}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                      <div className="text-white text-xs">
+                        <div className="font-semibold">{video.views_count} views</div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 ))
               )}
@@ -356,30 +366,28 @@ const Profile = () => {
           </TabsContent>
 
           {isOwnProfile && (
-            <TabsContent value="liked">
+            <TabsContent value="liked" className="mt-4">
               <div className="grid grid-cols-3 gap-1">
                 {likedVideos.length === 0 ? (
-                  <div className="col-span-3 text-center py-8 text-muted-foreground">
+                  <div className="col-span-3 text-center py-12 text-white/60">
                     No liked videos yet
                   </div>
                 ) : (
                   likedVideos.map((video) => (
                     <div
                       key={video.id}
-                      className="aspect-[9/16] bg-muted rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                      className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative group"
                       onClick={() => navigate(`/video/${video.id}`)}
                     >
-                      {video.thumbnail_url ? (
-                        <img
-                          src={video.thumbnail_url}
-                          alt={video.title}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-secondary">
-                          <span className="text-secondary-foreground">No thumbnail</span>
+                      <video
+                        src={video.video_url}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                        <div className="text-white text-xs">
+                          <div className="font-semibold">{video.views_count} views</div>
                         </div>
-                      )}
+                      </div>
                     </div>
                   ))
                 )}
@@ -387,36 +395,34 @@ const Profile = () => {
             </TabsContent>
           )}
 
-          <TabsContent value="followers">
+          <TabsContent value="followers" className="mt-4">
             <div className="space-y-2">
               {followers.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
+                <div className="text-center py-12 text-white/60">
                   No followers yet
                 </div>
               ) : (
                 followers.map((follower: any) => (
                   <div
                     key={follower.id}
-                    className="flex items-center justify-between p-3 hover:bg-accent rounded-lg transition-colors cursor-pointer"
+                    className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
                     onClick={() => navigate(`/profile/${follower.follower_id}`)}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-secondary overflow-hidden">
-                        {follower.profiles.avatar_url ? (
-                          <img
-                            src={follower.profiles.avatar_url}
-                            alt={follower.profiles.username}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
-                            {follower.profiles.username[0].toUpperCase()}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="font-semibold">{follower.profiles.username}</p>
-                      </div>
+                    <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10">
+                      {follower.profiles.avatar_url ? (
+                        <img
+                          src={follower.profiles.avatar_url}
+                          alt={follower.profiles.username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-white font-bold">
+                          {follower.profiles.username[0].toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-white font-semibold">{follower.profiles.username}</p>
                     </div>
                   </div>
                 ))
@@ -424,36 +430,34 @@ const Profile = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="following">
+          <TabsContent value="following" className="mt-4">
             <div className="space-y-2">
               {following.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
+                <div className="text-center py-12 text-white/60">
                   Not following anyone yet
                 </div>
               ) : (
                 following.map((follow: any) => (
                   <div
                     key={follow.id}
-                    className="flex items-center justify-between p-3 hover:bg-accent rounded-lg transition-colors cursor-pointer"
+                    className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
                     onClick={() => navigate(`/profile/${follow.following_id}`)}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-secondary overflow-hidden">
-                        {follow.profiles.avatar_url ? (
-                          <img
-                            src={follow.profiles.avatar_url}
-                            alt={follow.profiles.username}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
-                            {follow.profiles.username[0].toUpperCase()}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="font-semibold">{follow.profiles.username}</p>
-                      </div>
+                    <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10">
+                      {follow.profiles.avatar_url ? (
+                        <img
+                          src={follow.profiles.avatar_url}
+                          alt={follow.profiles.username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-white font-bold">
+                          {follow.profiles.username[0].toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-white font-semibold">{follow.profiles.username}</p>
                     </div>
                   </div>
                 ))
@@ -463,7 +467,18 @@ const Profile = () => {
         </Tabs>
       </div>
 
-      <BottomNav isAuthenticated={!!currentUser} />
+      <BottomNav 
+        onUploadClick={currentUser ? () => setIsUploadOpen(true) : undefined}
+        isAuthenticated={!!currentUser}
+      />
+      
+      {currentUser && (
+        <UploadModal 
+          open={isUploadOpen} 
+          onOpenChange={setIsUploadOpen}
+          userId={currentUser.id}
+        />
+      )}
     </div>
   );
 };
