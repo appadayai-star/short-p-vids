@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { VideoCard } from "./VideoCard";
@@ -33,6 +33,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -40,8 +41,19 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         // Use provided videos (e.g., from search results)
         setVideos(providedVideos);
         const index = providedVideos.findIndex(v => v.id === initialVideoId);
-        setCurrentIndex(index >= 0 ? index : 0);
+        const targetIndex = index >= 0 ? index : 0;
+        setCurrentIndex(targetIndex);
         setIsLoading(false);
+        
+        // Scroll to the selected video after render
+        setTimeout(() => {
+          if (scrollContainerRef.current) {
+            const videoElements = scrollContainerRef.current.children;
+            if (videoElements[targetIndex]) {
+              videoElements[targetIndex].scrollIntoView({ behavior: 'instant', block: 'start' });
+            }
+          }
+        }, 100);
       } else {
         // Fetch all videos
         fetchVideos();
@@ -106,14 +118,14 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       </button>
 
       {/* Video scroll container */}
-      <div className="h-screen overflow-y-scroll snap-y snap-mandatory">
+      <div ref={scrollContainerRef} className="h-screen overflow-y-scroll snap-y snap-mandatory">
         {isLoading ? (
           <div className="flex items-center justify-center h-screen">
             <div className="text-primary text-lg">Loading...</div>
           </div>
         ) : (
           videos.map((video, index) => (
-            <div key={video.id} className={index < currentIndex - 1 ? "hidden" : ""}>
+            <div key={video.id} className="snap-start">
               <VideoCard video={video} currentUserId={userId} />
             </div>
           ))
