@@ -158,12 +158,12 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-screen snap-start snap-always bg-black"
+      className="relative w-full h-screen snap-start snap-always bg-black overflow-hidden"
     >
       <video
         ref={videoRef}
         src={video.video_url}
-        className="absolute inset-0 w-full h-full object-contain"
+        className="absolute inset-0 w-full h-full object-cover"
         loop
         playsInline
         onClick={togglePlay}
@@ -219,9 +219,9 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
         </button>
       </div>
 
-      {/* Bottom info */}
-      <div className="absolute bottom-0 left-0 right-16 p-4 pb-20 z-10 bg-gradient-to-t from-black/80 to-transparent">
-        <div className="space-y-2">
+      {/* Bottom info - positioned to leave space for action buttons */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 pb-20 z-10 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none" style={{ paddingRight: '80px' }}>
+        <div className="space-y-2 pointer-events-auto">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
               {video.profiles.avatar_url ? (

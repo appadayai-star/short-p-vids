@@ -1,4 +1,4 @@
-import { Home, Search, PlusSquare, User } from "lucide-react";
+import { Home, Search, PlusSquare, User, Grid3x3 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
 
@@ -9,10 +9,10 @@ interface BottomNavProps {
 export const BottomNav = ({ onUploadClick }: BottomNavProps) => {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-border">
-      <div className="flex items-center justify-around h-16 px-4">
+      <div className="flex items-center justify-around h-16 px-2">
         <NavLink
           to="/feed"
-          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors"
+          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
           activeClassName="text-primary"
         >
           <Home className="h-6 w-6" />
@@ -20,17 +20,17 @@ export const BottomNav = ({ onUploadClick }: BottomNavProps) => {
         </NavLink>
 
         <NavLink
-          to="/search"
-          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors"
+          to="/categories"
+          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
           activeClassName="text-primary"
         >
-          <Search className="h-6 w-6" />
-          <span className="text-xs">Search</span>
+          <Grid3x3 className="h-6 w-6" />
+          <span className="text-xs">Categories</span>
         </NavLink>
 
         <button
           onClick={onUploadClick}
-          className="relative -mt-4"
+          className="relative -mt-4 mx-2"
         >
           <div className="relative">
             <div className="absolute inset-0 bg-primary rounded-xl blur-sm"></div>
@@ -41,8 +41,17 @@ export const BottomNav = ({ onUploadClick }: BottomNavProps) => {
         </button>
 
         <NavLink
+          to="/search"
+          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
+          activeClassName="text-primary"
+        >
+          <Search className="h-6 w-6" />
+          <span className="text-xs">Search</span>
+        </NavLink>
+
+        <NavLink
           to="/profile"
-          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors"
+          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
           activeClassName="text-primary"
         >
           <User className="h-6 w-6" />

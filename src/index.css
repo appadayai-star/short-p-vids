@@ -91,5 +91,17 @@ All colors MUST be HSL.
 
   html {
     @apply dark;
+    scroll-behavior: smooth;
+  }
+
+  /* TikTok-style smooth scrolling */
+  .snap-y {
+    scroll-snap-type: y mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .snap-start {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
   }
 }
