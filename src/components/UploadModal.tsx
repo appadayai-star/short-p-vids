@@ -18,6 +18,7 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
   const [description, setDescription] = useState("");
+  const [showFullPreview, setShowFullPreview] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -107,19 +108,24 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
           {/* Video Preview or Upload Area */}
           {videoPreview ? (
             <div className="space-y-3">
-              <Label>Video Preview</Label>
-              <div className="relative max-w-[280px] mx-auto">
+              <div className="relative w-32 h-48 mx-auto cursor-pointer" onClick={() => setShowFullPreview(true)}>
                 <video
                   src={videoPreview}
-                  className="w-full aspect-[9/16] object-cover rounded-xl border-2 border-border"
-                  controls
+                  className="w-full h-full object-cover rounded-lg border-2 border-border"
                 />
+                <div className="absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-semibold text-sm">Preview</span>
+                </div>
                 <button
                   type="button"
-                  onClick={handleRemoveVideo}
-                  className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveVideo();
+                  }}
+                  className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1.5 hover:bg-destructive/90 transition-colors z-10"
+                  aria-label="Remove video"
                 >
-                  <X className="h-4 w-4 text-white" />
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -177,6 +183,29 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
           </Button>
         </form>
       </DialogContent>
+
+      {/* Full Screen Preview Modal */}
+      {showFullPreview && videoPreview && (
+        <div 
+          className="fixed inset-0 z-[200] bg-black flex items-center justify-center"
+          onClick={() => setShowFullPreview(false)}
+        >
+          <button
+            onClick={() => setShowFullPreview(false)}
+            className="absolute top-4 right-4 bg-white/10 text-white rounded-full p-2 hover:bg-white/20 transition-colors z-10"
+            aria-label="Close preview"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <video
+            src={videoPreview}
+            className="w-full h-full object-contain"
+            controls
+            autoPlay
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </Dialog>
   );
 };
