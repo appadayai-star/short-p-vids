@@ -20,6 +20,7 @@ const Categories = () => {
     { id: "public", name: "Public" },
     { id: "homemade", name: "Homemade" },
     { id: "pov", name: "POV" },
+    { id: "mom", name: "Mom" },
   ];
 
   useEffect(() => {
