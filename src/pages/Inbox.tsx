@@ -46,6 +46,7 @@ const Inbox = () => {
       setUser(session?.user ?? null);
       if (session?.user) {
         fetchNotifications(session.user.id);
+        markAllAsRead(session.user.id);
       } else {
         setIsLoading(false);
       }
@@ -81,6 +82,20 @@ const Inbox = () => {
       toast.error("Failed to load notifications");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const markAllAsRead = async (userId: string) => {
+    try {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("user_id", userId)
+        .eq("is_read", false);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error marking notifications as read:", error);
     }
   };
 
