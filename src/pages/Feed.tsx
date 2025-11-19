@@ -5,13 +5,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { VideoFeed } from "@/components/VideoFeed";
 import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const searchQuery = searchParams.get('search') || '';
+  const categoryFilter = searchParams.get('category') || '';
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -51,7 +52,18 @@ const Feed = () => {
 
   return (
     <div className="h-screen bg-black overflow-hidden flex flex-col relative">
-      {/* Search overlay */}
+      {/* Category filter indicator */}
+      {categoryFilter && (
+        <button
+          onClick={() => navigate("/")}
+          className="fixed top-4 left-4 z-50 px-4 py-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors flex items-center gap-2"
+        >
+          <span className="text-white font-medium capitalize">{categoryFilter}</span>
+          <X className="h-5 w-5 text-white" />
+        </button>
+      )}
+
+      {/* Search button */}
       <button
         onClick={() => navigate("/search")}
         className="fixed top-4 right-4 z-50 p-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors"
@@ -59,7 +71,7 @@ const Feed = () => {
         <Search className="h-6 w-6 text-white" />
       </button>
 
-      <VideoFeed key={refreshKey} searchQuery={searchQuery} userId={user?.id || null} />
+      <VideoFeed key={refreshKey} searchQuery={searchQuery} categoryFilter={categoryFilter} userId={user?.id || null} />
       <BottomNav
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!user}
