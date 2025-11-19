@@ -4,6 +4,7 @@ import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
+import { VideoModal } from "@/components/VideoModal";
 import { Input } from "@/components/ui/input";
 import { Search as SearchIcon, TrendingUp, Clock } from "lucide-react";
 import { toast } from "sonner";
@@ -36,6 +37,8 @@ const Search = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [trendingHashtags, setTrendingHashtags] = useState<string[]>([]);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -192,8 +195,8 @@ const Search = () => {
                 <button
                   key={video.id}
                   onClick={() => {
-                    // Navigate to feed with search results
-                    window.location.href = `/feed?search=${encodeURIComponent(searchQuery)}`;
+                    setSelectedVideoId(video.id);
+                    setVideoModalOpen(true);
                   }}
                   className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden relative group hover:opacity-80 transition-opacity"
                 >
@@ -286,6 +289,18 @@ const Search = () => {
           open={isUploadOpen} 
           onOpenChange={setIsUploadOpen}
           userId={user.id}
+        />
+      )}
+
+      {selectedVideoId && (
+        <VideoModal
+          isOpen={videoModalOpen}
+          onClose={() => {
+            setVideoModalOpen(false);
+            setSelectedVideoId(null);
+          }}
+          initialVideoId={selectedVideoId}
+          userId={user?.id || null}
         />
       )}
     </div>
