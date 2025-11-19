@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Send } from "lucide-react";
+import { X, Send, Heart } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
@@ -10,6 +10,7 @@ interface Comment {
   id: string;
   content: string;
   created_at: string;
+  likes_count: number;
   profiles: {
     username: string;
     avatar_url: string | null;
@@ -29,12 +30,16 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
   const [newComment, setNewComment] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (isOpen) {
       fetchComments();
+      if (currentUserId) {
+        fetchLikedComments();
+      }
     }
-  }, [isOpen, videoId]);
+  }, [isOpen, videoId, currentUserId]);
 
   const fetchComments = async () => {
     setIsLoading(true);
@@ -45,6 +50,7 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
           id,
           content,
           created_at,
+          likes_count,
           profiles (
             username,
             avatar_url
@@ -60,6 +66,77 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
       toast.error("Failed to load comments");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchLikedComments = async () => {
+    if (!currentUserId) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from("comment_likes")
+        .select("comment_id")
+        .eq("user_id", currentUserId);
+
+      if (error) throw error;
+      setLikedComments(new Set(data?.map(like => like.comment_id) || []));
+    } catch (error) {
+      console.error("Error fetching liked comments:", error);
+    }
+  };
+
+  const handleLikeComment = async (commentId: string) => {
+    if (!currentUserId) {
+      toast.error("Please login to like comments");
+      return;
+    }
+
+    const isLiked = likedComments.has(commentId);
+
+    try {
+      if (isLiked) {
+        // Unlike
+        const { error } = await supabase
+          .from("comment_likes")
+          .delete()
+          .eq("comment_id", commentId)
+          .eq("user_id", currentUserId);
+
+        if (error) throw error;
+
+        setLikedComments(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(commentId);
+          return newSet;
+        });
+
+        setComments(prev => prev.map(comment => 
+          comment.id === commentId 
+            ? { ...comment, likes_count: comment.likes_count - 1 }
+            : comment
+        ));
+      } else {
+        // Like
+        const { error } = await supabase
+          .from("comment_likes")
+          .insert({
+            comment_id: commentId,
+            user_id: currentUserId,
+          });
+
+        if (error) throw error;
+
+        setLikedComments(prev => new Set(prev).add(commentId));
+
+        setComments(prev => prev.map(comment => 
+          comment.id === commentId 
+            ? { ...comment, likes_count: comment.likes_count + 1 }
+            : comment
+        ));
+      }
+    } catch (error) {
+      console.error("Error liking comment:", error);
+      toast.error("Failed to like comment");
     }
   };
 
@@ -159,6 +236,23 @@ export const CommentsDrawer = ({ videoId, isOpen, onClose, currentUserId, onComm
                       </span>
                     </div>
                     <p className="text-sm mt-1">{comment.content}</p>
+                    <div className="flex items-center gap-4 mt-2">
+                      <button
+                        onClick={() => handleLikeComment(comment.id)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <Heart
+                          className={`h-4 w-4 ${
+                            likedComments.has(comment.id)
+                              ? "fill-red-500 text-red-500"
+                              : ""
+                          }`}
+                        />
+                        {comment.likes_count > 0 && (
+                          <span>{comment.likes_count}</span>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
