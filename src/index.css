@@ -87,13 +87,11 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
-    overflow: hidden;
   }
 
   html {
     @apply dark;
     scroll-behavior: smooth;
-    overflow: hidden;
   }
 
   /* TikTok-style smooth scrolling */
