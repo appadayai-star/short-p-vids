@@ -101,10 +101,7 @@ serve(async (req) => {
         comments_count,
         tags,
         created_at,
-        profiles:user_id (
-          username,
-          avatar_url
-        )
+        profiles!inner(username, avatar_url)
       `);
     
     // Only apply exclusion filter if there are videos to exclude
