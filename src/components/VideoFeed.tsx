@@ -24,16 +24,17 @@ interface Video {
 
 interface VideoFeedProps {
   searchQuery: string;
+  categoryFilter: string;
   userId: string | null;
 }
 
-export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
+export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  const fetchVideos = useCallback(async (pageNum: number, query: string) => {
+  const fetchVideos = useCallback(async (pageNum: number, query: string, category: string) => {
     setIsLoading(true);
     try {
       if (query.trim()) {
@@ -65,6 +66,26 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
           setVideos((prev) => [...prev, ...filtered]);
         }
         setHasMore((filtered.length || 0) === 10);
+      } else if (category.trim()) {
+        // Category filter mode - show only videos with that tag
+        const { data, error } = await supabase
+          .from("videos")
+          .select(`
+            *,
+            profiles!inner(username, avatar_url)
+          `)
+          .contains('tags', [category])
+          .order("created_at", { ascending: false })
+          .range(pageNum * 10, (pageNum + 1) * 10 - 1);
+
+        if (error) throw error;
+        
+        if (pageNum === 0) {
+          setVideos(data || []);
+        } else {
+          setVideos((prev) => [...prev, ...(data || [])]);
+        }
+        setHasMore((data?.length || 0) === 10);
       } else if (userId) {
         // For You feed - call sophisticated recommendation algorithm
         const excludeVideoIds = videos.map(v => v.id);
@@ -116,8 +137,8 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
   useEffect(() => {
     setPage(0);
     setVideos([]);
-    fetchVideos(0, searchQuery);
-  }, [searchQuery, fetchVideos]);
+    fetchVideos(0, searchQuery, categoryFilter);
+  }, [searchQuery, categoryFilter, fetchVideos]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -128,13 +149,13 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
       if (scrollTop + clientHeight >= scrollHeight - 100 && !isLoading && hasMore) {
         const nextPage = page + 1;
         setPage(nextPage);
-        fetchVideos(nextPage, searchQuery);
+        fetchVideos(nextPage, searchQuery, categoryFilter);
       }
     };
 
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [page, isLoading, hasMore, searchQuery, fetchVideos]);
+  }, [page, isLoading, hasMore, searchQuery, categoryFilter, fetchVideos]);
 
   return (
     <div className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scroll-smooth scrollbar-hide">
@@ -160,7 +181,11 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
         <div className="flex items-center justify-center h-screen bg-black">
           <div className="text-center">
             <p className="text-primary text-lg">
-              {searchQuery ? "No videos found" : "No videos yet. Be the first to upload!"}
+              {searchQuery 
+                ? "No videos found" 
+                : categoryFilter 
+                ? `No videos found in ${categoryFilter} category` 
+                : "No videos yet. Be the first to upload!"}
             </p>
           </div>
         </div>
