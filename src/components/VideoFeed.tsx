@@ -12,6 +12,7 @@ interface Video {
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
+  comments_count: number;
   tags: string[] | null;
   created_at: string;
   user_id: string;

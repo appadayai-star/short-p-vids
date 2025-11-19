@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      comments: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          user_id: string
+          video_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          user_id: string
+          video_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comments_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       follows: {
         Row: {
           created_at: string
@@ -154,6 +193,7 @@ export type Database = {
       }
       videos: {
         Row: {
+          comments_count: number
           created_at: string
           description: string | null
           duration_seconds: number | null
@@ -167,6 +207,7 @@ export type Database = {
           views_count: number
         }
         Insert: {
+          comments_count?: number
           created_at?: string
           description?: string | null
           duration_seconds?: number | null
@@ -180,6 +221,7 @@ export type Database = {
           views_count?: number
         }
         Update: {
+          comments_count?: number
           created_at?: string
           description?: string | null
           duration_seconds?: number | null
