@@ -52,7 +52,23 @@ serve(async (req) => {
 
     console.log(`Fetching recommendations for user: ${userId}, page: ${page}`);
 
-    // Step 1: Get user's category preferences
+    // Step 1: Get ALL videos the user has already viewed (like TikTok - never show again)
+    let viewedVideoIds: string[] = [];
+    if (userId) {
+      const { data: viewedVideos, error: viewsError } = await supabase
+        .from("video_views")
+        .select("video_id")
+        .eq("user_id", userId);
+
+      if (viewsError) {
+        console.error("Error fetching viewed videos:", viewsError);
+      } else {
+        viewedVideoIds = viewedVideos?.map(v => v.video_id) || [];
+        console.log(`User has viewed ${viewedVideoIds.length} videos`);
+      }
+    }
+
+    // Step 2: Get user's category preferences
     let userPreferences: CategoryPreference[] = [];
     if (userId) {
       const { data: preferences, error: prefError } = await supabase
@@ -83,8 +99,12 @@ serve(async (req) => {
       categoryScoreMap.set(pref.category, normalizedScore);
     });
 
-    // Step 2: Fetch a pool of candidate videos (larger than requested limit)
+    // Step 3: Fetch a pool of candidate videos (larger than requested limit)
     const poolSize = Math.max(limit * 10, 50); // Get 10x videos for better selection
+    
+    // Combine all video IDs to exclude: viewed videos + current session exclusions
+    const allExcludedIds = [...new Set([...viewedVideoIds, ...excludeVideoIds])];
+    console.log(`Excluding ${allExcludedIds.length} videos (${viewedVideoIds.length} viewed + ${excludeVideoIds.length} from session)`);
     
     let query = supabase
       .from("videos")
@@ -104,9 +124,9 @@ serve(async (req) => {
         profiles!inner(username, avatar_url)
       `);
     
-    // Only apply exclusion filter if there are videos to exclude
-    if (excludeVideoIds.length > 0) {
-      query = query.not("id", "in", `(${excludeVideoIds.join(",")})`);
+    // Exclude ALL previously viewed videos + current session videos (TikTok behavior)
+    if (allExcludedIds.length > 0) {
+      query = query.not("id", "in", `(${allExcludedIds.join(",")})`);
     }
     
     const { data: videos, error: videosError } = await query
