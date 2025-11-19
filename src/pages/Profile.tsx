@@ -94,7 +94,21 @@ const Profile = () => {
     try {
       const { data, error } = await supabase
         .from("videos")
-        .select("id, title, video_url, views_count, likes_count")
+        .select(`
+          id,
+          title,
+          description,
+          video_url,
+          views_count,
+          likes_count,
+          comments_count,
+          user_id,
+          tags,
+          profiles (
+            username,
+            avatar_url
+          )
+        `)
         .eq("user_id", profileId)
         .order("created_at", { ascending: false });
 
@@ -117,9 +131,17 @@ const Profile = () => {
           videos (
             id,
             title,
+            description,
             video_url,
             views_count,
-            likes_count
+            likes_count,
+            comments_count,
+            user_id,
+            tags,
+            profiles (
+              username,
+              avatar_url
+            )
           )
         `)
         .eq("user_id", userId)
@@ -143,9 +165,17 @@ const Profile = () => {
           videos (
             id,
             title,
+            description,
             video_url,
             views_count,
-            likes_count
+            likes_count,
+            comments_count,
+            user_id,
+            tags,
+            profiles (
+              username,
+              avatar_url
+            )
           )
         `)
         .eq("user_id", userId)
