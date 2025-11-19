@@ -86,7 +86,7 @@ serve(async (req) => {
     // Step 2: Fetch a pool of candidate videos (larger than requested limit)
     const poolSize = Math.max(limit * 10, 50); // Get 10x videos for better selection
     
-    const { data: videos, error: videosError } = await supabase
+    let query = supabase
       .from("videos")
       .select(`
         id,
@@ -105,8 +105,14 @@ serve(async (req) => {
           username,
           avatar_url
         )
-      `)
-      .not("id", "in", `(${excludeVideoIds.join(",") || "null"})`)
+      `);
+    
+    // Only apply exclusion filter if there are videos to exclude
+    if (excludeVideoIds.length > 0) {
+      query = query.not("id", "in", `(${excludeVideoIds.join(",")})`);
+    }
+    
+    const { data: videos, error: videosError } = await query
       .order("created_at", { ascending: false })
       .limit(poolSize);
 
