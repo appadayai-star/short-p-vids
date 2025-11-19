@@ -76,7 +76,8 @@ const Categories = () => {
 
       <BottomNav 
         onUploadClick={user ? () => setIsUploadOpen(true) : undefined} 
-        isAuthenticated={!!user} 
+        isAuthenticated={!!user}
+        onHomeRefresh={undefined}
       />
       {user && (
         <UploadModal 
