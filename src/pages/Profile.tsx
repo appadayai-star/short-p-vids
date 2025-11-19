@@ -265,22 +265,22 @@ const Profile = () => {
         
         {/* Bio */}
         {profile?.bio && (
-          <p className="text-white/70 text-center text-sm mb-6">{profile.bio}</p>
+          <p className="text-white/50 text-center text-sm mb-6">{profile.bio}</p>
         )}
 
         {/* Stats */}
         <div className="flex justify-center gap-8 mb-6">
           <div className="text-center">
             <div className="text-white text-xl font-bold">{profile?.following_count || 0}</div>
-            <div className="text-white/60 text-xs">Following</div>
+            <div className="text-white/50 text-xs">Following</div>
           </div>
           <div className="text-center">
             <div className="text-white text-xl font-bold">{profile?.followers_count || 0}</div>
-            <div className="text-white/60 text-xs">Followers</div>
+            <div className="text-white/50 text-xs">Followers</div>
           </div>
           <div className="text-center">
             <div className="text-white text-xl font-bold">{totalLikes}</div>
-            <div className="text-white/60 text-xs">Likes</div>
+            <div className="text-white/50 text-xs">Likes</div>
           </div>
         </div>
 
@@ -307,31 +307,31 @@ const Profile = () => {
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue="videos" className="w-full">
-          <TabsList className="w-full grid grid-cols-4 bg-transparent border-b border-white/10 rounded-none h-auto p-0">
+        <Tabs defaultValue="videos" className="w-full mt-6">
+          <TabsList className="w-full grid bg-transparent border-b border-white/10 rounded-none h-auto p-0" style={{ gridTemplateColumns: isOwnProfile ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)' }}>
             <TabsTrigger 
               value="videos"
-              className="text-white/60 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-white rounded-none pb-3"
+              className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
             >
               Videos
             </TabsTrigger>
             {isOwnProfile && (
               <TabsTrigger 
                 value="liked"
-                className="text-white/60 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-white rounded-none pb-3"
+                className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
               >
                 Liked
               </TabsTrigger>
             )}
             <TabsTrigger 
               value="followers"
-              className="text-white/60 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-white rounded-none pb-3"
+              className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
             >
               Followers
             </TabsTrigger>
             <TabsTrigger 
               value="following"
-              className="text-white/60 data-[state=active]:text-white data-[state=active]:border-b-2 data-[state=active]:border-white rounded-none pb-3"
+              className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
             >
               Following
             </TabsTrigger>
@@ -340,7 +340,7 @@ const Profile = () => {
           <TabsContent value="videos" className="mt-4">
             <div className="grid grid-cols-3 gap-1">
               {myVideos.length === 0 ? (
-                <div className="col-span-3 text-center py-12 text-white/60">
+                <div className="col-span-3 text-center py-12 text-white/50">
                   No videos yet
                 </div>
               ) : (
@@ -369,7 +369,7 @@ const Profile = () => {
             <TabsContent value="liked" className="mt-4">
               <div className="grid grid-cols-3 gap-1">
                 {likedVideos.length === 0 ? (
-                  <div className="col-span-3 text-center py-12 text-white/60">
+                  <div className="col-span-3 text-center py-12 text-white/50">
                     No liked videos yet
                   </div>
                 ) : (
@@ -398,7 +398,7 @@ const Profile = () => {
           <TabsContent value="followers" className="mt-4">
             <div className="space-y-2">
               {followers.length === 0 ? (
-                <div className="text-center py-12 text-white/60">
+                <div className="text-center py-12 text-white/50">
                   No followers yet
                 </div>
               ) : (
@@ -433,7 +433,7 @@ const Profile = () => {
           <TabsContent value="following" className="mt-4">
             <div className="space-y-2">
               {following.length === 0 ? (
-                <div className="text-center py-12 text-white/60">
+                <div className="text-center py-12 text-white/50">
                   Not following anyone yet
                 </div>
               ) : (
