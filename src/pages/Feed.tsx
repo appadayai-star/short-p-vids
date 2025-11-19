@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { VideoFeed } from "@/components/VideoFeed";
 import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
-import { Search, Home } from "lucide-react";
+import { Search } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 
 const Feed = () => {
@@ -50,19 +50,14 @@ const Feed = () => {
   }
 
   return (
-    <div className="h-screen bg-black overflow-hidden flex flex-col">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-black border-b border-white/10 p-4 flex items-center justify-between flex-shrink-0">
-        <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
-          <Home className="h-5 w-5 text-black" />
-        </div>
-        <button
-          onClick={() => navigate("/search")}
-          className="p-2 hover:bg-white/5 rounded-full transition-colors"
-        >
-          <Search className="h-6 w-6 text-white" />
-        </button>
-      </div>
+    <div className="h-screen bg-black overflow-hidden flex flex-col relative">
+      {/* Search overlay */}
+      <button
+        onClick={() => navigate("/search")}
+        className="fixed top-4 right-4 z-50 p-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors"
+      >
+        <Search className="h-6 w-6 text-white" />
+      </button>
 
       <VideoFeed key={refreshKey} searchQuery={searchQuery} userId={user?.id || null} />
       <BottomNav
