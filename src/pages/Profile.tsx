@@ -16,7 +16,7 @@ const Profile = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [myVideos, setMyVideos] = useState<any[]>([]);
   const [likedVideos, setLikedVideos] = useState<any[]>([]);
-  const [followers, setFollowers] = useState<any[]>([]);
+  const [savedVideos, setSavedVideos] = useState<any[]>([]);
   const [following, setFollowing] = useState<any[]>([]);
   const [totalLikes, setTotalLikes] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -46,8 +46,8 @@ const Profile = () => {
       await checkFollowStatus(user.id, userId);
     } else if (user) {
       await fetchLikedVideos(user.id);
+      await fetchSavedVideos(user.id);
     }
-    await fetchFollowers(profileId);
     await fetchFollowing(profileId);
     setIsLoading(false);
   };
@@ -122,24 +122,29 @@ const Profile = () => {
     }
   };
 
-  const fetchFollowers = async (profileId: string) => {
+  const fetchSavedVideos = async (userId: string) => {
     try {
       const { data, error } = await supabase
-        .from("follows")
+        .from("saved_videos")
         .select(`
-          id,
-          follower_id,
-          profiles!follows_follower_id_fkey (
-            username,
-            avatar_url
+          video_id,
+          videos (
+            id,
+            title,
+            video_url,
+            views_count,
+            likes_count
           )
         `)
-        .eq("following_id", profileId);
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setFollowers(data || []);
+      
+      const videos = data?.map((save: any) => save.videos).filter(Boolean) || [];
+      setSavedVideos(videos);
     } catch (error) {
-      console.error("Error fetching followers:", error);
+      console.error("Error fetching saved videos:", error);
     }
   };
 
@@ -308,7 +313,7 @@ const Profile = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="videos" className="w-full mt-6">
-          <TabsList className="w-full grid bg-transparent border-b border-white/10 rounded-none h-auto p-0" style={{ gridTemplateColumns: isOwnProfile ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)' }}>
+          <TabsList className="w-full grid bg-transparent border-b border-white/10 rounded-none h-auto p-0" style={{ gridTemplateColumns: isOwnProfile ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)' }}>
             <TabsTrigger 
               value="videos"
               className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
@@ -323,12 +328,14 @@ const Profile = () => {
                 Liked
               </TabsTrigger>
             )}
-            <TabsTrigger 
-              value="followers"
-              className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
-            >
-              Followers
-            </TabsTrigger>
+            {isOwnProfile && (
+              <TabsTrigger 
+                value="saved"
+                className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
+              >
+                Saved
+              </TabsTrigger>
+            )}
             <TabsTrigger 
               value="following"
               className="text-white/50 data-[state=active]:text-white data-[state=active]:shadow-none data-[state=active]:bg-transparent rounded-none pb-3 border-b-2 border-transparent data-[state=active]:border-white font-semibold transition-all"
@@ -395,40 +402,35 @@ const Profile = () => {
             </TabsContent>
           )}
 
-          <TabsContent value="followers" className="mt-4">
-            <div className="space-y-2">
-              {followers.length === 0 ? (
-                <div className="text-center py-12 text-white/50">
-                  No followers yet
-                </div>
-              ) : (
-                followers.map((follower: any) => (
-                  <div
-                    key={follower.id}
-                    className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
-                    onClick={() => navigate(`/profile/${follower.follower_id}`)}
-                  >
-                    <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10">
-                      {follower.profiles.avatar_url ? (
-                        <img
-                          src={follower.profiles.avatar_url}
-                          alt={follower.profiles.username}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-white font-bold">
-                          {follower.profiles.username[0].toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-white font-semibold">{follower.profiles.username}</p>
-                    </div>
+          {isOwnProfile && (
+            <TabsContent value="saved" className="mt-4">
+              <div className="grid grid-cols-3 gap-1">
+                {savedVideos.length === 0 ? (
+                  <div className="col-span-3 text-center py-12 text-white/50">
+                    No saved videos yet
                   </div>
-                ))
-              )}
-            </div>
-          </TabsContent>
+                ) : (
+                  savedVideos.map((video) => (
+                    <div
+                      key={video.id}
+                      className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative group"
+                      onClick={() => navigate(`/video/${video.id}`)}
+                    >
+                      <video
+                        src={video.video_url}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                        <div className="text-white text-xs">
+                          <div className="font-semibold">{video.views_count} views</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          )}
 
           <TabsContent value="following" className="mt-4">
             <div className="space-y-2">
