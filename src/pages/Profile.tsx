@@ -8,8 +8,14 @@ import { FollowersModal } from "@/components/FollowersModal";
 import { VideoModal } from "@/components/VideoModal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, Trash2 } from "lucide-react";
+import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, MoreVertical, Trash2 } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -391,13 +397,26 @@ const Profile = () => {
                       <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                     </div>
                     {isOwnProfile && (
-                      <button
-                        onClick={(e) => handleDeleteVideo(video.id, e)}
-                        className="absolute top-2 right-2 bg-destructive/90 text-destructive-foreground p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive z-10"
-                        aria-label="Delete video"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70 z-10"
+                            aria-label="Video options"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          <DropdownMenuItem
+                            onClick={(e) => handleDeleteVideo(video.id, e as any)}
+                            className="text-destructive focus:text-destructive cursor-pointer"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     )}
                   </div>
                 ))
