@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Heart, MessageCircle, Share2, Pause, Play } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { CommentsDrawer } from "./CommentsDrawer";
+import { ShareDrawer } from "./ShareDrawer";
 
 interface VideoCardProps {
   video: {
@@ -12,6 +15,8 @@ interface VideoCardProps {
     video_url: string;
     views_count: number;
     likes_count: number;
+    comments_count: number;
+    user_id: string;
     tags: string[] | null;
     profiles: {
       username: string;
@@ -22,11 +27,15 @@ interface VideoCardProps {
 }
 
 export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
+  const navigate = useNavigate();
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
+  const [commentsCount, setCommentsCount] = useState(video.comments_count);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasViewed, setHasViewed] = useState(false);
   const [showPauseIcon, setShowPauseIcon] = useState(false);
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -146,20 +155,15 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
   };
 
   const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: video.title,
-        text: `Check out this video by @${video.profiles.username}`,
-        url: window.location.href,
-      });
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast.success("Link copied to clipboard!");
-    }
+    setIsShareOpen(true);
   };
 
   const handleComment = () => {
-    toast.info("Comments feature coming soon!");
+    setIsCommentsOpen(true);
+  };
+
+  const handleProfileClick = () => {
+    navigate(`/profile/${video.user_id}`);
   };
 
   return (
@@ -213,7 +217,7 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
           <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
             <MessageCircle className="h-7 w-7 text-white" />
           </div>
-          <span className="text-white text-xs font-semibold">0</span>
+          <span className="text-white text-xs font-semibold">{commentsCount}</span>
         </button>
 
         <button
@@ -229,7 +233,10 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
       {/* Bottom info - positioned to leave space for action buttons */}
       <div className="absolute bottom-0 left-0 right-0 p-4 pb-20 z-10 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none" style={{ paddingRight: '80px' }}>
         <div className="space-y-2 pointer-events-auto">
-          <div className="flex items-center gap-2">
+          <div 
+            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit"
+            onClick={handleProfileClick}
+          >
             <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
               {video.profiles.avatar_url ? (
                 <img
@@ -263,6 +270,22 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
           )}
         </div>
       </div>
+
+      {/* Comments drawer */}
+      <CommentsDrawer
+        videoId={video.id}
+        isOpen={isCommentsOpen}
+        onClose={() => setIsCommentsOpen(false)}
+        currentUserId={currentUserId}
+      />
+
+      {/* Share drawer */}
+      <ShareDrawer
+        videoTitle={video.title}
+        username={video.profiles.username}
+        isOpen={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
+      />
     </div>
   );
 };
