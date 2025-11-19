@@ -23,7 +23,7 @@ interface Video {
 
 interface VideoFeedProps {
   searchQuery: string;
-  userId: string;
+  userId: string | null;
 }
 
 export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
@@ -55,8 +55,8 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
           setVideos((prev) => [...prev, ...(data || [])]);
         }
         setHasMore((data?.length || 0) === 10);
-      } else {
-        // For You feed - call recommendation function
+      } else if (userId) {
+        // For You feed - call recommendation function only if logged in
         const { data, error } = await supabase.functions.invoke("get-for-you-feed", {
           body: { userId, page: pageNum, limit: 10 },
         });
@@ -69,6 +69,25 @@ export const VideoFeed = ({ searchQuery, userId }: VideoFeedProps) => {
           setVideos((prev) => [...prev, ...(data.videos || [])]);
         }
         setHasMore((data.videos?.length || 0) === 10);
+      } else {
+        // Not logged in - show all recent videos
+        const { data, error } = await supabase
+          .from("videos")
+          .select(`
+            *,
+            profiles!inner(username, avatar_url)
+          `)
+          .order("created_at", { ascending: false })
+          .range(pageNum * 10, (pageNum + 1) * 10 - 1);
+
+        if (error) throw error;
+        
+        if (pageNum === 0) {
+          setVideos(data || []);
+        } else {
+          setVideos((prev) => [...prev, ...(data || [])]);
+        }
+        setHasMore((data?.length || 0) === 10);
       }
     } catch (error: any) {
       toast.error("Failed to load videos");

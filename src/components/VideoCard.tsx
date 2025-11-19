@@ -18,7 +18,7 @@ interface VideoCardProps {
       avatar_url: string | null;
     };
   };
-  currentUserId: string;
+  currentUserId: string | null;
 }
 
 export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
@@ -32,6 +32,8 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
 
   useEffect(() => {
     const checkLikeStatus = async () => {
+      if (!currentUserId) return;
+      
       const { data } = await supabase
         .from("likes")
         .select("id")
@@ -95,6 +97,11 @@ export const VideoCard = ({ video, currentUserId }: VideoCardProps) => {
   };
 
   const toggleLike = async () => {
+    if (!currentUserId) {
+      toast.error("Please login to like videos");
+      return;
+    }
+
     try {
       if (isLiked) {
         const { error } = await supabase
