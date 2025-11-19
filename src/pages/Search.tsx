@@ -30,6 +30,7 @@ const Search = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const unreadCount = useUnreadNotifications(user?.id || null);
+  const [inputValue, setInputValue] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Video[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -101,13 +102,14 @@ const Search = () => {
   const handleSearch = async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
+      setSearchQuery("");
       return;
     }
 
     setIsSearching(true);
     setSearchQuery(query);
 
-    // Save to recent searches
+    // Save to recent searches only on executed searches
     const updated = [query, ...recentSearches.filter((s) => s !== query)].slice(0, 10);
     setRecentSearches(updated);
     localStorage.setItem("recentSearches", JSON.stringify(updated));
@@ -150,6 +152,12 @@ const Search = () => {
     }
   };
 
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      handleSearch(inputValue);
+    }
+  };
+
   const clearRecentSearches = () => {
     setRecentSearches([]);
     localStorage.removeItem("recentSearches");
@@ -162,11 +170,12 @@ const Search = () => {
         <div className="relative">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-white/40" />
           <Input
-            type="search"
+            type="text"
             placeholder="Search videos, users, hashtags..."
             className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-white/40 h-12 focus:border-primary"
-            value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyPress={handleKeyPress}
           />
         </div>
       </div>
@@ -252,7 +261,10 @@ const Search = () => {
               {recentSearches.map((search, idx) => (
                 <button
                   key={idx}
-                  onClick={() => handleSearch(search)}
+                  onClick={() => {
+                    setInputValue(search);
+                    handleSearch(search);
+                  }}
                   className="w-full text-left p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors text-white border border-white/10"
                 >
                   {search}
