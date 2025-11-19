@@ -292,24 +292,69 @@ export type Database = {
           },
         ]
       }
+      user_category_preferences: {
+        Row: {
+          category: string
+          comment_count: number | null
+          created_at: string
+          id: string
+          interaction_score: number | null
+          last_interaction: string | null
+          like_count: number | null
+          share_count: number | null
+          updated_at: string
+          user_id: string
+          view_count: number | null
+        }
+        Insert: {
+          category: string
+          comment_count?: number | null
+          created_at?: string
+          id?: string
+          interaction_score?: number | null
+          last_interaction?: string | null
+          like_count?: number | null
+          share_count?: number | null
+          updated_at?: string
+          user_id: string
+          view_count?: number | null
+        }
+        Update: {
+          category?: string
+          comment_count?: number | null
+          created_at?: string
+          id?: string
+          interaction_score?: number | null
+          last_interaction?: string | null
+          like_count?: number | null
+          share_count?: number | null
+          updated_at?: string
+          user_id?: string
+          view_count?: number | null
+        }
+        Relationships: []
+      }
       video_views: {
         Row: {
           id: string
           user_id: string | null
           video_id: string
           viewed_at: string
+          watch_duration_seconds: number | null
         }
         Insert: {
           id?: string
           user_id?: string | null
           video_id: string
           viewed_at?: string
+          watch_duration_seconds?: number | null
         }
         Update: {
           id?: string
           user_id?: string | null
           video_id?: string
           viewed_at?: string
+          watch_duration_seconds?: number | null
         }
         Relationships: [
           {
