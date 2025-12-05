@@ -46,25 +46,30 @@ const Profile = () => {
   }, [userId]);
 
   const checkUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    setCurrentUser(user);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
 
-    const profileId = userId || user?.id;
-    
-    if (!profileId) {
+      const profileId = userId || user?.id;
+      
+      if (!profileId) {
+        setIsLoading(false);
+        return;
+      }
+
+      await fetchProfile(profileId);
+      await fetchUserVideos(profileId);
+      if (userId && user) {
+        await checkFollowStatus(user.id, userId);
+      } else if (user) {
+        await fetchLikedVideos(user.id);
+        await fetchSavedVideos(user.id);
+      }
+    } catch (error) {
+      console.error("Error loading profile:", error);
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    await fetchProfile(profileId);
-    await fetchUserVideos(profileId);
-    if (userId && user) {
-      await checkFollowStatus(user.id, userId);
-    } else if (user) {
-      await fetchLikedVideos(user.id);
-      await fetchSavedVideos(user.id);
-    }
-    setIsLoading(false);
   };
 
   const checkFollowStatus = async (currentUserId: string, targetUserId: string) => {
