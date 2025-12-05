@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Upload, X } from "lucide-react";
+import { Loader2, Upload, X, Check } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 
 const CATEGORIES = [
   { id: "beauty", name: "Beauty" },
@@ -23,20 +24,120 @@ interface UploadModalProps {
   userId: string;
 }
 
+type UploadStage = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
+
 export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) => {
-  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStage, setUploadStage] = useState<UploadStage>('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [showFullPreview, setShowFullPreview] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+
+  // Simulate upload progress
+  useEffect(() => {
+    if (uploadStage === 'uploading') {
+      const interval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 45) {
+            clearInterval(interval);
+            return 45;
+          }
+          return prev + 5;
+        });
+      }, 200);
+      return () => clearInterval(interval);
+    } else if (uploadStage === 'processing') {
+      const interval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 95) {
+            clearInterval(interval);
+            return 95;
+          }
+          return prev + 2;
+        });
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, [uploadStage]);
+
+  // Poll for processing status
+  useEffect(() => {
+    if (!currentVideoId || uploadStage !== 'processing') return;
+
+    const pollInterval = setInterval(async () => {
+      const { data, error } = await supabase
+        .from('videos')
+        .select('processing_status, optimized_video_url')
+        .eq('id', currentVideoId)
+        .single();
+
+      if (error) {
+        console.error('Poll error:', error);
+        return;
+      }
+
+      if (data?.processing_status === 'completed') {
+        setUploadProgress(100);
+        setUploadStage('complete');
+        clearInterval(pollInterval);
+        
+        toast.success("Video uploaded successfully!");
+        
+        // Close modal after short delay
+        setTimeout(() => {
+          resetAndClose();
+          window.location.reload();
+        }, 1500);
+      } else if (data?.processing_status === 'failed') {
+        setUploadStage('error');
+        clearInterval(pollInterval);
+        toast.error("Video processing failed. Your video was uploaded but may not be optimized.");
+        
+        setTimeout(() => {
+          resetAndClose();
+          window.location.reload();
+        }, 2000);
+      }
+    }, 2000);
+
+    // Timeout after 2 minutes
+    const timeout = setTimeout(() => {
+      clearInterval(pollInterval);
+      if (uploadStage === 'processing') {
+        setUploadProgress(100);
+        setUploadStage('complete');
+        toast.success("Video uploaded! Processing continues in background.");
+        setTimeout(() => {
+          resetAndClose();
+          window.location.reload();
+        }, 1500);
+      }
+    }, 120000);
+
+    return () => {
+      clearInterval(pollInterval);
+      clearTimeout(timeout);
+    };
+  }, [currentVideoId, uploadStage]);
+
+  const resetAndClose = () => {
+    setUploadStage('idle');
+    setUploadProgress(0);
+    setCurrentVideoId(null);
+    handleRemoveVideo();
+    setDescription("");
+    setSelectedCategories([]);
+    onOpenChange(false);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.type.startsWith("video/")) {
         setVideoFile(file);
-        // Create preview URL
         const previewUrl = URL.createObjectURL(file);
         setVideoPreview(previewUrl);
       } else {
@@ -61,7 +162,8 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
       return;
     }
 
-    setIsUploading(true);
+    setUploadStage('uploading');
+    setUploadProgress(0);
 
     try {
       // Upload video file to storage
@@ -75,12 +177,14 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
 
       if (uploadError) throw uploadError;
 
+      setUploadProgress(50);
+
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from("videos")
         .getPublicUrl(filePath);
 
-      // Create video record with auto-generated title
+      // Create video record
       const { data: videoData, error: dbError } = await supabase.from("videos").insert({
         user_id: userId,
         title: `Video ${Date.now()}`,
@@ -92,33 +196,34 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
 
       if (dbError) throw dbError;
 
-      toast.success("Video uploaded! Processing for optimal playback...");
-      
-      // Trigger video processing in background
-      supabase.functions.invoke('process-video', {
+      setCurrentVideoId(videoData.id);
+      setUploadStage('processing');
+
+      // Trigger video processing
+      const { error: processError } = await supabase.functions.invoke('process-video', {
         body: { videoUrl: publicUrl, videoId: videoData.id }
-      }).then(({ data, error }) => {
-        if (error) {
-          console.error('Video processing error:', error);
-        } else {
-          console.log('Video processed:', data);
-        }
       });
 
-      onOpenChange(false);
-      
-      // Reset form
-      handleRemoveVideo();
-      setDescription("");
-      setSelectedCategories([]);
-      
-      // Reload page to show new video
-      window.location.reload();
+      if (processError) {
+        console.error('Video processing error:', processError);
+        // Processing failed but video is uploaded - complete anyway
+        setUploadProgress(100);
+        setUploadStage('complete');
+        toast.success("Video uploaded! (Processing skipped)");
+        setTimeout(() => {
+          resetAndClose();
+          window.location.reload();
+        }, 1500);
+      }
     } catch (error: any) {
+      setUploadStage('error');
       toast.error(error.message || "Failed to upload video");
       console.error("Upload error:", error);
-    } finally {
-      setIsUploading(false);
+      
+      setTimeout(() => {
+        setUploadStage('idle');
+        setUploadProgress(0);
+      }, 2000);
     }
   };
 
@@ -130,18 +235,66 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
     );
   };
 
+  const getButtonContent = () => {
+    switch (uploadStage) {
+      case 'uploading':
+        return (
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Uploading... {uploadProgress}%</span>
+          </div>
+        );
+      case 'processing':
+        return (
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Processing... {uploadProgress}%</span>
+          </div>
+        );
+      case 'complete':
+        return (
+          <div className="flex items-center gap-2">
+            <Check className="h-4 w-4" />
+            <span>Complete!</span>
+          </div>
+        );
+      case 'error':
+        return <span>Error - Try Again</span>;
+      default:
+        return "Upload Video";
+    }
+  };
+
+  const isUploading = uploadStage === 'uploading' || uploadStage === 'processing';
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(newOpen) => {
+      if (!isUploading) {
+        onOpenChange(newOpen);
+      }
+    }}>
       <DialogContent className="sm:max-w-lg rounded-2xl">
         <DialogHeader>
           <DialogTitle>Upload Video</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Progress Bar */}
+          {(uploadStage === 'uploading' || uploadStage === 'processing' || uploadStage === 'complete') && (
+            <div className="space-y-2">
+              <Progress value={uploadProgress} className="h-2" />
+              <p className="text-xs text-muted-foreground text-center">
+                {uploadStage === 'uploading' && "Uploading your video..."}
+                {uploadStage === 'processing' && "Optimizing for fast playback..."}
+                {uploadStage === 'complete' && "Done!"}
+              </p>
+            </div>
+          )}
+
           {/* Video Preview or Upload Area */}
           {videoPreview ? (
             <div className="space-y-3">
-              <div className="relative w-32 h-48 mx-auto cursor-pointer" onClick={() => setShowFullPreview(true)}>
+              <div className="relative w-32 h-48 mx-auto cursor-pointer" onClick={() => !isUploading && setShowFullPreview(true)}>
                 <video
                   src={videoPreview}
                   className="w-full h-full object-cover rounded-lg border-2 border-border"
@@ -149,17 +302,19 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
                 <div className="absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center">
                   <span className="text-white font-semibold text-sm">Preview</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRemoveVideo();
-                  }}
-                  className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1.5 hover:bg-destructive/90 transition-colors z-10"
-                  aria-label="Remove video"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                {!isUploading && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveVideo();
+                    }}
+                    className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1.5 hover:bg-destructive/90 transition-colors z-10"
+                    aria-label="Remove video"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -172,6 +327,7 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
                   accept="video/*"
                   onChange={handleFileChange}
                   className="hidden"
+                  disabled={isUploading}
                 />
                 <label htmlFor="video-file" className="cursor-pointer">
                   <Upload className="h-12 w-12 mx-auto mb-3 text-muted-foreground" />
@@ -196,6 +352,7 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
               placeholder="Add a description..."
               className="resize-none rounded-xl"
               rows={3}
+              disabled={isUploading}
             />
           </div>
 
@@ -212,6 +369,7 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
                     id={`category-${category.id}`}
                     checked={selectedCategories.includes(category.id)}
                     onCheckedChange={() => toggleCategory(category.id)}
+                    disabled={isUploading}
                   />
                   <label
                     htmlFor={`category-${category.id}`}
@@ -228,16 +386,9 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
           <Button
             type="submit"
             className="w-full"
-            disabled={isUploading || !videoFile}
+            disabled={isUploading || !videoFile || uploadStage === 'complete'}
           >
-            {isUploading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Uploading...
-              </>
-            ) : (
-              "Upload Video"
-            )}
+            {getButtonContent()}
           </Button>
         </form>
       </DialogContent>
