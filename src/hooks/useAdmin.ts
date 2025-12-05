@@ -56,6 +56,7 @@ export const useAdmin = () => {
         } else {
           setIsAdmin(false);
         }
+        setLoading(false);
       }
     );
 
