@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Home, PlusSquare, User, LogIn, Inbox, Grid3x3 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -12,6 +13,29 @@ interface BottomNavProps {
 export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh, unreadCount = 0 }: BottomNavProps) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    // Detect virtual keyboard on mobile by checking if visual viewport is smaller than window
+    const handleResize = () => {
+      if (window.visualViewport) {
+        const isOpen = window.visualViewport.height < window.innerHeight * 0.75;
+        setIsKeyboardOpen(isOpen);
+      }
+    };
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleResize);
+      window.visualViewport.addEventListener('scroll', handleResize);
+    }
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleResize);
+        window.visualViewport.removeEventListener('scroll', handleResize);
+      }
+    };
+  }, []);
 
   const handleHomeClick = (e: React.MouseEvent) => {
     if (location.pathname === "/feed" || location.pathname === "/") {
@@ -19,6 +43,11 @@ export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh, unrea
       onHomeRefresh?.();
     }
   };
+
+  // Hide nav when keyboard is open on mobile
+  if (isKeyboardOpen) {
+    return null;
+  }
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-border">
