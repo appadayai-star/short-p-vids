@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Heart, MessageCircle, Share2, Pause, Play, Bookmark, MoreVertical, Trash2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,7 @@ interface VideoCardProps {
 
 export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoCardProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [commentsCount, setCommentsCount] = useState(video.comments_count);
@@ -265,6 +266,13 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
     setIsCommentsOpen(true);
   };
 
+  const handleCategoryClick = (tag: string) => {
+    // Close any modal first
+    onNavigate?.();
+    // Use window.location for reliable navigation with query params
+    window.location.href = `/?category=${encodeURIComponent(tag)}`;
+  };
+
   const handleProfileClick = () => {
     navigate(`/profile/${video.user_id}`);
   };
@@ -403,8 +411,7 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
                   key={idx}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onNavigate?.();
-                    navigate(`/?category=${tag}`);
+                    handleCategoryClick(tag);
                   }}
                   className="text-primary text-sm font-semibold hover:underline cursor-pointer"
                 >
