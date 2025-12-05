@@ -34,7 +34,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  const fetchVideos = useCallback(async (pageNum: number, query: string, category: string) => {
+  const fetchVideos = useCallback(async (pageNum: number, query: string, category: string, existingVideoIds: string[] = []) => {
     setIsLoading(true);
     try {
       if (query.trim()) {
@@ -87,14 +87,13 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         }
         setHasMore((data?.length || 0) === 10);
       } else if (userId) {
-        // For You feed - call sophisticated recommendation algorithm
-        const excludeVideoIds = videos.map(v => v.id);
+        // For You feed - call sophisticated recommendation algorithm (logged in users only)
         const { data, error } = await supabase.functions.invoke("get-recommended-feed", {
           body: { 
             userId, 
             page: pageNum, 
             limit: 10,
-            excludeVideoIds 
+            excludeVideoIds: existingVideoIds
           },
         });
 
@@ -132,13 +131,13 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     } finally {
       setIsLoading(false);
     }
-  }, [userId]);
+  }, []);
 
   useEffect(() => {
     setPage(0);
     setVideos([]);
-    fetchVideos(0, searchQuery, categoryFilter);
-  }, [searchQuery, categoryFilter, fetchVideos]);
+    fetchVideos(0, searchQuery, categoryFilter, []);
+  }, [searchQuery, categoryFilter, userId]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -147,15 +146,17 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       const clientHeight = document.documentElement.clientHeight;
 
       if (scrollTop + clientHeight >= scrollHeight - 100 && !isLoading && hasMore) {
-        const nextPage = page + 1;
-        setPage(nextPage);
-        fetchVideos(nextPage, searchQuery, categoryFilter);
+        setPage(prev => {
+          const nextPage = prev + 1;
+          fetchVideos(nextPage, searchQuery, categoryFilter, videos.map(v => v.id));
+          return nextPage;
+        });
       }
     };
 
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [page, isLoading, hasMore, searchQuery, categoryFilter, fetchVideos]);
+  }, [isLoading, hasMore, searchQuery, categoryFilter, videos, userId]);
 
   return (
     <div className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scroll-smooth scrollbar-hide">
