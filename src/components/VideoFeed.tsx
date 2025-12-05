@@ -36,24 +36,64 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setIsLoading(true);
     
     try {
-      // Use recommendation algorithm for main feed (no search/category)
-      if (!searchQuery && !categoryFilter) {
+      // For search/category, use direct query
+      if (searchQuery || categoryFilter) {
+        let query = supabase
+          .from("videos")
+          .select(`
+            id, title, description, video_url, optimized_video_url, thumbnail_url,
+            views_count, likes_count, comments_count, tags, user_id,
+            profiles(username, avatar_url)
+          `)
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (categoryFilter) {
+          query = query.contains('tags', [categoryFilter]);
+        }
+
+        if (searchQuery) {
+          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        let filtered = data || [];
+        
+        // Additional client-side filtering for search
+        if (searchQuery && data) {
+          const q = searchQuery.toLowerCase();
+          filtered = data.filter(v => 
+            v.title?.toLowerCase().includes(q) ||
+            v.description?.toLowerCase().includes(q) ||
+            v.profiles?.username?.toLowerCase().includes(q) ||
+            v.tags?.some(t => t.toLowerCase().includes(q))
+          );
+        }
+
+        setVideos(filtered);
+        setIsLoading(false);
+        return;
+      }
+
+      // For main feed, try recommendation algorithm
+      try {
         const { data, error } = await supabase.functions.invoke('get-recommended-feed', {
           body: { userId, page: 0, limit: 20 }
         });
 
-        if (error) throw error;
-        
-        if (data?.videos?.length > 0) {
+        if (!error && data?.videos?.length > 0) {
           setVideos(data.videos);
           setIsLoading(false);
           return;
         }
-        // Fall through to direct query if no results
+      } catch (funcError) {
+        console.log("Edge function failed, using fallback:", funcError);
       }
 
-      // Direct query for search/category or as fallback
-      let query = supabase
+      // Fallback: direct database query
+      const { data: fallbackData, error: fallbackError } = await supabase
         .from("videos")
         .select(`
           id, title, description, video_url, optimized_video_url, thumbnail_url,
@@ -63,46 +103,11 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         .order("created_at", { ascending: false })
         .limit(20);
 
-      if (categoryFilter) {
-        query = query.contains('tags', [categoryFilter]);
-      }
-
-      if (searchQuery) {
-        query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      let filtered = data || [];
-      
-      // Additional client-side filtering for search
-      if (searchQuery && data) {
-        const q = searchQuery.toLowerCase();
-        filtered = data.filter(v => 
-          v.title?.toLowerCase().includes(q) ||
-          v.description?.toLowerCase().includes(q) ||
-          v.profiles?.username?.toLowerCase().includes(q) ||
-          v.tags?.some(t => t.toLowerCase().includes(q))
-        );
-      }
-
-      setVideos(filtered);
+      if (fallbackError) throw fallbackError;
+      setVideos(fallbackData || []);
     } catch (error) {
       console.error("Error fetching videos:", error);
-      
-      // Final fallback - simple query
-      const { data } = await supabase
-        .from("videos")
-        .select(`
-          id, title, description, video_url, optimized_video_url, thumbnail_url,
-          views_count, likes_count, comments_count, tags, user_id,
-          profiles(username, avatar_url)
-        `)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      
-      setVideos(data || []);
+      setVideos([]);
     } finally {
       setIsLoading(false);
     }
