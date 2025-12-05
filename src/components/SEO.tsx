@@ -11,7 +11,7 @@ interface SEOProps {
 
 const defaults = {
   siteName: "ShortPornVids",
-  title: "ShortPornVids – Endless Short-Form Porn Videos",
+  title: "ShortPornVids – Endless Short-Form Videos",
   description:
     "ShortPornVids is a modern short-form video platform offering fast, personalized content discovery. Scroll instantly through an endless feed of creator-driven clips optimized for mobile viewing.",
   image: "/og-image.png",
