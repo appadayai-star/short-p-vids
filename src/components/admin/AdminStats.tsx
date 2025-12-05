@@ -54,30 +54,20 @@ export const AdminStats = () => {
       setError(null);
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("Not authenticated");
-
         const startDate = dateRange.from.toISOString();
         const endDate = dateRange.to.toISOString();
 
-        // Fetch stats with query params
-        const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-stats`);
-        url.searchParams.set("startDate", startDate);
-        url.searchParams.set("endDate", endDate);
+        const queryString = new URLSearchParams({
+          startDate,
+          endDate,
+        }).toString();
 
-        const res = await fetch(url.toString(), {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
+        const { data, error: fnError } = await supabase.functions.invoke(`admin-stats?${queryString}`, {
+          method: 'GET',
         });
 
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.error || "Failed to fetch stats");
-        }
+        if (fnError) throw fnError;
 
-        const data = await res.json();
         setStats(data);
       } catch (err) {
         console.error("Error fetching stats:", err);
