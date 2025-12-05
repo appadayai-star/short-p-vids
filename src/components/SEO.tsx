@@ -24,8 +24,8 @@ interface SEOProps {
 }
 
 const defaults = {
-  siteName: "ShortVids",
-  title: "ShortVids – Endless Short-Form Videos",
+  siteName: "ShortPornVids",
+  title: "ShortVids – Endless Short-Form Porn Videos",
   description:
     "ShortVids is a modern short-form video platform offering fast, personalized content discovery. Scroll instantly through an endless feed of creator-driven clips optimized for mobile viewing.",
   keywords: "short videos, video platform, content creators, video feed, mobile videos, trending videos",
@@ -97,8 +97,8 @@ export const SEO = ({
   const structuredData = videoData
     ? generateVideoStructuredData(videoData)
     : type === "website"
-    ? generateWebsiteStructuredData()
-    : null;
+      ? generateWebsiteStructuredData()
+      : null;
 
   return (
     <Helmet>
@@ -129,17 +129,11 @@ export const SEO = ({
       <link rel="canonical" href={url} />
 
       {/* JSON-LD Structured Data */}
-      {structuredData && (
-        <script type="application/ld+json">
-          {JSON.stringify(structuredData)}
-        </script>
-      )}
+      {structuredData && <script type="application/ld+json">{JSON.stringify(structuredData)}</script>}
 
       {/* Organization structured data for homepage */}
       {type === "website" && !videoData && (
-        <script type="application/ld+json">
-          {JSON.stringify(generateOrganizationStructuredData())}
-        </script>
+        <script type="application/ld+json">{JSON.stringify(generateOrganizationStructuredData())}</script>
       )}
     </Helmet>
   );
