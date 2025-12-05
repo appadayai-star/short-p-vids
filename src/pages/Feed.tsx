@@ -7,6 +7,7 @@ import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
 import { Search, X } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { useAdmin } from "@/hooks/useAdmin";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
@@ -19,6 +20,7 @@ const Feed = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const unreadCount = useUnreadNotifications(user?.id || null);
+  const { isAdmin } = useAdmin();
 
   useEffect(() => {
     // Set up auth state listener
@@ -77,6 +79,7 @@ const Feed = () => {
         isAuthenticated={!!user}
         onHomeRefresh={handleRefresh}
         unreadCount={unreadCount}
+        isAdmin={isAdmin}
       />
       {user && (
         <UploadModal 
