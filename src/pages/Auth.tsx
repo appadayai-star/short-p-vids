@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Loader2, Video } from "lucide-react";
+import { BottomNav } from "@/components/BottomNav";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -172,6 +173,7 @@ const Auth = () => {
           </TabsContent>
         </Tabs>
       </div>
+      <BottomNav isAuthenticated={false} />
     </div>
   );
 };
