@@ -54,20 +54,27 @@ export const AdminStats = () => {
       setError(null);
 
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("Not authenticated");
+
         const startDate = dateRange.from.toISOString();
         const endDate = dateRange.to.toISOString();
 
-        const queryString = new URLSearchParams({
-          startDate,
-          endDate,
-        }).toString();
+        const url = `https://mbuajcicosojebakdtsn.supabase.co/functions/v1/admin-stats?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
 
-        const { data, error: fnError } = await supabase.functions.invoke(`admin-stats?${queryString}`, {
-          method: 'GET',
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98",
+          },
         });
 
-        if (fnError) throw fnError;
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || "Failed to fetch stats");
+        }
 
+        const data = await res.json();
         setStats(data);
       } catch (err) {
         console.error("Error fetching stats:", err);
