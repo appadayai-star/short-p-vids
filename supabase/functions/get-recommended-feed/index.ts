@@ -142,9 +142,44 @@ serve(async (req) => {
       throw videosError;
     }
 
+    // If no new videos found, fall back to showing recent videos (even if viewed)
+    // This ensures users always have content to watch
     if (!videos || videos.length === 0) {
+      console.log("No new videos found, falling back to recent videos");
+      
+      const { data: fallbackVideos, error: fallbackError } = await supabase
+        .from("videos")
+        .select(`
+          id,
+          user_id,
+          title,
+          description,
+          video_url,
+          optimized_video_url,
+          thumbnail_url,
+          processing_status,
+          duration_seconds,
+          views_count,
+          likes_count,
+          comments_count,
+          tags,
+          created_at,
+          profiles!inner(username, avatar_url)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (fallbackError) {
+        console.error("Error fetching fallback videos:", fallbackError);
+        return new Response(
+          JSON.stringify({ videos: [] }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      console.log(`Returning ${fallbackVideos?.length || 0} fallback videos`);
       return new Response(
-        JSON.stringify({ videos: [] }),
+        JSON.stringify({ videos: fallbackVideos || [] }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
