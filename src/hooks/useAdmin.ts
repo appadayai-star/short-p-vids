@@ -10,6 +10,7 @@ export const useAdmin = () => {
   useEffect(() => {
     const checkAdminStatus = async (userId: string) => {
       try {
+        console.log("Checking admin status for user:", userId);
         const { data, error } = await supabase
           .from("user_roles")
           .select("role")
@@ -17,10 +18,13 @@ export const useAdmin = () => {
           .eq("role", "admin")
           .maybeSingle();
 
+        console.log("Admin check result:", { data, error });
+        
         if (error) {
           console.error("Error checking admin status:", error);
           setIsAdmin(false);
         } else {
+          console.log("Setting isAdmin to:", !!data);
           setIsAdmin(!!data);
         }
       } catch (err) {
