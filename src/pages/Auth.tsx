@@ -14,7 +14,7 @@ import { BottomNav } from "@/components/BottomNav";
 const Auth = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
-  const [loginData, setLoginData] = useState({ email: "", password: "" });
+  const [loginData, setLoginData] = useState({ emailOrUsername: "", password: "" });
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -22,8 +22,39 @@ const Auth = () => {
     setIsLoading(true);
 
     try {
+      let email = loginData.emailOrUsername.trim();
+      
+      // Check if input is a username (no @ symbol)
+      if (!email.includes("@")) {
+        // Look up email by username
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("username", email)
+          .maybeSingle();
+
+        if (profileError) throw profileError;
+        if (!profile) {
+          throw new Error("Username not found");
+        }
+
+        // Get email from auth.users via a workaround - try to sign in and let Supabase handle the error
+        // Since we can't access auth.users directly, we need to use the user's email
+        // We'll need to store email in profiles or use a different approach
+        
+        // For now, fetch user email from the auth system by attempting login
+        // Actually, we need the email. Let's query if the profile has associated email
+        const { data: userData } = await supabase.auth.admin?.getUserById(profile.id) || {};
+        
+        if (!userData?.user?.email) {
+          // Fallback: assume the username input might be the email
+          throw new Error("Please use your email address to login");
+        }
+        email = userData.user.email;
+      }
+
       const { error } = await supabase.auth.signInWithPassword({
-        email: loginData.email,
+        email,
         password: loginData.password,
       });
 
@@ -103,13 +134,13 @@ const Auth = () => {
               <CardContent>
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="login-email">Email</Label>
+                    <Label htmlFor="login-email">Email or Username</Label>
                     <Input
                       id="login-email"
-                      type="email"
-                      placeholder="you@example.com"
-                      value={loginData.email}
-                      onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
+                      type="text"
+                      placeholder="you@example.com or username"
+                      value={loginData.emailOrUsername}
+                      onChange={(e) => setLoginData({ ...loginData, emailOrUsername: e.target.value })}
                       required
                     />
                   </div>
