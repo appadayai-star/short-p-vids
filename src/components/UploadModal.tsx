@@ -81,17 +81,30 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
         .getPublicUrl(filePath);
 
       // Create video record with auto-generated title
-      const { error: dbError } = await supabase.from("videos").insert({
+      const { data: videoData, error: dbError } = await supabase.from("videos").insert({
         user_id: userId,
         title: `Video ${Date.now()}`,
         description: description.trim() || null,
         video_url: publicUrl,
         tags: selectedCategories.length > 0 ? selectedCategories : null,
-      });
+        processing_status: 'pending',
+      }).select('id').single();
 
       if (dbError) throw dbError;
 
-      toast.success("Video uploaded successfully!");
+      toast.success("Video uploaded! Processing for optimal playback...");
+      
+      // Trigger video processing in background
+      supabase.functions.invoke('process-video', {
+        body: { videoUrl: publicUrl, videoId: videoData.id }
+      }).then(({ data, error }) => {
+        if (error) {
+          console.error('Video processing error:', error);
+        } else {
+          console.log('Video processed:', data);
+        }
+      });
+
       onOpenChange(false);
       
       // Reset form

@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.smart-search]
 verify_jwt = false
+
+[functions.process-video]
+verify_jwt = false

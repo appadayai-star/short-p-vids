@@ -19,6 +19,9 @@ interface VideoCardProps {
     title: string;
     description: string | null;
     video_url: string;
+    optimized_video_url?: string | null;
+    thumbnail_url?: string | null;
+    processing_status?: string | null;
     views_count: number;
     likes_count: number;
     comments_count: number;
@@ -289,25 +292,38 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
     navigate(`/profile/${video.user_id}`);
   };
 
+  // Use optimized URL if available, fallback to original
+  const videoSrc = video.optimized_video_url || video.video_url;
+  const posterSrc = video.thumbnail_url || undefined;
+
   return (
     <div
       ref={containerRef}
       className="relative w-full h-screen snap-start snap-always bg-black overflow-hidden"
     >
+      {/* Thumbnail poster while loading */}
+      {!isVideoReady && posterSrc && (
+        <img 
+          src={posterSrc} 
+          alt="" 
+          className="absolute inset-0 w-full h-full object-cover md:object-contain"
+        />
+      )}
       {/* Loading indicator */}
       {!isVideoReady && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black z-5">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-5">
           <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       )}
       <video
         ref={videoRef}
-        src={video.video_url}
+        src={videoSrc}
+        poster={posterSrc}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         loop
         playsInline
         muted
-        preload="auto"
+        preload="metadata"
         onCanPlay={handleVideoReady}
         onClick={togglePlay}
       />
