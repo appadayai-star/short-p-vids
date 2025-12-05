@@ -21,6 +21,9 @@ interface User {
   role: string;
 }
 
+const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
+
 export const AdminUsers = () => {
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
@@ -51,12 +54,11 @@ export const AdminUsers = () => {
         if (roleFilter !== "all") params.role = roleFilter;
 
         const queryString = new URLSearchParams(params).toString();
-        const url = `https://mbuajcicosojebakdtsn.supabase.co/functions/v1/admin-users?${queryString}`;
 
-        const res = await fetch(url, {
+        const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-users?${queryString}`, {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
-            apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98",
+            apikey: SUPABASE_ANON_KEY,
           },
         });
 
@@ -88,11 +90,11 @@ export const AdminUsers = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
-      const res = await fetch("https://mbuajcicosojebakdtsn.supabase.co/functions/v1/admin-delete-user", {
-        method: "DELETE",
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-user`, {
+        method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98",
+          apikey: SUPABASE_ANON_KEY,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ userId: deleteUser.id }),
@@ -202,15 +204,11 @@ export const AdminUsers = () => {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {user.email}
-                  </TableCell>
+                  <TableCell className="hidden md:table-cell">{user.email}</TableCell>
                   <TableCell className="hidden sm:table-cell">
                     {format(new Date(user.created_at), "MMM d, yyyy")}
                   </TableCell>
-                  <TableCell className="text-center">
-                    {user.video_count}
-                  </TableCell>
+                  <TableCell className="text-center">{user.video_count}</TableCell>
                   <TableCell>
                     <Badge variant={user.role === "admin" ? "default" : "secondary"}>
                       {user.role}
@@ -272,11 +270,7 @@ export const AdminUsers = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Delete User
             </Button>
