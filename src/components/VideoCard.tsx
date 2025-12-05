@@ -31,9 +31,10 @@ interface VideoCardProps {
   };
   currentUserId: string | null;
   onDelete?: (videoId: string) => void;
+  onNavigate?: () => void;
 }
 
-export const VideoCard = ({ video, currentUserId, onDelete }: VideoCardProps) => {
+export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoCardProps) => {
   const navigate = useNavigate();
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
@@ -402,6 +403,7 @@ export const VideoCard = ({ video, currentUserId, onDelete }: VideoCardProps) =>
                   key={idx}
                   onClick={(e) => {
                     e.stopPropagation();
+                    onNavigate?.();
                     navigate(`/?category=${tag}`);
                   }}
                   className="text-primary text-sm font-semibold hover:underline cursor-pointer"

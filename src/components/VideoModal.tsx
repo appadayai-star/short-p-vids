@@ -126,7 +126,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         ) : (
           videos.map((video, index) => (
             <div key={video.id} className="snap-start">
-              <VideoCard video={video} currentUserId={userId} />
+              <VideoCard video={video} currentUserId={userId} onNavigate={onClose} />
             </div>
           ))
         )}
