@@ -13,7 +13,9 @@ interface Video {
   title: string;
   description: string | null;
   video_url: string;
+  optimized_video_url: string | null;
   thumbnail_url: string | null;
+  processing_status: string | null;
   duration_seconds: number | null;
   views_count: number;
   likes_count: number;
@@ -114,7 +116,9 @@ serve(async (req) => {
         title,
         description,
         video_url,
+        optimized_video_url,
         thumbnail_url,
+        processing_status,
         duration_seconds,
         views_count,
         likes_count,

@@ -394,7 +394,10 @@ export type Database = {
           duration_seconds: number | null
           id: string
           likes_count: number
+          optimized_video_url: string | null
+          processing_status: string | null
           tags: string[] | null
+          thumbnail_generated: boolean | null
           thumbnail_url: string | null
           title: string
           user_id: string
@@ -408,7 +411,10 @@ export type Database = {
           duration_seconds?: number | null
           id?: string
           likes_count?: number
+          optimized_video_url?: string | null
+          processing_status?: string | null
           tags?: string[] | null
+          thumbnail_generated?: boolean | null
           thumbnail_url?: string | null
           title: string
           user_id: string
@@ -422,7 +428,10 @@ export type Database = {
           duration_seconds?: number | null
           id?: string
           likes_count?: number
+          optimized_video_url?: string | null
+          processing_status?: string | null
           tags?: string[] | null
+          thumbnail_generated?: boolean | null
           thumbnail_url?: string | null
           title?: string
           user_id?: string

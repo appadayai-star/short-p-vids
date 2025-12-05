@@ -9,7 +9,9 @@ interface Video {
   title: string;
   description: string | null;
   video_url: string;
+  optimized_video_url?: string | null;
   thumbnail_url: string | null;
+  processing_status?: string | null;
   views_count: number;
   likes_count: number;
   comments_count: number;
@@ -79,7 +81,9 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
           title,
           description,
           video_url,
+          optimized_video_url,
           thumbnail_url,
+          processing_status,
           views_count,
           likes_count,
           comments_count,
