@@ -10,11 +10,12 @@ interface SEOProps {
 }
 
 const defaults = {
-  siteName: "ShortPV",
-  title: "ShortPV - Watch & Share Short Videos",
-  description: "Discover and share amazing short videos. Join ShortPV to watch trending content, follow creators, and upload your own videos.",
+  siteName: "ShortPornVids",
+  title: "ShortPornVids – Endless Short-Form Porn Videos",
+  description:
+    "ShortPornVids is a modern short-form video platform offering fast, personalized content discovery. Scroll instantly through an endless feed of creator-driven clips optimized for mobile viewing.",
   image: "/og-image.png",
-  url: "https://shortpv.com",
+  url: "https://shortpornvids.com",
 };
 
 export const SEO = ({
