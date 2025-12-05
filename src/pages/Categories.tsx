@@ -53,7 +53,9 @@ const Categories = () => {
           {categories.map((category) => (
             <button
               key={category.id}
-              onClick={() => navigate(`/?category=${category.id}`)}
+              onClick={() => {
+                window.location.href = `/?category=${encodeURIComponent(category.id)}`;
+              }}
               className="aspect-square bg-white/5 rounded-2xl border-2 border-white/10 hover:border-primary transition-colors flex items-center justify-center group"
             >
               <span className="text-xl font-semibold text-white group-hover:text-primary transition-colors">
