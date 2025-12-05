@@ -36,98 +36,56 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  const fetchVideos = useCallback(async (pageNum: number, query: string, category: string, existingVideoIds: string[] = []) => {
+  const fetchVideos = useCallback(async (pageNum: number, query: string, category: string) => {
+    console.log("Fetching videos - page:", pageNum, "query:", query, "category:", category);
     setIsLoading(true);
     try {
-      if (query.trim()) {
-        // Search mode - search by description, title, tags, and username
-        const { data, error } = await supabase
-          .from("videos")
-          .select(`
-            *,
-            profiles!inner(username, avatar_url)
-          `)
-          .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
-          .order("created_at", { ascending: false })
-          .range(pageNum * 10, (pageNum + 1) * 10 - 1);
+      let supabaseQuery = supabase
+        .from("videos")
+        .select(`
+          *,
+          profiles!inner(username, avatar_url)
+        `)
+        .order("created_at", { ascending: false })
+        .range(pageNum * 10, (pageNum + 1) * 10 - 1);
 
-        if (error) throw error;
-        
-        // Filter by username or tags on the client side since we can't use .or() with joined tables
-        const filtered = data?.filter(video => {
+      // Apply search filter
+      if (query.trim()) {
+        supabaseQuery = supabaseQuery.or(`title.ilike.%${query}%,description.ilike.%${query}%`);
+      }
+      
+      // Apply category filter
+      if (category.trim()) {
+        supabaseQuery = supabaseQuery.contains('tags', [category]);
+      }
+
+      const { data, error } = await supabaseQuery;
+
+      if (error) {
+        console.error("Supabase error:", error);
+        throw error;
+      }
+
+      console.log("Fetched videos:", data?.length || 0);
+
+      // For search, do additional client-side filtering
+      let finalData = data || [];
+      if (query.trim() && data) {
+        finalData = data.filter(video => {
           const matchesUsername = video.profiles.username.toLowerCase().includes(query.toLowerCase());
-          const matchesTags = video.tags?.some(tag => tag.toLowerCase().includes(query.toLowerCase()));
+          const matchesTags = video.tags?.some((tag: string) => tag.toLowerCase().includes(query.toLowerCase()));
           const matchesTitle = video.title.toLowerCase().includes(query.toLowerCase());
           const matchesDescription = video.description?.toLowerCase().includes(query.toLowerCase());
           return matchesUsername || matchesTags || matchesTitle || matchesDescription;
-        }) || [];
-        
-        if (pageNum === 0) {
-          setVideos(filtered);
-        } else {
-          setVideos((prev) => [...prev, ...filtered]);
-        }
-        setHasMore((filtered.length || 0) === 10);
-      } else if (category.trim()) {
-        // Category filter mode - show only videos with that tag
-        const { data, error } = await supabase
-          .from("videos")
-          .select(`
-            *,
-            profiles!inner(username, avatar_url)
-          `)
-          .contains('tags', [category])
-          .order("created_at", { ascending: false })
-          .range(pageNum * 10, (pageNum + 1) * 10 - 1);
-
-        if (error) throw error;
-        
-        if (pageNum === 0) {
-          setVideos(data || []);
-        } else {
-          setVideos((prev) => [...prev, ...(data || [])]);
-        }
-        setHasMore((data?.length || 0) === 10);
-      } else if (userId) {
-        // For You feed - fetch directly from database for better performance
-        // Show all videos, sorted by engagement and recency
-        const { data, error } = await supabase
-          .from("videos")
-          .select(`
-            *,
-            profiles!inner(username, avatar_url)
-          `)
-          .order("created_at", { ascending: false })
-          .range(pageNum * 10, (pageNum + 1) * 10 - 1);
-
-        if (error) throw error;
-        
-        if (pageNum === 0) {
-          setVideos(data || []);
-        } else {
-          setVideos((prev) => [...prev, ...(data || [])]);
-        }
-        setHasMore((data?.length || 0) === 10);
-      } else {
-        // Not logged in - show all recent videos
-        const { data, error } = await supabase
-          .from("videos")
-          .select(`
-            *,
-            profiles!inner(username, avatar_url)
-          `)
-          .order("created_at", { ascending: false })
-          .range(pageNum * 10, (pageNum + 1) * 10 - 1);
-
-        if (error) throw error;
-        
-        if (pageNum === 0) {
-          setVideos(data || []);
-        } else {
-          setVideos((prev) => [...prev, ...(data || [])]);
-        }
-        setHasMore((data?.length || 0) === 10);
+        });
       }
+
+      if (pageNum === 0) {
+        setVideos(finalData);
+      } else {
+        setVideos((prev) => [...prev, ...finalData]);
+      }
+      setHasMore(finalData.length === 10);
     } catch (error: any) {
       toast.error("Failed to load videos");
       console.error("Error fetching videos:", error);
@@ -136,11 +94,13 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   }, []);
 
+  // Fetch videos on mount and when filters change
   useEffect(() => {
+    console.log("Triggering initial fetch");
     setPage(0);
     setVideos([]);
-    fetchVideos(0, searchQuery, categoryFilter, []);
-  }, [searchQuery, categoryFilter, userId]);
+    fetchVideos(0, searchQuery, categoryFilter);
+  }, [searchQuery, categoryFilter, fetchVideos]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -151,7 +111,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       if (scrollTop + clientHeight >= scrollHeight - 100 && !isLoading && hasMore) {
         setPage(prev => {
           const nextPage = prev + 1;
-          fetchVideos(nextPage, searchQuery, categoryFilter, videos.map(v => v.id));
+          fetchVideos(nextPage, searchQuery, categoryFilter);
           return nextPage;
         });
       }
@@ -159,7 +119,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [isLoading, hasMore, searchQuery, categoryFilter, videos, userId]);
+  }, [isLoading, hasMore, searchQuery, categoryFilter, fetchVideos]);
 
   return (
     <div className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scroll-smooth scrollbar-hide">
