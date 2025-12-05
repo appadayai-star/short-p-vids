@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Home, PlusSquare, User, LogIn, Inbox, Grid3x3 } from "lucide-react";
+import { Home, PlusSquare, User, LogIn, Inbox, Grid3x3, LayoutDashboard } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate, useLocation } from "react-router-dom";
 
@@ -8,9 +8,10 @@ interface BottomNavProps {
   isAuthenticated: boolean;
   onHomeRefresh?: () => void;
   unreadCount?: number;
+  isAdmin?: boolean;
 }
 
-export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh, unreadCount = 0 }: BottomNavProps) => {
+export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh, unreadCount = 0, isAdmin = false }: BottomNavProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
@@ -71,18 +72,32 @@ export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh, unrea
           <span className="text-xs">Categories</span>
         </NavLink>
 
-        {isAuthenticated && onUploadClick && (
-          <button
-            onClick={onUploadClick}
-            className="relative -mt-4 mx-2"
-          >
-            <div className="relative">
-              <div className="absolute inset-0 bg-primary rounded-xl blur-sm"></div>
-              <div className="relative bg-primary text-black p-3 rounded-xl hover:scale-105 transition-transform">
-                <PlusSquare className="h-8 w-8" />
+        {isAuthenticated && (
+          isAdmin ? (
+            <button
+              onClick={() => navigate("/admin")}
+              className="relative -mt-4 mx-2"
+            >
+              <div className="relative">
+                <div className="absolute inset-0 bg-primary rounded-xl blur-sm"></div>
+                <div className="relative bg-primary text-black p-3 rounded-xl hover:scale-105 transition-transform">
+                  <LayoutDashboard className="h-8 w-8" />
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+          ) : onUploadClick ? (
+            <button
+              onClick={onUploadClick}
+              className="relative -mt-4 mx-2"
+            >
+              <div className="relative">
+                <div className="absolute inset-0 bg-primary rounded-xl blur-sm"></div>
+                <div className="relative bg-primary text-black p-3 rounded-xl hover:scale-105 transition-transform">
+                  <PlusSquare className="h-8 w-8" />
+                </div>
+              </div>
+            </button>
+          ) : null
         )}
 
         <NavLink
