@@ -4,6 +4,7 @@ import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
+import { SEO } from "@/components/SEO";
 import { Grid3x3, Search } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 
@@ -39,6 +40,10 @@ const Categories = () => {
 
   return (
     <div className="min-h-screen bg-black pb-20">
+      <SEO 
+        title="Categories"
+        description="Browse videos by category - Beauty, Real, Public, Homemade, POV, and more on ShortPV"
+      />
       <div className="container max-w-2xl mx-auto px-4 py-6">
         <div className="flex items-center gap-3 mb-8">
           <Grid3x3 className="h-8 w-8 text-primary" />

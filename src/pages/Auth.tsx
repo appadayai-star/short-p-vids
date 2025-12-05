@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SEO } from "@/components/SEO";
 import { toast } from "sonner";
 import { Loader2, Video, X } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
@@ -66,6 +67,10 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-black p-4 relative">
+      <SEO 
+        title="Login or Sign Up"
+        description="Join ShortPV to watch, create, and share short videos with millions of users"
+      />
       {/* Close button */}
       <button
         onClick={() => navigate(-1)}

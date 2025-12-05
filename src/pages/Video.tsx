@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { VideoCard } from "@/components/VideoCard";
+import { SEO } from "@/components/SEO";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -80,6 +81,11 @@ const Video = () => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black">
+      <SEO 
+        title={video?.title || "Video"}
+        description={video?.description || `Watch this video by @${video?.profiles?.username || 'unknown'} on ShortPV`}
+        type="video.other"
+      />
       {/* Close button */}
       <button
         onClick={() => navigate(-1)}

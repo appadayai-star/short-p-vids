@@ -5,6 +5,7 @@ import { AdminStats } from "@/components/admin/AdminStats";
 import { AdminUsers } from "@/components/admin/AdminUsers";
 import { AdminVideos } from "@/components/admin/AdminVideos";
 import { AdminComments } from "@/components/admin/AdminComments";
+import { SEO } from "@/components/SEO";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, LayoutDashboard, Users, Video, MessageCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ const Admin = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <SEO title="Admin Dashboard" noIndex />
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center gap-4">

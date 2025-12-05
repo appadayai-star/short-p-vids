@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { VideoFeed } from "@/components/VideoFeed";
 import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
+import { SEO } from "@/components/SEO";
 import { Search, X } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { useAdmin } from "@/hooks/useAdmin";
@@ -54,6 +55,13 @@ const Feed = () => {
 
   return (
     <div className="h-screen bg-black overflow-hidden flex flex-col relative">
+      <SEO 
+        title={categoryFilter ? `${categoryFilter} Videos` : undefined}
+        description={categoryFilter 
+          ? `Watch the best ${categoryFilter} videos on ShortPV` 
+          : "Discover and share amazing short videos on ShortPV"
+        }
+      />
       {/* Category filter indicator */}
       {categoryFilter && (
         <button
