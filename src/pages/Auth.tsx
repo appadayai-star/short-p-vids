@@ -26,18 +26,15 @@ const Auth = () => {
       
       // Check if input is a username (no @ symbol)
       if (!email.includes("@")) {
-        // Look up email by username from profiles table
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("email")
-          .eq("username", email)
-          .maybeSingle();
+        // Look up email by username using secure RPC function
+        const { data: userEmail, error: rpcError } = await supabase
+          .rpc("get_email_by_username", { p_username: email });
 
-        if (profileError) throw profileError;
-        if (!profile || !profile.email) {
+        if (rpcError) throw rpcError;
+        if (!userEmail) {
           throw new Error("Username not found");
         }
-        email = profile.email;
+        email = userEmail;
       }
 
       const { error } = await supabase.auth.signInWithPassword({
