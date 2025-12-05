@@ -47,8 +47,10 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
   const [showPauseIcon, setShowPauseIcon] = useState(false);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isInViewRef = useRef(false);
 
   useEffect(() => {
     const checkLikeStatus = async () => {
@@ -95,14 +97,15 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
+          isInViewRef.current = entry.isIntersecting;
           if (entry.isIntersecting) {
             if (!hasViewed) {
               trackView();
               setHasViewed(true);
             }
-            // Autoplay when in view
-            if (videoRef.current) {
-              videoRef.current.play();
+            // Autoplay when in view and video is ready
+            if (videoRef.current && isVideoReady) {
+              videoRef.current.play().catch(() => {});
               setIsPlaying(true);
             }
           } else {
@@ -122,7 +125,16 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
     }
 
     return () => observer.disconnect();
-  }, [hasViewed]);
+  }, [hasViewed, isVideoReady]);
+
+  const handleVideoReady = () => {
+    setIsVideoReady(true);
+    // If in view when ready, start playing
+    if (isInViewRef.current && videoRef.current) {
+      videoRef.current.play().catch(() => {});
+      setIsPlaying(true);
+    }
+  };
 
   const trackView = async () => {
     try {
@@ -282,12 +294,21 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
       ref={containerRef}
       className="relative w-full h-screen snap-start snap-always bg-black overflow-hidden"
     >
+      {/* Loading indicator */}
+      {!isVideoReady && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black z-5">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
       <video
         ref={videoRef}
         src={video.video_url}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         loop
         playsInline
+        muted
+        preload="auto"
+        onCanPlay={handleVideoReady}
         onClick={togglePlay}
       />
 
@@ -304,8 +325,8 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
         </div>
       )}
 
-      {/* Right side actions (TikTok style) - moved higher */}
-      <div className="absolute right-4 bottom-40 flex flex-col gap-6 z-10">
+      {/* Right side actions (TikTok style) - positioned above nav bar */}
+      <div className="absolute right-4 bottom-44 flex flex-col gap-6 z-10">
         <button
           onClick={toggleLike}
           className="flex flex-col items-center gap-1"
@@ -377,8 +398,8 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
         )}
       </div>
 
-      {/* Bottom info - positioned to leave space for action buttons */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 pb-20 z-10 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none" style={{ paddingRight: '80px' }}>
+      {/* Bottom info - positioned above nav bar with space for action buttons */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 pb-24 z-10 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none" style={{ paddingRight: '80px' }}>
         <div className="space-y-2 pointer-events-auto">
           <div 
             className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit"
