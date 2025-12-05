@@ -55,6 +55,14 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
   const containerRef = useRef<HTMLDivElement>(null);
   const isInViewRef = useRef(false);
 
+  // Timeout to hide loading spinner after 2 seconds max
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setIsVideoReady(true);
+    }, 2000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   useEffect(() => {
     const checkLikeStatus = async () => {
       if (!currentUserId) return;
@@ -96,6 +104,7 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
     fetchSavesCount();
   }, [video.id, currentUserId]);
 
+  // Auto-play when video comes into view
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -106,13 +115,17 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
               trackView();
               setHasViewed(true);
             }
-            // Autoplay when in view and video is ready
-            if (videoRef.current && isVideoReady) {
-              videoRef.current.play().catch(() => {});
-              setIsPlaying(true);
+            // Try to play immediately
+            if (videoRef.current) {
+              videoRef.current.play().then(() => {
+                setIsPlaying(true);
+                setIsVideoReady(true);
+              }).catch(() => {
+                // Autoplay blocked, still mark as ready
+                setIsVideoReady(true);
+              });
             }
           } else {
-            // Pause when out of view
             if (videoRef.current) {
               videoRef.current.pause();
               setIsPlaying(false);
@@ -128,15 +141,17 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
     }
 
     return () => observer.disconnect();
-  }, [hasViewed, isVideoReady]);
+  }, [hasViewed]);
 
+  // Mark video ready when it can play
   const handleVideoReady = () => {
     setIsVideoReady(true);
-    // If in view when ready, start playing
-    if (isInViewRef.current && videoRef.current) {
-      videoRef.current.play().catch(() => {});
-      setIsPlaying(true);
-    }
+  };
+
+  // Handle video load errors
+  const handleVideoError = () => {
+    console.error("Video failed to load:", videoSrc);
+    setIsVideoReady(true); // Still show UI even if video fails
   };
 
   const trackView = async () => {
@@ -301,30 +316,23 @@ export const VideoCard = ({ video, currentUserId, onDelete, onNavigate }: VideoC
       ref={containerRef}
       className="relative w-full h-screen snap-start snap-always bg-black overflow-hidden"
     >
-      {/* Thumbnail poster while loading */}
-      {!isVideoReady && posterSrc && (
-        <img 
-          src={posterSrc} 
-          alt="" 
-          className="absolute inset-0 w-full h-full object-cover md:object-contain"
-        />
-      )}
-      {/* Loading indicator */}
+      {/* Loading indicator - show for max 3 seconds then hide */}
       {!isVideoReady && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-5">
+        <div className="absolute inset-0 flex items-center justify-center bg-black z-5">
           <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       )}
       <video
         ref={videoRef}
         src={videoSrc}
-        poster={posterSrc}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         loop
         playsInline
         muted
-        preload="metadata"
-        onCanPlay={handleVideoReady}
+        preload="auto"
+        onCanPlayThrough={handleVideoReady}
+        onLoadedData={handleVideoReady}
+        onError={handleVideoError}
         onClick={togglePlay}
       />
 
