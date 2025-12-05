@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { VideoCard } from "@/components/VideoCard";
+import { VideoPlayer } from "@/components/VideoPlayer";
 import { SEO } from "@/components/SEO";
 import { X } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ interface Video {
   title: string;
   description: string | null;
   video_url: string;
+  optimized_video_url?: string | null;
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
@@ -35,7 +36,6 @@ const Video = () => {
       const { data: { session } } = await supabase.auth.getSession();
       setCurrentUserId(session?.user?.id || null);
     };
-    
     fetchCurrentUser();
   }, []);
 
@@ -53,17 +53,9 @@ const Video = () => {
       const { data, error } = await supabase
         .from("videos")
         .select(`
-          id,
-          title,
-          description,
-          video_url,
-          thumbnail_url,
-          views_count,
-          likes_count,
-          comments_count,
-          user_id,
-          tags,
-          profiles!inner(username, avatar_url)
+          id, title, description, video_url, optimized_video_url, thumbnail_url,
+          views_count, likes_count, comments_count, user_id, tags,
+          profiles(username, avatar_url)
         `)
         .eq("id", videoId)
         .single();
@@ -83,10 +75,9 @@ const Video = () => {
     <div className="fixed inset-0 z-50 bg-black">
       <SEO 
         title={video?.title || "Video"}
-        description={video?.description || `Watch this video by @${video?.profiles?.username || 'unknown'} on ShortPV`}
+        description={video?.description || `Watch this video by @${video?.profiles?.username || 'unknown'}`}
         type="video.other"
       />
-      {/* Close button */}
       <button
         onClick={() => navigate(-1)}
         className="fixed top-4 left-4 z-50 p-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors"
@@ -94,14 +85,13 @@ const Video = () => {
         <X className="h-6 w-6 text-white" />
       </button>
 
-      {/* Video container */}
       {isLoading ? (
         <div className="flex items-center justify-center h-screen">
           <div className="text-primary text-lg">Loading...</div>
         </div>
       ) : video ? (
         <div className="h-screen overflow-y-auto">
-          <VideoCard video={video} currentUserId={currentUserId} />
+          <VideoPlayer video={video} currentUserId={currentUserId} isActive={true} />
         </div>
       ) : (
         <div className="flex items-center justify-center h-screen">

@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { VideoCard } from "./VideoCard";
+import { VideoPlayer } from "./VideoPlayer";
 import { toast } from "sonner";
 
 interface Video {
@@ -11,7 +11,6 @@ interface Video {
   video_url: string;
   optimized_video_url?: string | null;
   thumbnail_url: string | null;
-  processing_status?: string | null;
   views_count: number;
   likes_count: number;
   comments_count: number;
@@ -28,7 +27,7 @@ interface VideoModalProps {
   onClose: () => void;
   initialVideoId: string;
   userId: string | null;
-  videos?: Video[]; // Optional: use provided videos instead of fetching
+  videos?: Video[];
 }
 
 export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: providedVideos }: VideoModalProps) => {
@@ -40,14 +39,12 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
   useEffect(() => {
     if (isOpen) {
       if (providedVideos && providedVideos.length > 0) {
-        // Use provided videos (e.g., from search results)
         setVideos(providedVideos);
         const index = providedVideos.findIndex(v => v.id === initialVideoId);
         const targetIndex = index >= 0 ? index : 0;
         setCurrentIndex(targetIndex);
         setIsLoading(false);
         
-        // Scroll to the selected video after render
         setTimeout(() => {
           if (scrollContainerRef.current) {
             const videoElements = scrollContainerRef.current.children;
@@ -57,10 +54,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
           }
         }, 100);
       } else {
-        // Fetch all videos
         fetchVideos();
       }
-      // Prevent body scroll when modal is open
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
@@ -71,25 +66,34 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     };
   }, [isOpen, initialVideoId, providedVideos]);
 
+  // Track scroll position
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!scrollContainerRef.current) return;
+      const scrollTop = scrollContainerRef.current.scrollTop;
+      const videoHeight = window.innerHeight;
+      const newIndex = Math.round(scrollTop / videoHeight);
+      if (newIndex !== currentIndex && newIndex >= 0 && newIndex < videos.length) {
+        setCurrentIndex(newIndex);
+      }
+    };
+
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [currentIndex, videos.length]);
+
   const fetchVideos = async () => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase
         .from("videos")
         .select(`
-          id,
-          title,
-          description,
-          video_url,
-          optimized_video_url,
-          thumbnail_url,
-          processing_status,
-          views_count,
-          likes_count,
-          comments_count,
-          user_id,
-          tags,
-          profiles!inner(username, avatar_url)
+          id, title, description, video_url, optimized_video_url, thumbnail_url,
+          views_count, likes_count, comments_count, user_id, tags,
+          profiles(username, avatar_url)
         `)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -97,8 +101,6 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       if (error) throw error;
 
       setVideos(data || []);
-      
-      // Find the index of the initial video
       const index = (data || []).findIndex(v => v.id === initialVideoId);
       setCurrentIndex(index >= 0 ? index : 0);
     } catch (error) {
@@ -113,7 +115,6 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
 
   return (
     <div className="fixed inset-0 z-50 bg-black">
-      {/* Close button */}
       <button
         onClick={onClose}
         className="fixed top-4 left-4 z-50 p-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors"
@@ -121,17 +122,20 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         <X className="h-6 w-6 text-white" />
       </button>
 
-      {/* Video scroll container */}
-      <div ref={scrollContainerRef} className="h-screen overflow-y-scroll snap-y snap-mandatory">
+      <div ref={scrollContainerRef} className="h-screen overflow-y-scroll snap-y snap-mandatory scrollbar-hide">
         {isLoading ? (
           <div className="flex items-center justify-center h-screen">
             <div className="text-primary text-lg">Loading...</div>
           </div>
         ) : (
           videos.map((video, index) => (
-            <div key={video.id} className="snap-start">
-              <VideoCard video={video} currentUserId={userId} onNavigate={onClose} />
-            </div>
+            <VideoPlayer 
+              key={video.id} 
+              video={video} 
+              currentUserId={userId} 
+              isActive={index === currentIndex}
+              onNavigate={onClose} 
+            />
           ))
         )}
       </div>

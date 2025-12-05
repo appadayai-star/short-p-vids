@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { VideoCard } from "./VideoCard";
+import { VideoPlayer } from "./VideoPlayer";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
 
 interface Video {
   id: string;
@@ -11,12 +10,10 @@ interface Video {
   video_url: string;
   optimized_video_url?: string | null;
   thumbnail_url: string | null;
-  processing_status?: string | null;
   views_count: number;
   likes_count: number;
   comments_count: number;
   tags: string[] | null;
-  created_at: string;
   user_id: string;
   profiles: {
     username: string;
@@ -33,127 +30,125 @@ interface VideoFeedProps {
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
-  const fetchVideos = useCallback(async (pageNum: number, query: string, category: string) => {
-    console.log("Fetching videos - page:", pageNum, "query:", query, "category:", category);
+  const fetchVideos = useCallback(async () => {
     setIsLoading(true);
+    
     try {
-      let supabaseQuery = supabase
+      let query = supabase
         .from("videos")
         .select(`
-          *,
-          profiles!inner(username, avatar_url)
+          id, title, description, video_url, optimized_video_url, thumbnail_url,
+          views_count, likes_count, comments_count, tags, user_id,
+          profiles(username, avatar_url)
         `)
         .order("created_at", { ascending: false })
-        .range(pageNum * 10, (pageNum + 1) * 10 - 1);
+        .limit(20);
+
+      // Apply category filter
+      if (categoryFilter) {
+        query = query.contains('tags', [categoryFilter]);
+      }
 
       // Apply search filter
-      if (query.trim()) {
-        supabaseQuery = supabaseQuery.or(`title.ilike.%${query}%,description.ilike.%${query}%`);
-      }
-      
-      // Apply category filter
-      if (category.trim()) {
-        supabaseQuery = supabaseQuery.contains('tags', [category]);
+      if (searchQuery) {
+        query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
       }
 
-      const { data, error } = await supabaseQuery;
+      const { data, error } = await query;
 
-      if (error) {
-        console.error("Supabase error:", error);
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log("Fetched videos:", data?.length || 0);
-
-      // For search, do additional client-side filtering
-      let finalData = data || [];
-      if (query.trim() && data) {
-        finalData = data.filter(video => {
-          const matchesUsername = video.profiles.username.toLowerCase().includes(query.toLowerCase());
-          const matchesTags = video.tags?.some((tag: string) => tag.toLowerCase().includes(query.toLowerCase()));
-          const matchesTitle = video.title.toLowerCase().includes(query.toLowerCase());
-          const matchesDescription = video.description?.toLowerCase().includes(query.toLowerCase());
-          return matchesUsername || matchesTags || matchesTitle || matchesDescription;
+      // Additional client-side filtering for search
+      let filteredData = data || [];
+      if (searchQuery && data) {
+        const lowerQuery = searchQuery.toLowerCase();
+        filteredData = data.filter(video => {
+          const matchesTitle = video.title?.toLowerCase().includes(lowerQuery);
+          const matchesDesc = video.description?.toLowerCase().includes(lowerQuery);
+          const matchesUsername = video.profiles?.username?.toLowerCase().includes(lowerQuery);
+          const matchesTags = video.tags?.some(tag => tag.toLowerCase().includes(lowerQuery));
+          return matchesTitle || matchesDesc || matchesUsername || matchesTags;
         });
       }
 
-      if (pageNum === 0) {
-        setVideos(finalData);
-      } else {
-        setVideos((prev) => [...prev, ...finalData]);
-      }
-      setHasMore(finalData.length === 10);
-    } catch (error: any) {
-      toast.error("Failed to load videos");
+      setVideos(filteredData);
+    } catch (error) {
       console.error("Error fetching videos:", error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
-
-  // Fetch videos on mount and when filters change
-  useEffect(() => {
-    console.log("Triggering initial fetch");
-    setPage(0);
-    setVideos([]);
-    fetchVideos(0, searchQuery, categoryFilter);
-  }, [searchQuery, categoryFilter, fetchVideos]);
+  }, [searchQuery, categoryFilter]);
 
   useEffect(() => {
-    const handleScroll = () => {
-      const scrollHeight = document.documentElement.scrollHeight;
-      const scrollTop = document.documentElement.scrollTop;
-      const clientHeight = document.documentElement.clientHeight;
+    fetchVideos();
+  }, [fetchVideos]);
 
-      if (scrollTop + clientHeight >= scrollHeight - 100 && !isLoading && hasMore) {
-        setPage(prev => {
-          const nextPage = prev + 1;
-          fetchVideos(nextPage, searchQuery, categoryFilter);
-          return nextPage;
-        });
+  // Track scroll position to determine current video
+  useEffect(() => {
+    const handleScroll = (e: Event) => {
+      const container = e.target as HTMLElement;
+      const scrollTop = container.scrollTop;
+      const videoHeight = window.innerHeight;
+      const newIndex = Math.round(scrollTop / videoHeight);
+      if (newIndex !== currentIndex && newIndex >= 0 && newIndex < videos.length) {
+        setCurrentIndex(newIndex);
       }
     };
 
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [isLoading, hasMore, searchQuery, categoryFilter, fetchVideos]);
+    const container = document.getElementById('video-feed-container');
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [currentIndex, videos.length]);
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-screen bg-black">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (videos.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-black">
+        <div className="text-center">
+          <p className="text-primary text-lg">
+            {searchQuery 
+              ? "No videos found" 
+              : categoryFilter 
+              ? `No videos in ${categoryFilter}` 
+              : "No videos yet"}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scroll-smooth scrollbar-hide">
+    <div 
+      id="video-feed-container"
+      className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scrollbar-hide"
+    >
       {searchQuery && (
-        <div className="absolute top-0 left-0 right-0 z-20 bg-black/80 backdrop-blur-sm p-3">
+        <div className="fixed top-0 left-0 right-0 z-20 bg-black/80 backdrop-blur-sm p-3 pointer-events-none">
           <p className="text-sm text-primary text-center">
-            Search results for: <span className="font-semibold">{searchQuery}</span>
+            Search: <span className="font-semibold">{searchQuery}</span>
           </p>
         </div>
       )}
 
-      {videos.map((video) => (
-        <VideoCard key={video.id} video={video} currentUserId={userId} />
+      {videos.map((video, index) => (
+        <VideoPlayer 
+          key={video.id} 
+          video={video} 
+          currentUserId={userId}
+          isActive={index === currentIndex}
+        />
       ))}
-
-      {isLoading && (
-        <div className="flex justify-center items-center h-screen bg-black">
-          <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        </div>
-      )}
-
-      {!isLoading && videos.length === 0 && (
-        <div className="flex items-center justify-center h-screen bg-black">
-          <div className="text-center">
-            <p className="text-primary text-lg">
-              {searchQuery 
-                ? "No videos found" 
-                : categoryFilter 
-                ? `No videos found in ${categoryFilter} category` 
-                : "No videos yet. Be the first to upload!"}
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
