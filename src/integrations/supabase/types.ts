@@ -244,6 +244,7 @@ export type Database = {
           avatar_url: string | null
           bio: string | null
           created_at: string
+          email: string | null
           followers_count: number
           following_count: number
           id: string
@@ -253,6 +254,7 @@ export type Database = {
           avatar_url?: string | null
           bio?: string | null
           created_at?: string
+          email?: string | null
           followers_count?: number
           following_count?: number
           id: string
@@ -262,6 +264,7 @@ export type Database = {
           avatar_url?: string | null
           bio?: string | null
           created_at?: string
+          email?: string | null
           followers_count?: number
           following_count?: number
           id?: string

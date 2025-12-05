@@ -26,31 +26,18 @@ const Auth = () => {
       
       // Check if input is a username (no @ symbol)
       if (!email.includes("@")) {
-        // Look up email by username
+        // Look up email by username from profiles table
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
-          .select("id")
+          .select("email")
           .eq("username", email)
           .maybeSingle();
 
         if (profileError) throw profileError;
-        if (!profile) {
+        if (!profile || !profile.email) {
           throw new Error("Username not found");
         }
-
-        // Get email from auth.users via a workaround - try to sign in and let Supabase handle the error
-        // Since we can't access auth.users directly, we need to use the user's email
-        // We'll need to store email in profiles or use a different approach
-        
-        // For now, fetch user email from the auth system by attempting login
-        // Actually, we need the email. Let's query if the profile has associated email
-        const { data: userData } = await supabase.auth.admin?.getUserById(profile.id) || {};
-        
-        if (!userData?.user?.email) {
-          // Fallback: assume the username input might be the email
-          throw new Error("Please use your email address to login");
-        }
-        email = userData.user.email;
+        email = profile.email;
       }
 
       const { error } = await supabase.auth.signInWithPassword({
