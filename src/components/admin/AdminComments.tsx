@@ -22,6 +22,9 @@ interface Comment {
   video_title: string;
 }
 
+const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
+
 export const AdminComments = () => {
   const { toast } = useToast();
   const [comments, setComments] = useState<Comment[]>([]);
@@ -49,12 +52,11 @@ export const AdminComments = () => {
       if (search) params.q = search;
 
       const queryString = new URLSearchParams(params).toString();
-      const url = `https://mbuajcicosojebakdtsn.supabase.co/functions/v1/admin-comments?${queryString}`;
 
-      const res = await fetch(url, {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-comments?${queryString}`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98",
+          apikey: SUPABASE_ANON_KEY,
         },
       });
 
@@ -87,11 +89,11 @@ export const AdminComments = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
-      const res = await fetch("https://mbuajcicosojebakdtsn.supabase.co/functions/v1/admin-delete-comment", {
-        method: "DELETE",
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-comment`, {
+        method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98",
+          apikey: SUPABASE_ANON_KEY,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ commentId: deleteComment.id }),
@@ -153,12 +155,8 @@ export const AdminComments = () => {
               <TableHead className="hidden lg:table-cell">User</TableHead>
               <TableHead className="hidden md:table-cell">Video</TableHead>
               <TableHead className="hidden sm:table-cell">Date</TableHead>
-              <TableHead className="text-center">
-                <Heart className="h-4 w-4 mx-auto" />
-              </TableHead>
-              <TableHead className="text-center">
-                <MessageCircle className="h-4 w-4 mx-auto" />
-              </TableHead>
+              <TableHead className="text-center"><Heart className="h-4 w-4 mx-auto" /></TableHead>
+              <TableHead className="text-center"><MessageCircle className="h-4 w-4 mx-auto" /></TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -181,9 +179,7 @@ export const AdminComments = () => {
                   <TableCell>
                     <div className="min-w-0">
                       <div className="text-sm line-clamp-2">{comment.content}</div>
-                      <div className="text-xs text-muted-foreground lg:hidden mt-1">
-                        @{comment.username}
-                      </div>
+                      <div className="text-xs text-muted-foreground lg:hidden mt-1">@{comment.username}</div>
                     </div>
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
@@ -193,9 +189,7 @@ export const AdminComments = () => {
                     </div>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
-                    <div className="text-sm truncate max-w-[150px]">
-                      {comment.video_title}
-                    </div>
+                    <div className="text-sm truncate max-w-[150px]">{comment.video_title}</div>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
                     {format(new Date(comment.created_at), "MMM d, yyyy")}
@@ -225,20 +219,10 @@ export const AdminComments = () => {
             Page {page} of {totalPages} ({total} comments)
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -250,16 +234,12 @@ export const AdminComments = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Comment</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this comment? This will also delete all replies to this comment. This action cannot be undone.
+              Are you sure you want to delete this comment? This will also delete all replies. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Delete
             </Button>

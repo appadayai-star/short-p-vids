@@ -25,6 +25,9 @@ interface Video {
   uploader_username: string;
 }
 
+const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
+
 export const AdminVideos = () => {
   const { toast } = useToast();
   const [videos, setVideos] = useState<Video[]>([]);
@@ -52,12 +55,11 @@ export const AdminVideos = () => {
       if (search) params.q = search;
 
       const queryString = new URLSearchParams(params).toString();
-      const url = `https://mbuajcicosojebakdtsn.supabase.co/functions/v1/admin-videos?${queryString}`;
 
-      const res = await fetch(url, {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-videos?${queryString}`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98",
+          apikey: SUPABASE_ANON_KEY,
         },
       });
 
@@ -90,11 +92,11 @@ export const AdminVideos = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
-      const res = await fetch("https://mbuajcicosojebakdtsn.supabase.co/functions/v1/admin-delete-video", {
-        method: "DELETE",
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-video`, {
+        method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98",
+          apikey: SUPABASE_ANON_KEY,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ videoId: deleteVideo.id }),
@@ -168,15 +170,9 @@ export const AdminVideos = () => {
               <TableHead className="min-w-[200px]">Video</TableHead>
               <TableHead className="hidden lg:table-cell">Uploader</TableHead>
               <TableHead className="hidden md:table-cell">Date</TableHead>
-              <TableHead className="text-center">
-                <Eye className="h-4 w-4 mx-auto" />
-              </TableHead>
-              <TableHead className="text-center">
-                <Heart className="h-4 w-4 mx-auto" />
-              </TableHead>
-              <TableHead className="text-center">
-                <MessageCircle className="h-4 w-4 mx-auto" />
-              </TableHead>
+              <TableHead className="text-center"><Eye className="h-4 w-4 mx-auto" /></TableHead>
+              <TableHead className="text-center"><Heart className="h-4 w-4 mx-auto" /></TableHead>
+              <TableHead className="text-center"><MessageCircle className="h-4 w-4 mx-auto" /></TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
@@ -200,19 +196,11 @@ export const AdminVideos = () => {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       {video.thumbnail_url && (
-                        <img
-                          src={video.thumbnail_url}
-                          alt={video.title}
-                          className="w-16 h-10 object-cover rounded"
-                        />
+                        <img src={video.thumbnail_url} alt={video.title} className="w-16 h-10 object-cover rounded" />
                       )}
                       <div className="min-w-0">
-                        <div className="font-medium truncate max-w-[150px]">
-                          {video.title || "Untitled"}
-                        </div>
-                        <div className="text-xs text-muted-foreground lg:hidden">
-                          {video.uploader_username}
-                        </div>
+                        <div className="font-medium truncate max-w-[150px]">{video.title || "Untitled"}</div>
+                        <div className="text-xs text-muted-foreground lg:hidden">{video.uploader_username}</div>
                       </div>
                     </div>
                   </TableCell>
@@ -252,20 +240,10 @@ export const AdminVideos = () => {
             Page {page} of {totalPages} ({total} videos)
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -283,11 +261,7 @@ export const AdminVideos = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Delete
             </Button>

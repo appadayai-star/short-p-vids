@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 Deno.serve(async (req) => {
@@ -10,7 +11,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  if (req.method !== "DELETE") {
+  // Accept POST for delete operations (browsers don't send body with DELETE)
+  if (req.method !== "POST" && req.method !== "DELETE") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -45,7 +47,6 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Verify admin status
     const { data: adminRole } = await serviceClient
       .from("user_roles")
       .select("role")
@@ -71,17 +72,10 @@ Deno.serve(async (req) => {
 
     console.log(`Admin deleting comment: ${commentId}`);
 
-    // Get comment to update video comments_count
-    const { data: comment } = await serviceClient
-      .from("comments")
-      .select("video_id, parent_comment_id")
-      .eq("id", commentId)
-      .single();
-
     // Delete comment likes
     await serviceClient.from("comment_likes").delete().eq("comment_id", commentId);
 
-    // Delete replies to this comment
+    // Delete replies
     const { data: replies } = await serviceClient
       .from("comments")
       .select("id")
@@ -93,7 +87,7 @@ Deno.serve(async (req) => {
       await serviceClient.from("comments").delete().in("id", replyIds);
     }
 
-    // Delete notifications related to this comment
+    // Delete notifications
     await serviceClient.from("notifications").delete().eq("comment_id", commentId);
 
     // Delete the comment

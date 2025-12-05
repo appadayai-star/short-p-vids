@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 Deno.serve(async (req) => {
@@ -10,7 +11,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  if (req.method !== "DELETE") {
+  // Accept POST for delete operations (browsers don't send body with DELETE)
+  if (req.method !== "POST" && req.method !== "DELETE") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -32,7 +34,6 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    // Verify user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -41,13 +42,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Use service role for admin operations
     const serviceClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Verify admin status
     const { data: adminRole } = await serviceClient
       .from("user_roles")
       .select("role")
@@ -73,7 +72,6 @@ Deno.serve(async (req) => {
 
     console.log(`Admin deleting video: ${videoId}`);
 
-    // Get video details first
     const { data: video, error: videoError } = await serviceClient
       .from("videos")
       .select("video_url, optimized_video_url, thumbnail_url")
@@ -88,15 +86,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Delete from Supabase Storage
+    // Delete from storage
     if (video.video_url) {
       try {
-        // Extract path from URL
         const url = new URL(video.video_url);
         const pathMatch = url.pathname.match(/\/storage\/v1\/object\/public\/videos\/(.+)/);
         if (pathMatch) {
           const filePath = decodeURIComponent(pathMatch[1]);
-          console.log(`Deleting from storage: ${filePath}`);
           await serviceClient.storage.from("videos").remove([filePath]);
         }
       } catch (e) {
@@ -104,27 +100,21 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Try to delete from Cloudinary if we have optimized URL
-    if (video.optimized_video_url && video.optimized_video_url.includes("cloudinary")) {
+    // Delete from Cloudinary if applicable
+    if (video.optimized_video_url?.includes("cloudinary")) {
       try {
         const cloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME");
         const apiKey = Deno.env.get("CLOUDINARY_API_KEY");
         const apiSecret = Deno.env.get("CLOUDINARY_API_SECRET");
 
         if (cloudName && apiKey && apiSecret) {
-          // Extract public_id from Cloudinary URL
           const urlParts = video.optimized_video_url.split("/");
           const uploadIndex = urlParts.indexOf("upload");
           if (uploadIndex !== -1) {
             const publicIdWithExt = urlParts.slice(uploadIndex + 2).join("/");
             const publicId = publicIdWithExt.replace(/\.[^.]+$/, "");
-            
-            console.log(`Deleting from Cloudinary: ${publicId}`);
-            
             const timestamp = Math.floor(Date.now() / 1000);
             const signatureString = `public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
-            
-            // Create SHA-1 signature
             const encoder = new TextEncoder();
             const data = encoder.encode(signatureString);
             const hashBuffer = await crypto.subtle.digest("SHA-1", data);
@@ -148,7 +138,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Get comment IDs first for deleting comment_likes
+    // Delete related records
     const { data: comments } = await serviceClient
       .from("comments")
       .select("id")
@@ -156,7 +146,6 @@ Deno.serve(async (req) => {
     
     const commentIds = comments?.map(c => c.id) || [];
     
-    // Delete related records first (comments, likes, views, notifications)
     if (commentIds.length > 0) {
       await serviceClient.from("comment_likes").delete().in("comment_id", commentIds);
     }
@@ -166,7 +155,6 @@ Deno.serve(async (req) => {
     await serviceClient.from("saved_videos").delete().eq("video_id", videoId);
     await serviceClient.from("notifications").delete().eq("video_id", videoId);
 
-    // Delete the video record
     const { error: deleteError } = await serviceClient
       .from("videos")
       .delete()

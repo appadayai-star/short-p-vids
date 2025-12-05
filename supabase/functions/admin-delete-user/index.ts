@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 Deno.serve(async (req) => {
@@ -10,7 +11,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  if (req.method !== "DELETE") {
+  // Accept POST for delete operations (browsers don't send body with DELETE)
+  if (req.method !== "POST" && req.method !== "DELETE") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -45,7 +47,6 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Verify admin status
     const { data: adminRole } = await serviceClient
       .from("user_roles")
       .select("role")
@@ -69,7 +70,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Prevent self-deletion
     if (userId === user.id) {
       return new Response(JSON.stringify({ error: "Cannot delete your own account" }), {
         status: 400,
@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
 
     console.log(`Admin deleting user: ${userId}`);
 
-    // Delete user's videos first (this will cascade to likes, comments, etc.)
+    // Delete user's videos first
     const { data: userVideos } = await serviceClient
       .from("videos")
       .select("id")
@@ -87,7 +87,6 @@ Deno.serve(async (req) => {
 
     if (userVideos && userVideos.length > 0) {
       for (const video of userVideos) {
-        // Delete related records
         const { data: comments } = await serviceClient
           .from("comments")
           .select("id")
@@ -106,7 +105,7 @@ Deno.serve(async (req) => {
       await serviceClient.from("videos").delete().eq("user_id", userId);
     }
 
-    // Delete user's comments on other videos
+    // Delete user's comments
     const { data: userComments } = await serviceClient
       .from("comments")
       .select("id")
@@ -118,7 +117,7 @@ Deno.serve(async (req) => {
     }
     await serviceClient.from("comments").delete().eq("user_id", userId);
 
-    // Delete other user-related data
+    // Delete other user data
     await serviceClient.from("likes").delete().eq("user_id", userId);
     await serviceClient.from("comment_likes").delete().eq("user_id", userId);
     await serviceClient.from("saved_videos").delete().eq("user_id", userId);
@@ -130,7 +129,6 @@ Deno.serve(async (req) => {
     await serviceClient.from("user_roles").delete().eq("user_id", userId);
     await serviceClient.from("profiles").delete().eq("id", userId);
 
-    // Finally delete the auth user
     const { error: deleteError } = await serviceClient.auth.admin.deleteUser(userId);
 
     if (deleteError) {
