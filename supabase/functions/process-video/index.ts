@@ -18,9 +18,33 @@ serve(async (req) => {
     const CLOUDINARY_API_SECRET = Deno.env.get("CLOUDINARY_API_SECRET");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
 
     if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
       throw new Error("Cloudinary credentials not configured");
+    }
+
+    // Verify the user is authenticated
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Missing authorization header" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Create a client with the user's JWT to verify their identity
+    const userSupabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    const { data: { user }, error: userError } = await userSupabase.auth.getUser();
+    if (userError || !user) {
+      console.error("Auth error:", userError);
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const { videoUrl, videoId } = await req.json();
@@ -29,11 +53,35 @@ serve(async (req) => {
       throw new Error("Missing videoUrl or videoId");
     }
 
-    console.log(`Processing video: ${videoId}`);
-    console.log(`Original URL: ${videoUrl}`);
+    console.log(`Processing video: ${videoId} for user: ${user.id}`);
 
-    // Initialize Supabase client
+    // Initialize Supabase admin client for database operations
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    // Verify the user owns the video
+    const { data: video, error: videoError } = await supabase
+      .from("videos")
+      .select("user_id")
+      .eq("id", videoId)
+      .single();
+
+    if (videoError || !video) {
+      console.error("Video not found:", videoError);
+      return new Response(
+        JSON.stringify({ error: "Video not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (video.user_id !== user.id) {
+      console.error(`User ${user.id} attempted to process video owned by ${video.user_id}`);
+      return new Response(
+        JSON.stringify({ error: "Forbidden: You do not own this video" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`Original URL: ${videoUrl}`);
 
     // Update status to processing
     await supabase

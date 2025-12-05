@@ -10,7 +10,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.process-video]
-verify_jwt = false
+verify_jwt = true
 
 [functions.admin-stats]
 verify_jwt = true
