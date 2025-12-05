@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, Video } from "lucide-react";
+import { Loader2, Video, X } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
 
 const Auth = () => {
@@ -65,7 +65,16 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black p-4">
+    <div className="min-h-screen flex items-center justify-center bg-black p-4 relative">
+      {/* Close button */}
+      <button
+        onClick={() => navigate(-1)}
+        className="absolute top-4 left-4 p-2 hover:bg-white/10 rounded-full transition-colors"
+        aria-label="Go back"
+      >
+        <X className="h-6 w-6 text-white" />
+      </button>
+
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center gap-2 mb-8">
           <Video className="h-8 w-8 text-primary" />
