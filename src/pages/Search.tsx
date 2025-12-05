@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
 import { VideoModal } from "@/components/VideoModal";
+import { SEO } from "@/components/SEO";
 import { Input } from "@/components/ui/input";
 import { Search as SearchIcon, TrendingUp, Clock } from "lucide-react";
 import { toast } from "sonner";
@@ -166,6 +167,10 @@ const Search = () => {
 
   return (
     <div className="min-h-screen bg-black pb-20">
+      <SEO 
+        title="Search"
+        description="Search for videos, creators, and hashtags on ShortPV"
+      />
       {/* Search bar */}
       <div className="sticky top-0 z-40 bg-black border-b border-white/10 p-4">
         <div className="relative">

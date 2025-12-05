@@ -4,6 +4,7 @@ import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
+import { SEO } from "@/components/SEO";
 import { Heart, MessageCircle, Bookmark, UserPlus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -195,6 +196,11 @@ const Inbox = () => {
 
   return (
     <div className="min-h-screen bg-black pb-20">
+      <SEO 
+        title="Inbox"
+        description="View your notifications - likes, comments, saves, and new followers"
+        noIndex
+      />
       {/* Header */}
       <div className="sticky top-0 z-10 bg-black border-b border-white/10 p-4 flex items-center justify-between">
         <h1 className="text-white text-xl font-bold">Inbox</h1>
