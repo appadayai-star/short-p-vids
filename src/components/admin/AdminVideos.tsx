@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, MessageCircle } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -42,27 +42,20 @@ export const AdminVideos = () => {
     setError(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
+      const params: Record<string, string> = {
+        page: page.toString(),
+        limit: limit.toString(),
+      };
+      if (search) params.q = search;
 
-      const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-videos`);
-      url.searchParams.set("page", page.toString());
-      url.searchParams.set("limit", limit.toString());
-      if (search) url.searchParams.set("q", search);
-
-      const res = await fetch(url.toString(), {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
+      const queryString = new URLSearchParams(params).toString();
+      
+      const { data, error: fnError } = await supabase.functions.invoke(`admin-videos?${queryString}`, {
+        method: 'GET',
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to fetch videos");
-      }
+      if (fnError) throw fnError;
 
-      const data = await res.json();
       setVideos(data.videos);
       setTotal(data.total);
     } catch (err) {
@@ -83,23 +76,12 @@ export const AdminVideos = () => {
 
     setDeleting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-video`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ videoId: deleteVideo.id }),
+      const { error: fnError } = await supabase.functions.invoke('admin-delete-video', {
+        method: 'DELETE',
+        body: { videoId: deleteVideo.id },
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to delete video");
-      }
+      if (fnError) throw fnError;
 
       toast({
         title: "Video deleted",

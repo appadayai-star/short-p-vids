@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Heart, MessageCircle } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -39,27 +39,20 @@ export const AdminComments = () => {
     setError(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
+      const params: Record<string, string> = {
+        page: page.toString(),
+        limit: limit.toString(),
+      };
+      if (search) params.q = search;
 
-      const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-comments`);
-      url.searchParams.set("page", page.toString());
-      url.searchParams.set("limit", limit.toString());
-      if (search) url.searchParams.set("q", search);
-
-      const res = await fetch(url.toString(), {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
+      const queryString = new URLSearchParams(params).toString();
+      
+      const { data, error: fnError } = await supabase.functions.invoke(`admin-comments?${queryString}`, {
+        method: 'GET',
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to fetch comments");
-      }
+      if (fnError) throw fnError;
 
-      const data = await res.json();
       setComments(data.comments);
       setTotal(data.total);
     } catch (err) {
@@ -80,23 +73,12 @@ export const AdminComments = () => {
 
     setDeleting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not authenticated");
-
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-comment`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ commentId: deleteComment.id }),
+      const { error: fnError } = await supabase.functions.invoke('admin-delete-comment', {
+        method: 'DELETE',
+        body: { commentId: deleteComment.id },
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to delete comment");
-      }
+      if (fnError) throw fnError;
 
       toast({
         title: "Comment deleted",
@@ -241,7 +223,7 @@ export const AdminComments = () => {
         </div>
       )}
 
-      <AlertDialog open={!!deleteComment} onOpenChange={() => setDeleteComment(null)}>
+      <AlertDialog open={!!deleteComment} onOpenChange={(open) => { if (!open) setDeleteComment(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Comment</AlertDialogTitle>
@@ -251,14 +233,14 @@ export const AdminComments = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            <Button
+              variant="destructive"
               onClick={handleDelete}
               disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Delete
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
