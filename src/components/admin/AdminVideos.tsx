@@ -268,7 +268,7 @@ export const AdminVideos = () => {
         </div>
       )}
 
-      <AlertDialog open={!!deleteVideo} onOpenChange={() => setDeleteVideo(null)}>
+      <AlertDialog open={!!deleteVideo} onOpenChange={(open) => !deleting && !open && setDeleteVideo(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Video</AlertDialogTitle>
@@ -280,7 +280,10 @@ export const AdminVideos = () => {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
+              onClick={(e) => {
+                e.preventDefault();
+                handleDelete();
+              }}
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
