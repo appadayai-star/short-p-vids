@@ -60,15 +60,7 @@ export const AdminStats = () => {
         const startDate = dateRange.from.toISOString();
         const endDate = dateRange.to.toISOString();
 
-        const response = await supabase.functions.invoke("admin-stats", {
-          body: null,
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          method: "GET",
-        });
-
-        // Reconstruct the URL with query params for the GET request
+        // Fetch stats with query params
         const url = new URL(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-stats`);
         url.searchParams.set("startDate", startDate);
         url.searchParams.set("endDate", endDate);
