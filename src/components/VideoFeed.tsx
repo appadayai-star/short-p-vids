@@ -36,6 +36,23 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setIsLoading(true);
     
     try {
+      // Use recommendation algorithm for main feed (no search/category)
+      if (!searchQuery && !categoryFilter) {
+        const { data, error } = await supabase.functions.invoke('get-recommended-feed', {
+          body: { userId, page: 0, limit: 20 }
+        });
+
+        if (error) throw error;
+        
+        if (data?.videos?.length > 0) {
+          setVideos(data.videos);
+          setIsLoading(false);
+          return;
+        }
+        // Fall through to direct query if no results
+      }
+
+      // Direct query for search/category or as fallback
       let query = supabase
         .from("videos")
         .select(`
@@ -46,46 +63,56 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         .order("created_at", { ascending: false })
         .limit(20);
 
-      // Apply category filter
       if (categoryFilter) {
         query = query.contains('tags', [categoryFilter]);
       }
 
-      // Apply search filter
       if (searchQuery) {
         query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
       }
 
       const { data, error } = await query;
-
       if (error) throw error;
 
+      let filtered = data || [];
+      
       // Additional client-side filtering for search
-      let filteredData = data || [];
       if (searchQuery && data) {
-        const lowerQuery = searchQuery.toLowerCase();
-        filteredData = data.filter(video => {
-          const matchesTitle = video.title?.toLowerCase().includes(lowerQuery);
-          const matchesDesc = video.description?.toLowerCase().includes(lowerQuery);
-          const matchesUsername = video.profiles?.username?.toLowerCase().includes(lowerQuery);
-          const matchesTags = video.tags?.some(tag => tag.toLowerCase().includes(lowerQuery));
-          return matchesTitle || matchesDesc || matchesUsername || matchesTags;
-        });
+        const q = searchQuery.toLowerCase();
+        filtered = data.filter(v => 
+          v.title?.toLowerCase().includes(q) ||
+          v.description?.toLowerCase().includes(q) ||
+          v.profiles?.username?.toLowerCase().includes(q) ||
+          v.tags?.some(t => t.toLowerCase().includes(q))
+        );
       }
 
-      setVideos(filteredData);
+      setVideos(filtered);
     } catch (error) {
       console.error("Error fetching videos:", error);
+      
+      // Final fallback - simple query
+      const { data } = await supabase
+        .from("videos")
+        .select(`
+          id, title, description, video_url, optimized_video_url, thumbnail_url,
+          views_count, likes_count, comments_count, tags, user_id,
+          profiles(username, avatar_url)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      
+      setVideos(data || []);
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, categoryFilter]);
+  }, [searchQuery, categoryFilter, userId]);
 
   useEffect(() => {
     fetchVideos();
   }, [fetchVideos]);
 
-  // Track scroll position to determine current video
+  // Track scroll position
   useEffect(() => {
     const handleScroll = (e: Event) => {
       const container = e.target as HTMLElement;
@@ -115,24 +142,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   if (videos.length === 0) {
     return (
       <div className="flex items-center justify-center h-screen bg-black">
-        <div className="text-center">
-          <p className="text-primary text-lg">
-            {searchQuery 
-              ? "No videos found" 
-              : categoryFilter 
-              ? `No videos in ${categoryFilter}` 
-              : "No videos yet"}
-          </p>
-        </div>
+        <p className="text-primary text-lg">
+          {searchQuery ? "No videos found" : categoryFilter ? `No videos in ${categoryFilter}` : "No videos yet"}
+        </p>
       </div>
     );
   }
 
   return (
-    <div 
-      id="video-feed-container"
-      className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scrollbar-hide"
-    >
+    <div id="video-feed-container" className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scrollbar-hide">
       {searchQuery && (
         <div className="fixed top-0 left-0 right-0 z-20 bg-black/80 backdrop-blur-sm p-3 pointer-events-none">
           <p className="text-sm text-primary text-center">
