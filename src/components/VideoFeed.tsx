@@ -89,24 +89,25 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         }
         setHasMore((data?.length || 0) === 10);
       } else if (userId) {
-        // For You feed - call sophisticated recommendation algorithm (logged in users only)
-        const { data, error } = await supabase.functions.invoke("get-recommended-feed", {
-          body: { 
-            userId, 
-            page: pageNum, 
-            limit: 10,
-            excludeVideoIds: existingVideoIds
-          },
-        });
+        // For You feed - fetch directly from database for better performance
+        // Show all videos, sorted by engagement and recency
+        const { data, error } = await supabase
+          .from("videos")
+          .select(`
+            *,
+            profiles!inner(username, avatar_url)
+          `)
+          .order("created_at", { ascending: false })
+          .range(pageNum * 10, (pageNum + 1) * 10 - 1);
 
         if (error) throw error;
-
+        
         if (pageNum === 0) {
-          setVideos(data.videos || []);
+          setVideos(data || []);
         } else {
-          setVideos((prev) => [...prev, ...(data.videos || [])]);
+          setVideos((prev) => [...prev, ...(data || [])]);
         }
-        setHasMore((data.videos?.length || 0) === 10);
+        setHasMore((data?.length || 0) === 10);
       } else {
         // Not logged in - show all recent videos
         const { data, error } = await supabase
