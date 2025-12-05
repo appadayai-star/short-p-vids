@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import { VideoModal } from "@/components/VideoModal";
 import { SEO } from "@/components/SEO";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, MoreVertical, Trash2 } from "lucide-react";
+import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, Camera, Loader2 } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
   DropdownMenu,
@@ -36,6 +36,8 @@ const Profile = () => {
   const unreadCount = useUnreadNotifications(currentUser?.id || null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const isOwnProfile = !userId || userId === currentUser?.id;
 
@@ -256,6 +258,70 @@ const Profile = () => {
     }
   };
 
+  const handleAvatarClick = () => {
+    if (isOwnProfile && avatarInputRef.current) {
+      avatarInputRef.current.click();
+    }
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error("Please select an image file");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be less than 5MB");
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${currentUser.id}/avatar.${fileExt}`;
+
+      // Upload to storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      // Add cache-busting parameter
+      const avatarUrl = `${publicUrl}?t=${Date.now()}`;
+
+      // Update profile
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', currentUser.id);
+
+      if (updateError) throw updateError;
+
+      setProfile({ ...profile, avatar_url: avatarUrl });
+      toast.success("Profile picture updated!");
+    } catch (error: any) {
+      console.error("Avatar upload error:", error);
+      toast.error(error.message || "Failed to upload avatar");
+    } finally {
+      setIsUploadingAvatar(false);
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = '';
+      }
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -307,10 +373,26 @@ const Profile = () => {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
+        {/* Hidden file input for avatar upload */}
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleAvatarUpload}
+          className="hidden"
+        />
+
         {/* Profile Avatar */}
         <div className="flex justify-center mb-4">
-          <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-white/20">
-            {profile?.avatar_url ? (
+          <div 
+            className={`relative w-24 h-24 rounded-full overflow-hidden border-2 border-white/20 ${isOwnProfile ? 'cursor-pointer group' : ''}`}
+            onClick={handleAvatarClick}
+          >
+            {isUploadingAvatar ? (
+              <div className="w-full h-full flex items-center justify-center bg-black/50">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : profile?.avatar_url ? (
               <img
                 src={profile.avatar_url}
                 alt={profile.username}
@@ -319,6 +401,13 @@ const Profile = () => {
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-primary text-primary-foreground text-3xl font-bold">
                 {profile.username[0].toUpperCase()}
+              </div>
+            )}
+            
+            {/* Camera overlay for own profile */}
+            {isOwnProfile && !isUploadingAvatar && (
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Camera className="h-8 w-8 text-white" />
               </div>
             )}
           </div>
