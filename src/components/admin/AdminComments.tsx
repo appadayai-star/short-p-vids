@@ -39,6 +39,9 @@ export const AdminComments = () => {
     setError(null);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
       const params: Record<string, string> = {
         page: page.toString(),
         limit: limit.toString(),
@@ -46,13 +49,21 @@ export const AdminComments = () => {
       if (search) params.q = search;
 
       const queryString = new URLSearchParams(params).toString();
-      
-      const { data, error: fnError } = await supabase.functions.invoke(`admin-comments?${queryString}`, {
-        method: 'GET',
+      const url = `https://mbuajcicosojebakdtsn.supabase.co/functions/v1/admin-comments?${queryString}`;
+
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98",
+        },
       });
 
-      if (fnError) throw fnError;
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to fetch comments");
+      }
 
+      const data = await res.json();
       setComments(data.comments);
       setTotal(data.total);
     } catch (err) {
@@ -73,12 +84,23 @@ export const AdminComments = () => {
 
     setDeleting(true);
     try {
-      const { error: fnError } = await supabase.functions.invoke('admin-delete-comment', {
-        method: 'DELETE',
-        body: { commentId: deleteComment.id },
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const res = await fetch("https://mbuajcicosojebakdtsn.supabase.co/functions/v1/admin-delete-comment", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ commentId: deleteComment.id }),
       });
 
-      if (fnError) throw fnError;
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to delete comment");
+      }
 
       toast({
         title: "Comment deleted",
