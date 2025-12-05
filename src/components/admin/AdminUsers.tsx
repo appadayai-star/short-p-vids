@@ -256,7 +256,7 @@ export const AdminUsers = () => {
         </div>
       )}
 
-      <AlertDialog open={!!deleteUser} onOpenChange={(open) => !deleting && !open && setDeleteUser(null)}>
+      <AlertDialog open={!!deleteUser} onOpenChange={(open) => { if (!open) setDeleteUser(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete User</AlertDialogTitle>
@@ -268,17 +268,14 @@ export const AdminUsers = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                handleDelete();
-              }}
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
               disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Delete User
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
