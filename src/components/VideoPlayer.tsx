@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo } from "react";
-import { Heart, MessageCircle, Share2, Bookmark, MoreVertical, Trash2, Pause, Play } from "lucide-react";
+import { Heart, MessageCircle, Share2, Bookmark, MoreVertical, Trash2, Pause, Play, Volume2, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -12,6 +12,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+// Global mute state - persisted across videos
+let globalMuted = true;
+const muteListeners = new Set<(muted: boolean) => void>();
+
+const setGlobalMuted = (muted: boolean) => {
+  globalMuted = muted;
+  muteListeners.forEach(listener => listener(muted));
+};
 
 interface Video {
   id: string;
@@ -53,6 +62,21 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [hasTrackedView, setHasTrackedView] = useState(false);
+  const [isMuted, setIsMuted] = useState(globalMuted);
+
+  // Sync with global mute state
+  useEffect(() => {
+    const listener = (muted: boolean) => {
+      setIsMuted(muted);
+      if (videoRef.current) {
+        videoRef.current.muted = muted;
+      }
+    };
+    muteListeners.add(listener);
+    return () => {
+      muteListeners.delete(listener);
+    };
+  }, []);
 
   // Get video source - prefer optimized, fallback to original
   const videoSrc = video.optimized_video_url || video.video_url;
@@ -125,6 +149,12 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
     
     setShowPlayIcon(true);
     setTimeout(() => setShowPlayIcon(false), 500);
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newMuted = !isMuted;
+    setGlobalMuted(newMuted);
   };
 
   const toggleLike = async () => {
@@ -212,10 +242,22 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
         className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
         loop
         playsInline
-        muted
+        muted={isMuted}
         preload="auto"
         onClick={togglePlay}
       />
+
+      {/* Mute/Unmute button - TikTok style */}
+      <button
+        onClick={toggleMute}
+        className="absolute bottom-28 right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all"
+      >
+        {isMuted ? (
+          <VolumeX className="h-5 w-5 text-white" />
+        ) : (
+          <Volume2 className="h-5 w-5 text-white" />
+        )}
+      </button>
 
       {/* Play/Pause indicator */}
       {showPlayIcon && (
