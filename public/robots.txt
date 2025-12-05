@@ -1,8 +1,13 @@
+# Robots.txt for ShortVids Platform
+# Allow all major search engine crawlers
+
 User-agent: Googlebot
 Allow: /
+Crawl-delay: 1
 
 User-agent: Bingbot
 Allow: /
+Crawl-delay: 2
 
 User-agent: Twitterbot
 Allow: /
@@ -10,5 +15,20 @@ Allow: /
 User-agent: facebookexternalhit
 Allow: /
 
+User-agent: LinkedInBot
+Allow: /
+
+User-agent: Slurp
+Allow: /
+Crawl-delay: 2
+
+User-agent: DuckDuckBot
+Allow: /
+Crawl-delay: 2
+
 User-agent: *
 Allow: /
+Crawl-delay: 3
+
+# Sitemap location
+Sitemap: https://shortpornvids.com/sitemap.xml

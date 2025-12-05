@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { VideoPlayer } from "@/components/VideoPlayer";
-import { SEO } from "@/components/SEO";
+import { SEO, generateVideoSEO } from "@/components/SEO";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,6 +18,7 @@ interface Video {
   comments_count: number;
   user_id: string;
   tags: string[] | null;
+  created_at?: string;
   profiles: {
     username: string;
     avatar_url: string | null;
@@ -54,7 +55,7 @@ const Video = () => {
         .from("videos")
         .select(`
           id, title, description, video_url, optimized_video_url, thumbnail_url,
-          views_count, likes_count, comments_count, user_id, tags,
+          views_count, likes_count, comments_count, user_id, tags, created_at,
           profiles(username, avatar_url)
         `)
         .eq("id", videoId)
@@ -71,13 +72,23 @@ const Video = () => {
     }
   };
 
+  // Generate SEO props using the helper
+  const seoProps = video ? generateVideoSEO({
+    id: video.id,
+    title: video.title,
+    description: video.description,
+    thumbnail_url: video.thumbnail_url,
+    video_url: video.optimized_video_url || video.video_url,
+    created_at: video.created_at,
+    views_count: video.views_count,
+    tags: video.tags,
+    profiles: video.profiles,
+  }) : {};
+
   return (
     <div className="fixed inset-0 z-50 bg-black">
-      <SEO 
-        title={video?.title || "Video"}
-        description={video?.description || `Watch this video by @${video?.profiles?.username || 'unknown'}`}
-        type="video.other"
-      />
+      <SEO {...seoProps} />
+      
       <button
         onClick={() => navigate(-1)}
         className="fixed top-4 left-4 z-50 p-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors"
