@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo } from "react";
-import { Heart, MessageCircle, Share2, Bookmark, MoreVertical, Trash2, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { Heart, MessageCircle, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -135,26 +135,11 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
     }
   };
 
-  const togglePlay = () => {
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
-
-    if (isPlaying) {
-      videoEl.pause();
-      setIsPlaying(false);
-    } else {
-      videoEl.play();
-      setIsPlaying(true);
-    }
-    
-    setShowPlayIcon(true);
-    setTimeout(() => setShowPlayIcon(false), 500);
-  };
-
-  const toggleMute = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleMute = () => {
     const newMuted = !isMuted;
     setGlobalMuted(newMuted);
+    setShowPlayIcon(true);
+    setTimeout(() => setShowPlayIcon(false), 500);
   };
 
   const toggleLike = async () => {
@@ -244,29 +229,26 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
         playsInline
         muted={isMuted}
         preload="auto"
-        onClick={togglePlay}
+        onClick={toggleMute}
       />
 
-      {/* Mute/Unmute button - TikTok style */}
-      <button
-        onClick={toggleMute}
-        className="absolute bottom-28 right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-all"
-      >
+      {/* Mute/Unmute indicator */}
+      {showPlayIcon && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+          <div className="bg-black/50 rounded-full p-4 animate-scale-in">
+            {isMuted ? <VolumeX className="h-12 w-12 text-white" /> : <Volume2 className="h-12 w-12 text-white" />}
+          </div>
+        </div>
+      )}
+
+      {/* Mute indicator in corner */}
+      <div className="absolute bottom-28 right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm pointer-events-none">
         {isMuted ? (
           <VolumeX className="h-5 w-5 text-white" />
         ) : (
           <Volume2 className="h-5 w-5 text-white" />
         )}
-      </button>
-
-      {/* Play/Pause indicator */}
-      {showPlayIcon && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-          <div className="bg-black/50 rounded-full p-4 animate-scale-in">
-            {isPlaying ? <Play className="h-12 w-12 text-white fill-white" /> : <Pause className="h-12 w-12 text-white fill-white" />}
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Right side actions */}
       <div className="absolute right-4 bottom-44 flex flex-col gap-6 z-10">
