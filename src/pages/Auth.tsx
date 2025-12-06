@@ -30,9 +30,12 @@ const Auth = () => {
         const { data: userEmail, error: rpcError } = await supabase
           .rpc("get_email_by_username", { p_username: email });
 
-        if (rpcError) throw rpcError;
+        if (rpcError) {
+          console.error("RPC error:", rpcError);
+          throw new Error("Failed to look up username");
+        }
         if (!userEmail) {
-          throw new Error("Username not found");
+          throw new Error("Username not found. Please check spelling or use your email.");
         }
         email = userEmail;
       }
