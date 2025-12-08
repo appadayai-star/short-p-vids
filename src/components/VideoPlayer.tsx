@@ -241,11 +241,8 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
         </div>
       )}
 
-      {/* Mute indicator in corner */}
-      <div 
-        className="absolute right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm pointer-events-none"
-        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 112px)' }}
-      >
+      {/* Mute indicator in corner - positioned above nav bar */}
+      <div className="absolute bottom-[120px] right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm pointer-events-none">
         {isMuted ? (
           <VolumeX className="h-5 w-5 text-white" />
         ) : (
@@ -253,11 +250,8 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
         )}
       </div>
 
-      {/* Right side actions */}
-      <div 
-        className="absolute right-4 flex flex-col gap-6 z-10"
-        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 176px)' }}
-      >
+      {/* Right side actions - positioned above nav bar */}
+      <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-10">
         <button onClick={toggleLike} className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
             <Heart className={cn("h-7 w-7", isLiked ? "fill-primary text-primary" : "text-white")} />
@@ -304,14 +298,8 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
         )}
       </div>
 
-      {/* Bottom info - uses safe area + fixed offset for nav bar */}
-      <div 
-        className="absolute bottom-0 left-0 right-0 p-4 z-10 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none" 
-        style={{ 
-          paddingRight: '80px',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 100px)'
-        }}
-      >
+      {/* Bottom info - fixed height above nav bar */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 pb-[100px] z-10 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none pr-[80px]">
         <div className="space-y-2 pointer-events-auto">
           <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
             <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">

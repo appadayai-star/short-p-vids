@@ -138,7 +138,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-black">
+      <div className="flex justify-center items-center h-[100dvh] bg-black">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
       </div>
     );
@@ -146,7 +146,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
   if (videos.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen bg-black">
+      <div className="flex items-center justify-center h-[100dvh] bg-black">
         <p className="text-primary text-lg">
           {searchQuery ? "No videos found" : categoryFilter ? `No videos in ${categoryFilter}` : "No videos yet"}
         </p>
@@ -155,7 +155,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   }
 
   return (
-    <div id="video-feed-container" className="w-full h-screen snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scrollbar-hide">
+    <div id="video-feed-container" className="w-full h-[100dvh] snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scrollbar-hide pb-16" style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}>
       {searchQuery && (
         <div className="fixed top-0 left-0 right-0 z-20 bg-black/80 backdrop-blur-sm p-3 pointer-events-none">
           <p className="text-sm text-primary text-center">
