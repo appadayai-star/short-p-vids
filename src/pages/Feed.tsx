@@ -54,7 +54,7 @@ const Feed = () => {
   }
 
   return (
-    <div className="h-screen bg-black overflow-hidden flex flex-col relative">
+    <div className="h-[100dvh] bg-black overflow-hidden flex flex-col relative">
       <SEO 
         title={categoryFilter ? `${categoryFilter} Videos` : undefined}
         description={categoryFilter 
