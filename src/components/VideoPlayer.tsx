@@ -44,11 +44,12 @@ interface VideoPlayerProps {
   video: Video;
   currentUserId: string | null;
   isActive: boolean;
+  shouldPreload?: boolean;
   onDelete?: (videoId: string) => void;
   onNavigate?: () => void;
 }
 
-export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onNavigate }: VideoPlayerProps) => {
+export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload = false, onDelete, onNavigate }: VideoPlayerProps) => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   
@@ -220,7 +221,7 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
 
   return (
     <div className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center">
-      {/* Video */}
+      {/* Video - preload aggressively for smooth playback */}
       <video
         ref={videoRef}
         src={videoSrc}
@@ -228,7 +229,8 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, onDelete, onN
         loop
         playsInline
         muted={isMuted}
-        preload="auto"
+        preload={shouldPreload || isActive ? "auto" : "metadata"}
+        poster={video.thumbnail_url || undefined}
         onClick={toggleMute}
       />
 
