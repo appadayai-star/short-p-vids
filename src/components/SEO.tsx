@@ -25,9 +25,8 @@ interface SEOProps {
 
 const defaults = {
   siteName: "ShortPornVids",
-  title: "ShortVids – Endless Short-Form Porn Videos",
-  description:
-    "ShortVids is a modern short-form video platform offering fast, personalized content discovery. Scroll instantly through an endless feed of creator-driven clips optimized for mobile viewing.",
+  title: "Short Porn Vids – Endless Short-Form Porn Videos XXX",
+  description: "Watch Free Short Porn Vids Hot Porn Vids Videos",
   keywords: "short videos, video platform, content creators, video feed, mobile videos, trending videos",
   image: "https://shortpornvids.com/og-image.png",
   url: "https://shortpornvids.com",
