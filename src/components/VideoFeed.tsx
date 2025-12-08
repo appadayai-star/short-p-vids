@@ -1,7 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { VideoPlayer } from "./VideoPlayer";
 import { Loader2 } from "lucide-react";
+
+// Preload videos ahead for instant playback
+const PRELOAD_COUNT = 3;
 
 interface Video {
   id: string;
@@ -136,6 +139,30 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   }, [currentIndex, videos.length]);
 
+  // Preload upcoming videos
+  useEffect(() => {
+    if (videos.length === 0) return;
+    
+    // Preload next PRELOAD_COUNT videos
+    for (let i = 1; i <= PRELOAD_COUNT; i++) {
+      const nextIndex = currentIndex + i;
+      if (nextIndex < videos.length) {
+        const nextVideo = videos[nextIndex];
+        const videoUrl = nextVideo.optimized_video_url || nextVideo.video_url;
+        
+        // Use link preload for high priority
+        const existingLink = document.querySelector(`link[href="${videoUrl}"]`);
+        if (!existingLink) {
+          const link = document.createElement('link');
+          link.rel = 'preload';
+          link.as = 'video';
+          link.href = videoUrl;
+          document.head.appendChild(link);
+        }
+      }
+    }
+  }, [currentIndex, videos]);
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-[100dvh] bg-black">
@@ -170,6 +197,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           video={video} 
           currentUserId={userId}
           isActive={index === currentIndex}
+          shouldPreload={index >= currentIndex && index <= currentIndex + PRELOAD_COUNT}
         />
       ))}
     </div>
