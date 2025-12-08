@@ -18,7 +18,6 @@ const Feed = () => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
@@ -28,14 +27,12 @@ const Feed = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      setIsLoading(false);
     });
 
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      setIsLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -45,13 +42,7 @@ const Feed = () => {
     setRefreshKey(prev => prev + 1);
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-primary text-lg">Loading...</div>
-      </div>
-    );
-  }
+  // Don't block rendering while checking auth - render feed immediately
 
   return (
     <div className="h-[100dvh] bg-black overflow-hidden flex flex-col relative">
