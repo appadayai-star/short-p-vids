@@ -45,11 +45,12 @@ interface VideoPlayerProps {
   currentUserId: string | null;
   isActive: boolean;
   shouldPreload?: boolean;
+  isFirstVideo?: boolean;
   onDelete?: (videoId: string) => void;
   onNavigate?: () => void;
 }
 
-export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload = false, onDelete, onNavigate }: VideoPlayerProps) => {
+export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload = false, isFirstVideo = false, onDelete, onNavigate }: VideoPlayerProps) => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   
@@ -229,9 +230,11 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
         loop
         playsInline
         muted={isMuted}
-        preload={shouldPreload || isActive ? "auto" : "metadata"}
+        preload={isFirstVideo || shouldPreload || isActive ? "auto" : "metadata"}
         poster={video.thumbnail_url || undefined}
         onClick={toggleMute}
+        // @ts-ignore - fetchpriority is valid
+        fetchpriority={isFirstVideo ? "high" : "auto"}
       />
 
       {/* Mute/Unmute indicator */}
