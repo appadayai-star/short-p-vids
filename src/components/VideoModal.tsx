@@ -1,7 +1,7 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { VideoPlayer } from "./VideoPlayer";
+import { VideoCard } from "./VideoCard";
 import { toast } from "sonner";
 
 interface Video {
@@ -33,8 +33,14 @@ interface VideoModalProps {
 export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: providedVideos }: VideoModalProps) => {
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleActiveChange = useCallback((index: number, isActive: boolean) => {
+    if (isActive) {
+      setActiveIndex(index);
+    }
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -42,7 +48,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         setVideos(providedVideos);
         const index = providedVideos.findIndex(v => v.id === initialVideoId);
         const targetIndex = index >= 0 ? index : 0;
-        setCurrentIndex(targetIndex);
+        setActiveIndex(targetIndex);
         setIsLoading(false);
         
         setTimeout(() => {
@@ -66,24 +72,10 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     };
   }, [isOpen, initialVideoId, providedVideos]);
 
-  // Track scroll position
-  useEffect(() => {
-    const handleScroll = () => {
-      if (!scrollContainerRef.current) return;
-      const scrollTop = scrollContainerRef.current.scrollTop;
-      const videoHeight = window.innerHeight;
-      const newIndex = Math.round(scrollTop / videoHeight);
-      if (newIndex !== currentIndex && newIndex >= 0 && newIndex < videos.length) {
-        setCurrentIndex(newIndex);
-      }
-    };
-
-    const container = scrollContainerRef.current;
-    if (container) {
-      container.addEventListener('scroll', handleScroll);
-      return () => container.removeEventListener('scroll', handleScroll);
-    }
-  }, [currentIndex, videos.length]);
+  // Determine which videos should preload
+  const shouldPreload = useCallback((index: number) => {
+    return index >= activeIndex && index <= activeIndex + 2;
+  }, [activeIndex]);
 
   const fetchVideos = async () => {
     setIsLoading(true);
@@ -102,7 +94,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
 
       setVideos(data || []);
       const index = (data || []).findIndex(v => v.id === initialVideoId);
-      setCurrentIndex(index >= 0 ? index : 0);
+      setActiveIndex(index >= 0 ? index : 0);
     } catch (error) {
       console.error("Error fetching videos:", error);
       toast.error("Failed to load videos");
@@ -129,11 +121,14 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
           </div>
         ) : (
           videos.map((video, index) => (
-            <VideoPlayer 
+            <VideoCard 
               key={video.id} 
-              video={video} 
-              currentUserId={userId} 
-              isActive={index === currentIndex}
+              video={video}
+              index={index}
+              currentUserId={userId}
+              shouldPreload={shouldPreload(index)}
+              isFirstVideo={index === 0}
+              onActiveChange={handleActiveChange}
               onNavigate={onClose} 
             />
           ))

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo } from "react";
+import { useState, useRef, useEffect, memo, useCallback } from "react";
 import { Heart, MessageCircle, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,31 +40,48 @@ interface Video {
   };
 }
 
-interface VideoPlayerProps {
+interface VideoCardProps {
   video: Video;
+  index: number;
   currentUserId: string | null;
-  isActive: boolean;
-  shouldPreload?: boolean;
-  isFirstVideo?: boolean;
+  shouldPreload: boolean;
+  isFirstVideo: boolean;
+  onActiveChange: (index: number, isActive: boolean) => void;
   onDelete?: (videoId: string) => void;
   onNavigate?: () => void;
 }
 
-export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload = false, isFirstVideo = false, onDelete, onNavigate }: VideoPlayerProps) => {
+export const VideoCard = memo(({ 
+  video, 
+  index,
+  currentUserId, 
+  shouldPreload,
+  isFirstVideo,
+  onActiveChange,
+  onDelete, 
+  onNavigate 
+}: VideoCardProps) => {
   const navigate = useNavigate();
+  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   
+  const [isVisible, setIsVisible] = useState(false);
+  const [isActive, setIsActive] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [commentsCount, setCommentsCount] = useState(video.comments_count);
   const [isSaved, setIsSaved] = useState(false);
   const [savesCount, setSavesCount] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [showPlayIcon, setShowPlayIcon] = useState(false);
+  const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [hasTrackedView, setHasTrackedView] = useState(false);
   const [isMuted, setIsMuted] = useState(globalMuted);
+  const [videoLoaded, setVideoLoaded] = useState(false);
+
+  // Get video source - prefer optimized, fallback to original
+  const videoSrc = video.optimized_video_url || video.video_url;
+  const posterSrc = video.thumbnail_url || undefined;
 
   // Sync with global mute state
   useEffect(() => {
@@ -80,18 +97,46 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
     };
   }, []);
 
-  // Get video source - prefer optimized, fallback to original
-  const videoSrc = video.optimized_video_url || video.video_url;
+  // IntersectionObserver to detect visibility and active state
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  // Play/pause based on active state
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const isIntersecting = entry.isIntersecting;
+          const ratio = entry.intersectionRatio;
+          
+          // Visible if any part is showing
+          setIsVisible(isIntersecting);
+          
+          // Active if more than 50% visible
+          const nowActive = ratio > 0.5;
+          if (nowActive !== isActive) {
+            setIsActive(nowActive);
+            onActiveChange(index, nowActive);
+          }
+        });
+      },
+      { 
+        threshold: [0, 0.5, 1],
+        rootMargin: '0px'
+      }
+    );
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [index, isActive, onActiveChange]);
+
+  // Handle video play/pause based on active state
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    if (isActive) {
-      videoEl.play().then(() => {
-        setIsPlaying(true);
-      }).catch(() => {
+    if (isActive && videoLoaded) {
+      videoEl.currentTime = 0;
+      videoEl.play().catch(() => {
         // Autoplay blocked - that's okay
       });
 
@@ -100,15 +145,21 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
         trackView();
         setHasTrackedView(true);
       }
-    } else {
+    } else if (videoEl) {
       videoEl.pause();
-      setIsPlaying(false);
     }
-  }, [isActive, hasTrackedView]);
+  }, [isActive, videoLoaded, hasTrackedView]);
+
+  // Preload video when shouldPreload is true
+  useEffect(() => {
+    if (shouldPreload && videoRef.current && !videoLoaded) {
+      videoRef.current.load();
+    }
+  }, [shouldPreload, videoLoaded]);
 
   // Fetch interaction states
   useEffect(() => {
-    if (!currentUserId) return;
+    if (!currentUserId || !isVisible) return;
 
     const fetchStates = async () => {
       const [likeResult, saveResult, savesCountResult] = await Promise.all([
@@ -123,7 +174,7 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
     };
 
     fetchStates();
-  }, [video.id, currentUserId]);
+  }, [video.id, currentUserId, isVisible]);
 
   const trackView = async () => {
     try {
@@ -137,12 +188,12 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
     }
   };
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
     setGlobalMuted(newMuted);
-    setShowPlayIcon(true);
-    setTimeout(() => setShowPlayIcon(false), 500);
-  };
+    setShowMuteIcon(true);
+    setTimeout(() => setShowMuteIcon(false), 500);
+  }, [isMuted]);
 
   const toggleLike = async () => {
     if (!currentUserId) {
@@ -218,27 +269,53 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
     navigate(`/profile/${video.user_id}`);
   };
 
+  const handleVideoCanPlay = useCallback(() => {
+    setVideoLoaded(true);
+  }, []);
+
   const isOwnVideo = currentUserId === video.user_id;
 
+  // Determine if we should render the video element
+  const shouldRenderVideo = isVisible || shouldPreload || isFirstVideo;
+
   return (
-    <div className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center">
-      {/* Video - preload aggressively for smooth playback */}
-      <video
-        ref={videoRef}
-        src={videoSrc}
-        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
-        loop
-        playsInline
-        muted={isMuted}
-        preload={isFirstVideo || shouldPreload || isActive ? "auto" : "metadata"}
-        poster={video.thumbnail_url || undefined}
-        onClick={toggleMute}
-        // @ts-ignore - fetchpriority is valid
-        fetchpriority={isFirstVideo ? "high" : "auto"}
-      />
+    <div 
+      ref={containerRef}
+      className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center"
+    >
+      {/* Thumbnail background - always visible as fallback */}
+      {posterSrc && (
+        <img 
+          src={posterSrc} 
+          alt="" 
+          className={cn(
+            "absolute inset-0 w-full h-full object-cover md:object-contain",
+            shouldRenderVideo && videoLoaded ? "opacity-0" : "opacity-100"
+          )}
+          loading={isFirstVideo ? "eager" : "lazy"}
+        />
+      )}
+
+      {/* Video - only rendered when visible/preloading */}
+      {shouldRenderVideo && (
+        <video
+          ref={videoRef}
+          src={videoSrc}
+          className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
+          loop
+          playsInline
+          muted={isMuted}
+          preload={isActive || isFirstVideo ? "auto" : shouldPreload ? "metadata" : "none"}
+          poster={posterSrc}
+          onClick={toggleMute}
+          onCanPlay={handleVideoCanPlay}
+          // @ts-ignore - fetchpriority is valid
+          fetchpriority={isFirstVideo ? "high" : "auto"}
+        />
+      )}
 
       {/* Mute/Unmute indicator */}
-      {showPlayIcon && (
+      {showMuteIcon && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
           <div className="bg-black/50 rounded-full p-4 animate-scale-in">
             {isMuted ? <VolumeX className="h-12 w-12 text-white" /> : <Volume2 className="h-12 w-12 text-white" />}
@@ -246,7 +323,7 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
         </div>
       )}
 
-      {/* Mute indicator in corner - positioned above nav bar */}
+      {/* Mute indicator in corner */}
       <div className="absolute bottom-[120px] right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm pointer-events-none">
         {isMuted ? (
           <VolumeX className="h-5 w-5 text-white" />
@@ -255,7 +332,7 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
         )}
       </div>
 
-      {/* Right side actions - positioned above nav bar */}
+      {/* Right side actions */}
       <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-10">
         <button onClick={toggleLike} className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
@@ -303,7 +380,7 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
         )}
       </div>
 
-      {/* Bottom info - fixed height above nav bar */}
+      {/* Bottom info */}
       <div className="absolute bottom-0 left-0 right-0 p-4 pb-[100px] z-10 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none pr-[80px]">
         <div className="space-y-2 pointer-events-auto">
           <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
@@ -343,4 +420,4 @@ export const VideoPlayer = memo(({ video, currentUserId, isActive, shouldPreload
   );
 });
 
-VideoPlayer.displayName = 'VideoPlayer';
+VideoCard.displayName = 'VideoCard';
