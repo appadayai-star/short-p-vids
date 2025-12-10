@@ -178,11 +178,11 @@ export const VideoCard = memo(({
 
   const trackView = async () => {
     try {
+      // Insert view record - trigger automatically increments views_count on videos table
       await supabase.from("video_views").insert({
         video_id: video.id,
         user_id: currentUserId,
       });
-      await supabase.from("videos").update({ views_count: video.views_count + 1 }).eq("id", video.id);
     } catch (error) {
       // Silent fail for view tracking
     }
