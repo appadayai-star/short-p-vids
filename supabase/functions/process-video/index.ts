@@ -92,13 +92,14 @@ serve(async (req) => {
     // Generate Cloudinary signature for upload
     const timestamp = Math.floor(Date.now() / 1000);
     
-    // Transformation parameters for optimized video:
-    // - 720p resolution (height 720, width auto to maintain aspect ratio)
-    // - H.264 codec (vc_h264)
-    // - Quality auto for optimal compression
-    // - Format mp4
-    // - Limit framerate to 30fps
-    const eagerTransforms = "c_limit,h_720,q_auto:good,vc_h264,fps_30";
+    // Optimized transformation parameters for fast streaming:
+    // - f_auto: Automatic best format (WebM for Chrome/Firefox, MP4 for Safari)
+    // - q_auto:eco: Aggressive compression optimized for streaming (smaller file, faster load)
+    // - c_limit,h_720: Max 720p height, maintains aspect ratio
+    // - vc_h264: H.264 codec for broad compatibility
+    // - fps_30: Cap framerate at 30fps
+    // - br_2000k: Target bitrate ~2Mbps for mobile-friendly streaming
+    const eagerTransforms = "f_auto,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k";
     
     // Create signature for authenticated upload
     const signatureString = `eager=${eagerTransforms}&folder=optimized&public_id=${videoId}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
@@ -110,7 +111,7 @@ serve(async (req) => {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
-    console.log("Uploading to Cloudinary...");
+    console.log("Uploading to Cloudinary with optimizations:", eagerTransforms);
 
     // Upload video to Cloudinary with transformations
     const formData = new FormData();
@@ -140,6 +141,7 @@ serve(async (req) => {
     }
 
     console.log("Cloudinary upload successful:", cloudinaryResult.secure_url);
+    console.log("Original size:", cloudinaryResult.bytes, "bytes");
 
     // Get the optimized video URL (from eager transformation)
     let optimizedUrl = cloudinaryResult.secure_url;
@@ -148,15 +150,19 @@ serve(async (req) => {
     if (cloudinaryResult.eager && cloudinaryResult.eager.length > 0) {
       optimizedUrl = cloudinaryResult.eager[0].secure_url;
       console.log("Using eager transformed URL:", optimizedUrl);
+      console.log("Optimized size:", cloudinaryResult.eager[0].bytes, "bytes");
     }
 
-    // Generate thumbnail URL (first frame of the video)
-    // Cloudinary automatically generates thumbnails by replacing extension with jpg
+    // Generate optimized thumbnail URL:
+    // - w_480,h_852: Mobile vertical format (~9:16 aspect ratio)
+    // - c_fill,g_auto: Smart crop focused on content
+    // - f_auto,q_auto: Auto format and quality
+    // - so_0: Start offset 0 (first frame)
     const thumbnailUrl = cloudinaryResult.secure_url
-      .replace("/video/upload/", "/video/upload/w_720,h_1280,c_fill,g_center,so_0/")
+      .replace("/video/upload/", "/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/")
       .replace(/\.[^/.]+$/, ".jpg");
 
-    console.log("Generated thumbnail URL:", thumbnailUrl);
+    console.log("Generated optimized thumbnail URL:", thumbnailUrl);
 
     // Update the video record with optimized URLs
     const { error: updateError } = await supabase
