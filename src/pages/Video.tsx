@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { VideoPlayer } from "@/components/VideoPlayer";
+import { VideoCard } from "@/components/VideoCard";
 import { SEO, generateVideoSEO } from "@/components/SEO";
 import { X } from "lucide-react";
 import { toast } from "sonner";
@@ -102,7 +102,14 @@ const Video = () => {
         </div>
       ) : video ? (
         <div className="h-screen overflow-y-auto">
-          <VideoPlayer video={video} currentUserId={currentUserId} isActive={true} />
+          <VideoCard 
+            video={video} 
+            index={0}
+            currentUserId={currentUserId}
+            shouldPreload={true}
+            isFirstVideo={true}
+            onActiveChange={() => {}}
+          />
         </div>
       ) : (
         <div className="flex items-center justify-center h-screen">
