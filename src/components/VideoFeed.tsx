@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { VideoCard } from "./VideoCard";
+import { FeedItem } from "./FeedItem";
+import { SinglePlayer } from "./SinglePlayer";
 import { Loader2 } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 import { getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
-const PRELOAD_AHEAD = 2;
 
 interface Video {
   id: string;
@@ -39,13 +39,49 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [activeIndex, setActiveIndex] = useState(0); // Start at 0 immediately
+  const [activeIndex, setActiveIndex] = useState(0);
   const [page, setPage] = useState(0);
   const [hasWarmedUp, setHasWarmedUp] = useState(false);
+  const [activeContainerRect, setActiveContainerRect] = useState<DOMRect | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  // Track container refs from FeedItems
+  const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
+    if (ref) {
+      itemRefsRef.current.set(index, ref);
+    } else {
+      itemRefsRef.current.delete(index);
+    }
+  }, []);
+
+  // Update active container rect when activeIndex changes
+  useEffect(() => {
+    const updateRect = () => {
+      const activeContainer = itemRefsRef.current.get(activeIndex);
+      if (activeContainer) {
+        setActiveContainerRect(activeContainer.getBoundingClientRect());
+      }
+    };
+
+    updateRect();
+    
+    // Update on scroll/resize
+    const handleUpdate = () => {
+      requestAnimationFrame(updateRect);
+    };
+
+    window.addEventListener('resize', handleUpdate);
+    containerRef.current?.addEventListener('scroll', handleUpdate);
+    
+    return () => {
+      window.removeEventListener('resize', handleUpdate);
+      containerRef.current?.removeEventListener('scroll', handleUpdate);
+    };
+  }, [activeIndex, videos.length]);
 
   // Fetch videos with pagination
   const fetchVideos = useCallback(async (pageNum: number, append = false) => {
@@ -167,9 +203,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   }, [searchQuery, categoryFilter, userId]);
 
-  // Initial load - fetch videos immediately so they're visible behind overlay
+  // Initial load
   useEffect(() => {
     setPage(0);
+    setActiveIndex(0);
     loadedIdsRef.current.clear();
     setHasWarmedUp(false);
     fetchVideos(0, false);
@@ -187,17 +224,34 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       firstVideo.video_url
     );
     
-    // HEAD request to prime the connection without downloading full video
     fetch(videoUrl, { method: 'HEAD', mode: 'cors' })
       .then(() => {
         console.log('[VideoFeed] Warmed up first video connection');
         setHasWarmedUp(true);
       })
       .catch(() => {
-        // Silently fail - video will still load normally
         setHasWarmedUp(true);
       });
   }, [videos, hasWarmedUp]);
+
+  // Preload next video metadata
+  useEffect(() => {
+    if (!hasEntered || videos.length === 0) return;
+    
+    const nextIndex = activeIndex + 1;
+    if (nextIndex >= videos.length) return;
+    
+    const nextVideo = videos[nextIndex];
+    const videoUrl = getBestVideoSource(
+      nextVideo.cloudinary_public_id || null,
+      nextVideo.optimized_video_url || null,
+      nextVideo.stream_url || null,
+      nextVideo.video_url
+    );
+    
+    // Preload metadata only - no video tag needed
+    fetch(videoUrl, { method: 'HEAD', mode: 'cors' }).catch(() => {});
+  }, [activeIndex, videos, hasEntered]);
 
   // Infinite scroll - observe sentinel element
   useEffect(() => {
@@ -218,21 +272,36 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, page, fetchVideos]);
 
-  // Handle active video changes from VideoCard
-  const handleActiveChange = useCallback((index: number, isActive: boolean) => {
-    if (isActive) {
-      setActiveIndex(index);
-    }
-  }, []);
+  // Detect active video via scroll position
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || videos.length === 0) return;
 
-  // Determine which videos should preload - first video always preloads, others wait for entry
-  const shouldPreload = useCallback((index: number) => {
-    // First video always preloads (even before Enter)
-    if (index === 0) return true;
-    // Other videos only preload after entry and if near active
-    if (!hasEntered) return false;
-    return index >= activeIndex && index <= activeIndex + PRELOAD_AHEAD;
-  }, [activeIndex, hasEntered]);
+    const handleScroll = () => {
+      const scrollTop = container.scrollTop;
+      const itemHeight = container.clientHeight;
+      const newIndex = Math.round(scrollTop / itemHeight);
+      
+      if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
+        setActiveIndex(newIndex);
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [activeIndex, videos.length]);
+
+  // Track view callback
+  const handleViewTracked = useCallback(async (videoId: string) => {
+    try {
+      await supabase.from("video_views").insert({
+        video_id: videoId,
+        user_id: userId,
+      });
+    } catch (error) {
+      // Silent fail
+    }
+  }, [userId]);
 
   if (isLoading) {
     return (
@@ -252,6 +321,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
   }
 
+  const activeVideo = videos[activeIndex] || null;
+
   return (
     <div 
       ref={containerRef}
@@ -267,21 +338,27 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         </div>
       )}
 
+      {/* Single shared video player */}
+      <SinglePlayer
+        video={activeVideo}
+        containerRect={activeContainerRect}
+        hasEntered={hasEntered}
+        onViewTracked={handleViewTracked}
+      />
+
+      {/* Feed items (thumbnail-only) */}
       {videos.map((video, index) => (
-        <VideoCard 
+        <FeedItem 
           key={video.id} 
           video={video} 
           index={index}
-          activeIndex={activeIndex}
+          isActive={index === activeIndex}
           currentUserId={userId}
-          shouldPreload={shouldPreload(index)}
-          isFirstVideo={index === 0}
-          hasEntered={hasEntered}
-          onActiveChange={handleActiveChange}
+          onContainerRef={handleContainerRef}
         />
       ))}
 
-      {/* Sentinel for infinite scroll - larger to ensure intersection */}
+      {/* Sentinel for infinite scroll */}
       <div ref={sentinelRef} className="h-20 w-full" />
       
       {/* Loading more indicator */}
