@@ -55,6 +55,12 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   const fetchIdRef = useRef(0);
+  const userIdRef = useRef(userId);
+  
+  // Keep userIdRef in sync
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
 
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
     if (ref) {
@@ -123,9 +129,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         
         if (isForYouFeed) {
           // Use the recommendation algorithm for the main "For You" feed
-          console.log(`[VideoFeed] Calling get-for-you-feed edge function...`);
+          const currentUserId = userIdRef.current;
+          console.log(`[VideoFeed] Calling get-for-you-feed edge function (userId: ${currentUserId || 'none'})...`);
           const { data: fnData, error: fnError } = await supabase.functions.invoke('get-for-you-feed', {
-            body: { userId: userId || null, page: 0, limit: PAGE_SIZE }
+            body: { userId: currentUserId || null, page: 0, limit: PAGE_SIZE }
           });
           
           if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) return;
@@ -218,7 +225,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       abortController.abort();
       console.log(`[VideoFeed] Cleanup fetch #${currentFetchId}`);
     };
-  }, [searchQuery, categoryFilter, retryCount, authStatus, userId]);
+  }, [searchQuery, categoryFilter, retryCount, authStatus]);
 
   // Warmup first video
   useEffect(() => {
@@ -248,7 +255,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       if (isForYouFeed) {
         // Use the recommendation algorithm for pagination
         const { data: fnData, error: fnError } = await supabase.functions.invoke('get-for-you-feed', {
-          body: { userId: userId || null, page: pageNum, limit: PAGE_SIZE }
+          body: { userId: userIdRef.current || null, page: pageNum, limit: PAGE_SIZE }
         });
         
         if (fnError) throw new Error(fnError.message || "Failed to load more");
@@ -288,7 +295,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     } finally {
       setIsLoadingMore(false);
     }
-  }, [searchQuery, categoryFilter, isLoadingMore, userId]);
+  }, [searchQuery, categoryFilter, isLoadingMore]);
 
   useEffect(() => {
     if (!initialLoadComplete || !sentinelRef.current || !hasMore || isLoadingMore) {
