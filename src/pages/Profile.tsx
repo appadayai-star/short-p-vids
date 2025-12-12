@@ -534,15 +534,25 @@ const Profile = () => {
                   >
                     {(() => {
                       const thumbUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
-                      return thumbUrl ? (
-                        <img
-                          src={thumbUrl}
-                          alt={video.title}
+                      if (thumbUrl) {
+                        return (
+                          <img
+                            src={thumbUrl}
+                            alt={video.title}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        );
+                      }
+                      // Fallback: use video element to show first frame
+                      return (
+                        <video
+                          src={video.video_url}
                           className="w-full h-full object-cover"
-                          loading="lazy"
+                          muted
+                          playsInline
+                          preload="metadata"
                         />
-                      ) : (
-                        <div className="w-full h-full bg-white/10" />
                       );
                     })()}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
@@ -573,15 +583,25 @@ const Profile = () => {
                     >
                       {(() => {
                         const thumbUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
-                        return thumbUrl ? (
-                          <img
-                            src={thumbUrl}
-                            alt={video.title}
+                        if (thumbUrl) {
+                          return (
+                            <img
+                              src={thumbUrl}
+                              alt={video.title}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          );
+                        }
+                        // Fallback: use video element to show first frame
+                        return (
+                          <video
+                            src={video.video_url}
                             className="w-full h-full object-cover"
-                            loading="lazy"
+                            muted
+                            playsInline
+                            preload="metadata"
                           />
-                        ) : (
-                          <div className="w-full h-full bg-white/10" />
                         );
                       })()}
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
@@ -613,15 +633,25 @@ const Profile = () => {
                     >
                       {(() => {
                         const thumbUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
-                        return thumbUrl ? (
-                          <img
-                            src={thumbUrl}
-                            alt={video.title}
+                        if (thumbUrl) {
+                          return (
+                            <img
+                              src={thumbUrl}
+                              alt={video.title}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          );
+                        }
+                        // Fallback: use video element to show first frame
+                        return (
+                          <video
+                            src={video.video_url}
                             className="w-full h-full object-cover"
-                            loading="lazy"
+                            muted
+                            playsInline
+                            preload="metadata"
                           />
-                        ) : (
-                          <div className="w-full h-full bg-white/10" />
                         );
                       })()}
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
