@@ -14,6 +14,8 @@ const setGlobalMuted = (muted: boolean) => {
 
 export const getGlobalMuted = () => globalMuted;
 
+// Scroll lock to prevent multiple rapid scrolls
+let isScrolling = false;
 
 interface Video {
   id: string;
@@ -314,12 +316,18 @@ export const SinglePlayer = memo(({
         onClick={handleVideoTap}
         onWheel={(e) => {
           e.preventDefault();
+          if (isScrolling) return;
+          
+          isScrolling = true;
           const container = document.getElementById('video-feed-container');
           if (container) {
             const direction = e.deltaY > 0 ? 1 : -1;
-            const targetScroll = Math.round(container.scrollTop / container.clientHeight + direction) * container.clientHeight;
+            const currentIndex = Math.round(container.scrollTop / container.clientHeight);
+            const targetScroll = (currentIndex + direction) * container.clientHeight;
             container.scrollTo({ top: targetScroll, behavior: 'smooth' });
           }
+          
+          setTimeout(() => { isScrolling = false; }, 500);
         }}
       />
 
