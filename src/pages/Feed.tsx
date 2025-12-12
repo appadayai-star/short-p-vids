@@ -8,7 +8,7 @@ import { Search, X } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
@@ -16,11 +16,17 @@ const Feed = () => {
   const searchQuery = searchParams.get('search') || '';
   const categoryFilter = searchParams.get('category') || '';
   
-  const { user } = useAuth();
+  // Auth is non-blocking - we proceed regardless of status
+  const { user, status: authStatus, bootTimestamp } = useAuth();
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
+
+  // Log auth status for debugging
+  useEffect(() => {
+    console.log(`[Feed] Auth status: ${authStatus}, user: ${user?.id || 'null'}, bootTimestamp: ${bootTimestamp}`);
+  }, [authStatus, user, bootTimestamp]);
 
   const handleRefresh = () => {
     // Remount VideoFeed with new key to trigger fresh fetch
@@ -56,7 +62,14 @@ const Feed = () => {
           <Search className="h-6 w-6 text-white" />
         </button>
 
-        <VideoFeed key={refreshKey} searchQuery={searchQuery} categoryFilter={categoryFilter} userId={user?.id || null} />
+        {/* VideoFeed renders immediately - does NOT wait for auth */}
+        <VideoFeed 
+          key={refreshKey} 
+          searchQuery={searchQuery} 
+          categoryFilter={categoryFilter} 
+          userId={user?.id || null} 
+        />
+        
         <BottomNav
           onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
           isAuthenticated={!!user}
