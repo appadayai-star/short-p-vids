@@ -279,7 +279,7 @@ export const SinglePlayer = memo(({
 
   return (
     <div 
-      className="fixed z-30 pointer-events-auto"
+      className="fixed z-30 pointer-events-none"
       style={{
         top: containerRect.top,
         left: containerRect.left,
@@ -290,7 +290,7 @@ export const SinglePlayer = memo(({
       {/* Video element */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
+        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black pointer-events-auto"
         loop
         playsInline
         muted={isMuted}
