@@ -1,7 +1,4 @@
-import { useEffect, useState } from "react";
-import { User, Session } from "@supabase/supabase-js";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { VideoFeed } from "@/components/VideoFeed";
 import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
@@ -10,48 +7,24 @@ import { EntryGate } from "@/components/EntryGate";
 import { Search, X } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { useAdmin } from "@/hooks/useAdmin";
+import { useAuth } from "@/contexts/AuthContext";
+import { useState } from "react";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const searchQuery = searchParams.get('search') || '';
   const categoryFilter = searchParams.get('category') || '';
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [authReady, setAuthReady] = useState(false);
+  
+  const { user } = useAuth();
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
 
-  useEffect(() => {
-    console.log("[Feed] Setting up auth listener");
-    
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("[Feed] Auth state changed:", event, session?.user?.id);
-      setSession(session);
-      setUser(session?.user ?? null);
-      setAuthReady(true);
-    });
-
-    // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log("[Feed] Got existing session:", session?.user?.id);
-      setSession(session);
-      setUser(session?.user ?? null);
-      setAuthReady(true);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
   const handleRefresh = () => {
     setRefreshKey(prev => prev + 1);
   };
-
-  // Don't wait for auth to render feed - render immediately
-  // Auth state will update asynchronously
 
   return (
     <EntryGate>

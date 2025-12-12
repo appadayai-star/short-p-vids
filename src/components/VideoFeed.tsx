@@ -2,12 +2,13 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { FeedItem } from "./FeedItem";
 import { SinglePlayer } from "./SinglePlayer";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 import { getBestVideoSource } from "@/lib/cloudinary";
-import { useAuthReady } from "@/hooks/useAuthReady";
+import { useAuth } from "@/contexts/AuthContext";
 
 const PAGE_SIZE = 10;
+const FETCH_TIMEOUT_MS = 8000;
 
 interface Video {
   id: string;
@@ -36,7 +37,7 @@ interface VideoFeedProps {
 
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
-  const authReady = useAuthReady(); // Wait for Supabase client to be initialized
+  const { status: authStatus } = useAuth();
   
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,13 +49,13 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [hasWarmedUp, setHasWarmedUp] = useState(false);
   const [activeContainerRect, setActiveContainerRect] = useState<DOMRect | null>(null);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
-  const [retryTrigger, setRetryTrigger] = useState(0); // Used to force re-fetch
+  const [retryCount, setRetryCount] = useState(0);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
-  const fetchIdRef = useRef(0); // Track which fetch is current
+  const fetchIdRef = useRef(0);
 
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
     if (ref) {
@@ -94,17 +95,16 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
   // Initial fetch - runs when auth is ready and when filters change
   useEffect(() => {
-    // Don't fetch until Supabase client is ready
-    if (!authReady) {
-      console.log("[VideoFeed] Waiting for auth to be ready...");
+    // Don't fetch until auth status is "ready" (not "booting")
+    if (authStatus !== "ready") {
+      console.log(`[VideoFeed] Waiting for auth... status: ${authStatus}`);
       return;
     }
     
-    // Increment fetch ID to invalidate any in-flight requests
     const currentFetchId = ++fetchIdRef.current;
-    let cancelled = false;
+    const abortController = new AbortController();
     
-    console.log(`[VideoFeed] Starting fetch #${currentFetchId} (auth ready)`);
+    console.log(`[VideoFeed] Starting fetch #${currentFetchId} (auth status: ${authStatus})`);
     
     // Reset state
     setPage(0);
@@ -117,6 +117,11 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     
     const doFetch = async () => {
       const startTime = Date.now();
+      
+      // Create timeout promise
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Request timed out")), FETCH_TIMEOUT_MS);
+      });
       
       try {
         let query = supabase
@@ -136,11 +141,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
         }
 
-        const { data, error } = await query;
+        // Race between query and timeout
+        const { data, error } = await Promise.race([
+          query,
+          timeoutPromise
+        ]);
         
-        // Check if this fetch is still current
-        if (cancelled || currentFetchId !== fetchIdRef.current) {
-          console.log(`[VideoFeed] Fetch #${currentFetchId} cancelled/stale, ignoring`);
+        // Check if aborted
+        if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) {
+          console.log(`[VideoFeed] Fetch #${currentFetchId} aborted/stale`);
           return;
         }
         
@@ -167,13 +176,29 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         setHasMore(data?.length === PAGE_SIZE);
         setLoadError(null);
         setInitialLoadComplete(true);
+        setRetryCount(0); // Reset retry count on success
       } catch (error) {
-        if (cancelled || currentFetchId !== fetchIdRef.current) return;
-        console.error(`[VideoFeed] Fetch #${currentFetchId} error:`, error);
+        if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) return;
+        
+        const errorMessage = error instanceof Error ? error.message : "Failed to load videos";
+        console.error(`[VideoFeed] Fetch #${currentFetchId} error:`, errorMessage);
+        
+        // Auto-retry once on first failure
+        if (retryCount === 0) {
+          console.log(`[VideoFeed] Auto-retrying in 500ms...`);
+          setRetryCount(1);
+          setTimeout(() => {
+            if (!abortController.signal.aborted) {
+              setRetryCount(prev => prev + 1);
+            }
+          }, 500);
+          return;
+        }
+        
         setVideos([]);
-        setLoadError(error instanceof Error ? error.message : "Failed to load videos");
+        setLoadError(errorMessage);
       } finally {
-        if (!cancelled && currentFetchId === fetchIdRef.current) {
+        if (!abortController.signal.aborted && currentFetchId === fetchIdRef.current) {
           setIsLoading(false);
         }
       }
@@ -182,10 +207,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     doFetch();
     
     return () => {
-      cancelled = true;
+      abortController.abort();
       console.log(`[VideoFeed] Cleanup fetch #${currentFetchId}`);
     };
-  }, [searchQuery, categoryFilter, retryTrigger, authReady]);
+  }, [searchQuery, categoryFilter, retryCount, authStatus]);
 
   // Warmup first video
   useEffect(() => {
@@ -283,15 +308,34 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   }, [userId]);
 
   const handleRetry = () => {
-    console.log('[VideoFeed] Retry triggered');
-    setRetryTrigger(prev => prev + 1); // This will re-trigger the useEffect
+    console.log('[VideoFeed] Manual retry triggered');
+    setRetryCount(prev => prev + 1);
   };
 
-  if (isLoading) {
+  // Show loading while auth is booting or feed is loading
+  if (authStatus === "booting" || isLoading) {
     return (
       <div className="flex flex-col justify-center items-center h-[100dvh] bg-black gap-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="text-muted-foreground text-sm">Loading videos...</p>
+        <p className="text-muted-foreground text-sm">
+          {authStatus === "booting" ? "Initializing..." : "Loading videos..."}
+        </p>
+      </div>
+    );
+  }
+
+  // Show auth error state
+  if (authStatus === "error") {
+    return (
+      <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4">
+        <AlertTriangle className="h-12 w-12 text-yellow-500" />
+        <p className="text-red-400 text-lg text-center px-4">Failed to initialize app</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg"
+        >
+          <RefreshCw className="h-5 w-5" /> Reload Page
+        </button>
       </div>
     );
   }
@@ -299,8 +343,12 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   if (loadError) {
     return (
       <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4">
+        <AlertTriangle className="h-12 w-12 text-yellow-500" />
         <p className="text-red-400 text-lg text-center px-4">{loadError}</p>
-        <button onClick={handleRetry} className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg">
+        <button 
+          onClick={handleRetry} 
+          className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg"
+        >
           <RefreshCw className="h-5 w-5" /> Tap to Retry
         </button>
       </div>
