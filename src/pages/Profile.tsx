@@ -531,10 +531,16 @@ const Profile = () => {
                       setVideoModalOpen(true);
                     }}
                   >
-                    <video
-                      src={video.video_url}
-                      className="w-full h-full object-cover"
-                    />
+                    {video.thumbnail_url ? (
+                      <img
+                        src={video.thumbnail_url}
+                        alt={video.title}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-white/10" />
+                    )}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                       <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                     </div>
@@ -561,10 +567,16 @@ const Profile = () => {
                         setVideoModalOpen(true);
                       }}
                     >
-                      <video
-                        src={video.video_url}
-                        className="w-full h-full object-cover"
-                      />
+                      {video.thumbnail_url ? (
+                        <img
+                          src={video.thumbnail_url}
+                          alt={video.title}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-white/10" />
+                      )}
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                         <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                       </div>
@@ -592,10 +604,16 @@ const Profile = () => {
                         setVideoModalOpen(true);
                       }}
                     >
-                      <video
-                        src={video.video_url}
-                        className="w-full h-full object-cover"
-                      />
+                      {video.thumbnail_url ? (
+                        <img
+                          src={video.thumbnail_url}
+                          alt={video.title}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-white/10" />
+                      )}
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                         <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                       </div>
@@ -644,10 +662,20 @@ const Profile = () => {
           onClose={() => {
             setVideoModalOpen(false);
             setSelectedVideoId(null);
+            // Refresh liked/saved videos when modal closes
+            if (currentUser && isOwnProfile) {
+              fetchLikedVideos(currentUser.id);
+              fetchSavedVideos(currentUser.id);
+            }
           }}
           initialVideoId={selectedVideoId}
           userId={currentUser?.id || null}
-          videos={[...myVideos, ...likedVideos, ...savedVideos].find(v => v.id === selectedVideoId) ? [[...myVideos, ...likedVideos, ...savedVideos].find(v => v.id === selectedVideoId)!] : undefined}
+          videos={
+            myVideos.find(v => v.id === selectedVideoId) ? myVideos :
+            likedVideos.find(v => v.id === selectedVideoId) ? likedVideos :
+            savedVideos.find(v => v.id === selectedVideoId) ? savedVideos :
+            undefined
+          }
         />
       )}
     </div>
