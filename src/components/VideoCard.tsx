@@ -69,6 +69,7 @@ interface VideoCardProps {
   currentUserId: string | null;
   shouldPreload: boolean;
   isFirstVideo: boolean;
+  isReady: boolean;
   onActiveChange: (index: number, isActive: boolean) => void;
   onDelete?: (videoId: string) => void;
   onNavigate?: () => void;
@@ -80,6 +81,7 @@ export const VideoCard = memo(({
   currentUserId, 
   shouldPreload,
   isFirstVideo,
+  isReady,
   onActiveChange,
   onDelete, 
   onNavigate 
@@ -99,6 +101,7 @@ export const VideoCard = memo(({
   const [hasTrackedView, setHasTrackedView] = useState(false);
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const [hasStartedLoading, setHasStartedLoading] = useState(false);
 
   // Get video source - prefer optimized, fallback to original
   const videoSrc = video.optimized_video_url || video.video_url;
@@ -158,10 +161,21 @@ export const VideoCard = memo(({
     return () => observer.disconnect();
   }, [index, isActive, onActiveChange]);
 
+  // Handle video loading - only start when ready and should preload
+  useEffect(() => {
+    if (!isReady || !shouldPreload || hasStartedLoading) return;
+    
+    const videoEl = videoRef.current;
+    if (videoEl && !videoLoaded) {
+      setHasStartedLoading(true);
+      videoEl.load();
+    }
+  }, [isReady, shouldPreload, videoLoaded, hasStartedLoading]);
+
   // Handle video play/pause based on active state
   useEffect(() => {
     const videoEl = videoRef.current;
-    if (!videoEl) return;
+    if (!videoEl || !isReady) return;
 
     if (isActive && videoLoaded) {
       videoEl.currentTime = 0;
@@ -177,14 +191,7 @@ export const VideoCard = memo(({
     } else if (videoEl) {
       videoEl.pause();
     }
-  }, [isActive, videoLoaded, hasTrackedView]);
-
-  // Preload video when shouldPreload is true
-  useEffect(() => {
-    if (shouldPreload && videoRef.current && !videoLoaded) {
-      videoRef.current.load();
-    }
-  }, [shouldPreload, videoLoaded]);
+  }, [isActive, videoLoaded, hasTrackedView, isReady]);
 
   // Fetch interaction states for logged-in users
   useEffect(() => {
@@ -207,7 +214,6 @@ export const VideoCard = memo(({
 
   const trackView = async () => {
     try {
-      // Insert view record - trigger automatically increments views_count on videos table
       await supabase.from("video_views").insert({
         video_id: video.id,
         user_id: currentUserId,
@@ -233,7 +239,6 @@ export const VideoCard = memo(({
     setLikesCount(prev => wasLiked ? prev - 1 : prev + 1);
 
     try {
-      // Call edge function for both guests and logged-in users
       const { data, error } = await supabase.functions.invoke('like-video', {
         body: {
           videoId: video.id,
@@ -244,7 +249,6 @@ export const VideoCard = memo(({
 
       if (error) throw error;
 
-      // Update count from server response
       if (data?.likesCount !== undefined) {
         setLikesCount(data.likesCount);
       }
@@ -318,7 +322,16 @@ export const VideoCard = memo(({
   const isOwnVideo = currentUserId === video.user_id;
 
   // Determine if we should render the video element
+  // Render video element if visible, should preload, or is first video - but only start loading when ready
   const shouldRenderVideo = isVisible || shouldPreload || isFirstVideo;
+  
+  // Determine preload attribute based on state
+  const getPreloadValue = () => {
+    if (!isReady) return "none";
+    if (isActive || isFirstVideo) return "auto";
+    if (shouldPreload) return "metadata";
+    return "none";
+  };
 
   return (
     <div 
@@ -342,12 +355,12 @@ export const VideoCard = memo(({
       {shouldRenderVideo && (
         <video
           ref={videoRef}
-          src={videoSrc}
+          src={isReady ? videoSrc : undefined}
           className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
           loop
           playsInline
           muted={isMuted}
-          preload={isActive || isFirstVideo ? "auto" : shouldPreload ? "metadata" : "none"}
+          preload={getPreloadValue()}
           poster={posterSrc}
           onClick={toggleMute}
           onCanPlay={handleVideoCanPlay}

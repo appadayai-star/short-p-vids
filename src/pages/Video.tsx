@@ -108,6 +108,7 @@ const Video = () => {
             currentUserId={currentUserId}
             shouldPreload={true}
             isFirstVideo={true}
+            isReady={true}
             onActiveChange={() => {}}
           />
         </div>

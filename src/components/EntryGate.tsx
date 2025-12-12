@@ -1,148 +1,118 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { Helmet } from "react-helmet-async";
-import { supabase } from "@/integrations/supabase/client";
 
 const STORAGE_KEY = "shortpv_entered";
 
-interface Video {
-  id: string;
-  video_url: string;
-  optimized_video_url?: string | null;
+// Context to share entry state and trigger video warm-up
+interface EntryGateContextType {
+  hasEntered: boolean;
+  isReady: boolean;
+  triggerWarmUp: () => void;
 }
+
+const EntryGateContext = createContext<EntryGateContextType>({
+  hasEntered: true,
+  isReady: true,
+  triggerWarmUp: () => {},
+});
+
+export const useEntryGate = () => useContext(EntryGateContext);
 
 interface EntryGateProps {
   children: React.ReactNode;
 }
 
 export const EntryGate = ({ children }: EntryGateProps) => {
-  const [hasEntered, setHasEntered] = useState<boolean | null>(null);
-  const [isWarmingUp, setIsWarmingUp] = useState(false);
+  const [hasEntered, setHasEntered] = useState<boolean>(() => {
+    // Check localStorage synchronously to avoid flash
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(STORAGE_KEY) === "true";
+    }
+    return false;
+  });
+  const [isReady, setIsReady] = useState(hasEntered);
+  const [isExiting, setIsExiting] = useState(false);
 
-  useEffect(() => {
-    const entered = localStorage.getItem(STORAGE_KEY) === "true";
-    setHasEntered(entered);
+  // Warm-up callback that VideoFeed will use
+  const triggerWarmUp = useCallback(() => {
+    // This signals the feed that user has entered and videos should start loading
+    setIsReady(true);
   }, []);
 
-  const warmUpFirstVideo = (videos: Video[]) => {
-    if (videos.length === 0) return;
-
-    const firstVideo = videos[0];
-    const videoUrl = firstVideo.optimized_video_url || firstVideo.video_url;
-
-    const video = document.createElement("video");
-    video.muted = true;
-    video.playsInline = true;
-    video.preload = "metadata";
-    video.src = videoUrl;
-    video.style.position = "absolute";
-    video.style.left = "-9999px";
-    video.style.width = "1px";
-    video.style.height = "1px";
-
-    document.body.appendChild(video);
-
-    const cleanup = () => {
-      if (video.parentNode) {
-        video.parentNode.removeChild(video);
-      }
-    };
-
-    video.onloadedmetadata = cleanup;
-    setTimeout(cleanup, 2000);
-
-    video.load();
-  };
-
-  const warmUpFeed = async (): Promise<Video[]> => {
-    try {
-      // Try recommendation feed first
-      const { data, error } = await supabase.functions.invoke("get-recommended-feed", {
-        body: { userId: null, page: 0, limit: 10 },
-      });
-
-      if (!error && data?.videos?.length > 0) {
-        return data.videos;
-      }
-
-      // Fallback to direct query
-      const { data: fallbackData } = await supabase
-        .from("videos")
-        .select("id, video_url, optimized_video_url")
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      return fallbackData || [];
-    } catch {
-      return [];
-    }
-  };
-
-  const handleEnter = async () => {
-    setIsWarmingUp(true);
+  const handleEnter = () => {
+    // Save to localStorage immediately
     localStorage.setItem(STORAGE_KEY, "true");
-
-    const videos = await warmUpFeed();
-    warmUpFirstVideo(videos);
-
+    
+    // Start exit animation
+    setIsExiting(true);
+    
+    // Mark as entered and ready simultaneously for instant response
     setHasEntered(true);
+    setIsReady(true);
   };
 
   const handleLeave = () => {
     window.location.href = "https://google.com";
   };
 
-  // Still loading initial state
-  if (hasEntered === null) {
-    return null;
+  // If already entered, skip overlay entirely
+  if (hasEntered && !isExiting) {
+    return (
+      <EntryGateContext.Provider value={{ hasEntered: true, isReady: true, triggerWarmUp }}>
+        {children}
+      </EntryGateContext.Provider>
+    );
   }
 
-  // Already entered, show content
-  if (hasEntered) {
-    return <>{children}</>;
-  }
-
-  // Show gate
   return (
-    <>
+    <EntryGateContext.Provider value={{ hasEntered, isReady, triggerWarmUp }}>
+      {/* Preconnect to required domains */}
       <Helmet>
-        <link rel="preconnect" href="https://res.cloudinary.com" />
+        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://res.cloudinary.com" />
-        <link rel="preconnect" href="https://mbuajcicosojebakdtsn.supabase.co" />
+        <link rel="preconnect" href="https://mbuajcicosojebakdtsn.supabase.co" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://mbuajcicosojebakdtsn.supabase.co" />
       </Helmet>
 
-      <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-        <div className="bg-card border border-border rounded-2xl p-8 max-w-md w-full text-center shadow-2xl">
-          <h1 className="text-2xl font-bold text-foreground mb-4">This is an adult website</h1>
-
-          <p className="text-muted-foreground mb-8 text-sm leading-relaxed">
-            This website contains age-restricted materials. By entering you affirm that you are at least 18 years of
-            age.
-          </p>
-
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={handleEnter}
-              disabled={isWarmingUp}
-              className="w-full py-3 px-6 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-70"
-            >
-              {isWarmingUp ? "Loading..." : "Enter"}
-            </button>
-
-            <button
-              onClick={handleLeave}
-              className="w-full py-3 px-6 bg-muted text-muted-foreground font-medium rounded-xl hover:bg-muted/80 transition-colors"
-            >
-              Leave
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Render children hidden for SEO */}
-      <div className="sr-only" aria-hidden="true">
+      {/* App content rendered behind overlay - visible but dimmed/blurred */}
+      <div 
+        className={`transition-all duration-300 ${!hasEntered ? 'blur-sm brightness-50 pointer-events-none' : ''}`}
+        aria-hidden={!hasEntered}
+      >
         {children}
       </div>
-    </>
+
+      {/* Overlay - only shown before entry */}
+      {!hasEntered && (
+        <div 
+          className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-200 ${isExiting ? 'opacity-0' : 'opacity-100'}`}
+        >
+          <div className="bg-card border border-border rounded-2xl p-8 max-w-md w-full text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <h1 className="text-2xl font-bold text-foreground mb-4">This is an adult website</h1>
+
+            <p className="text-muted-foreground mb-8 text-sm leading-relaxed">
+              This website contains age-restricted materials. By entering you affirm that you are at least 18 years of
+              age.
+            </p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleEnter}
+                className="w-full py-3 px-6 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 transition-colors active:scale-[0.98]"
+              >
+                Enter
+              </button>
+
+              <button
+                onClick={handleLeave}
+                className="w-full py-3 px-6 bg-muted text-muted-foreground font-medium rounded-xl hover:bg-muted/80 transition-colors"
+              >
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </EntryGateContext.Provider>
   );
 };
