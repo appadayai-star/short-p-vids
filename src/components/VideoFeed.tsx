@@ -51,8 +51,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const fetchStartTimeRef = useRef<number>(0);
 
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
     if (ref) {
@@ -89,9 +87,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [activeIndex, videos.length]);
 
-  const fetchVideos = useCallback(async (pageNum: number, append = false, signal?: AbortSignal) => {
-    console.log(`[VideoFeed] fetchVideos START: page=${pageNum}, append=${append}`);
-    fetchStartTimeRef.current = Date.now();
+  const fetchVideos = useCallback(async (pageNum: number, append = false) => {
+    console.log(`[VideoFeed] fetchVideos START: page=${pageNum}`);
+    const startTime = Date.now();
     
     if (pageNum === 0) {
       setIsLoading(true);
@@ -104,13 +102,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     try {
       const offset = pageNum * PAGE_SIZE;
       
-      // Create timeout promise
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Request timeout - please try again')), FETCH_TIMEOUT_MS);
-      });
-      
-      // Build query
-      let query = supabase
+      // Simple direct query with no async complications
+      const queryPromise = supabase
         .from("videos")
         .select(`
           id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
@@ -120,28 +113,20 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         .order("created_at", { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
 
+      // Apply filters
+      let query = queryPromise;
       if (categoryFilter) {
         query = query.contains('tags', [categoryFilter]);
       }
-
       if (searchQuery) {
         query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
       }
 
-      // Race between query and timeout
-      const { data, error } = await Promise.race([
-        query,
-        timeoutPromise
-      ]);
-      
-      // Check if aborted
-      if (signal?.aborted) {
-        console.log('[VideoFeed] Fetch aborted');
-        return;
-      }
+      const result = await query;
+      const { data, error } = result;
 
-      const duration = Date.now() - fetchStartTimeRef.current;
-      console.log(`[VideoFeed] fetchVideos END: ${data?.length || 0} videos in ${duration}ms, error:`, error);
+      const duration = Date.now() - startTime;
+      console.log(`[VideoFeed] fetchVideos DONE in ${duration}ms: ${data?.length || 0} videos, error:`, error?.message || 'none');
       
       if (error) throw error;
 
@@ -169,33 +154,22 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       }
 
       setHasMore(data?.length === PAGE_SIZE);
-      setIsLoading(false);
-      setIsLoadingMore(false);
     } catch (error) {
-      const duration = Date.now() - fetchStartTimeRef.current;
-      console.error(`[VideoFeed] fetchVideos ERROR after ${duration}ms:`, error);
-      
-      if (signal?.aborted) return;
-      
-      setIsLoading(false);
-      setIsLoadingMore(false);
-      
+      console.error(`[VideoFeed] fetchVideos ERROR:`, error);
       if (!append) {
         setVideos([]);
         setLoadError(error instanceof Error ? error.message : "Failed to load videos");
       }
+    } finally {
+      // ALWAYS clear loading states
+      setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, [searchQuery, categoryFilter]);
 
-  // Initial fetch on mount - runs once
+  // Initial fetch on mount
   useEffect(() => {
     console.log("[VideoFeed] Mount effect - starting initial fetch");
-    
-    // Cancel any previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
     
     setPage(0);
     setActiveIndex(0);
@@ -203,13 +177,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setHasWarmedUp(false);
     setInitialLoadComplete(false);
     
-    fetchVideos(0, false, abortControllerRef.current.signal);
-    
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
+    fetchVideos(0, false);
   }, [searchQuery, categoryFilter, fetchVideos]);
 
   // Watchdog: if loading takes too long, show error UI
@@ -290,13 +258,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     console.log('[VideoFeed] Retry triggered');
     setLoadError(null);
     setIsLoading(true);
-    
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-    
-    fetchVideos(0, false, abortControllerRef.current.signal);
+    fetchVideos(0, false);
   };
 
   if (isLoading) {
