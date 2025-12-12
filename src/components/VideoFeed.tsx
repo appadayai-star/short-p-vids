@@ -254,8 +254,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         />
       ))}
 
-      {/* Sentinel for infinite scroll */}
-      <div ref={sentinelRef} className="h-1" />
+      {/* Sentinel for infinite scroll - larger to ensure intersection */}
+      <div ref={sentinelRef} className="h-20 w-full" />
       
       {/* Loading more indicator */}
       {isLoadingMore && (
