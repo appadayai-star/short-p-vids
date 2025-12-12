@@ -1,20 +1,30 @@
 // Cloudinary URL generation utilities
 // Generate dynamic transformation URLs from public_id
+// Optimized for instant startup and mobile streaming
 
 const CLOUDINARY_CLOUD_NAME = 'dsxmzxb4u'; // Your cloud name
 
 export function getOptimizedVideoUrl(publicId: string): string {
-  // Progressive MP4 with quality optimization
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k/${publicId}.mp4`;
+  // Progressive MP4 optimized for instant startup:
+  // - f_mp4: MP4 container
+  // - q_auto:eco: Quality auto with eco profile (smaller file)
+  // - c_limit,h_720: Max 720p height
+  // - vc_h264: H.264 codec for compatibility
+  // - fps_30: Max 30fps
+  // - br_1500k: 1.5 Mbps bitrate for mobile (was 2000k)
+  // - fl_faststart: Moves moov atom to front for instant playback
+  // - ac_aac: AAC audio codec
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_1500k,fl_faststart,ac_aac/${publicId}.mp4`;
 }
 
 export function getStreamUrl(publicId: string): string {
-  // HLS adaptive streaming
+  // HLS adaptive streaming with optimized profile
+  // sp_hd provides multiple quality levels for adaptive playback
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/sp_hd/${publicId}.m3u8`;
 }
 
 export function getThumbnailUrl(publicId: string): string {
-  // Optimized thumbnail
+  // Optimized thumbnail - quick to load
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/${publicId}.jpg`;
 }
 
