@@ -49,6 +49,8 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
 
   // Simple, direct fetch - no edge functions, no complexity
   const fetchVideos = useCallback(async (reset = true) => {
+    console.log("[SimpleFeed] fetchVideos called, reset:", reset);
+    
     if (reset) {
       setLoading(true);
       setError(null);
@@ -59,6 +61,7 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
     }
 
     try {
+      console.log("[SimpleFeed] Starting Supabase query...");
       let query = supabase
         .from("videos")
         .select(`
@@ -79,9 +82,13 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
 
       const { data, error: fetchError } = await query;
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error("[SimpleFeed] Query error:", fetchError);
+        throw fetchError;
+      }
 
       const fetchedVideos = data || [];
+      console.log("[SimpleFeed] Fetched", fetchedVideos.length, "videos");
       fetchedVideos.forEach(v => loadedIds.current.add(v.id));
       setVideos(fetchedVideos);
       setHasMore(fetchedVideos.length === PAGE_SIZE);
