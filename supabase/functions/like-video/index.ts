@@ -63,7 +63,40 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Get current likes count
+    // Check if this is a valid UUID (authenticated user) vs guest client
+    const isAuthenticatedUser = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId) && !clientId.startsWith('guest_');
+
+    if (action === "like") {
+      if (isAuthenticatedUser) {
+        // For authenticated users, insert into likes table
+        const { error: insertError } = await supabase
+          .from("likes")
+          .insert({ video_id: videoId, user_id: clientId });
+        
+        if (insertError && !insertError.message.includes('duplicate')) {
+          console.error("Error inserting like:", insertError);
+          return new Response(
+            JSON.stringify({ error: "Failed to save like" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+    } else if (action === "unlike") {
+      if (isAuthenticatedUser) {
+        // For authenticated users, delete from likes table
+        const { error: deleteError } = await supabase
+          .from("likes")
+          .delete()
+          .eq("video_id", videoId)
+          .eq("user_id", clientId);
+        
+        if (deleteError) {
+          console.error("Error deleting like:", deleteError);
+        }
+      }
+    }
+
+    // Get the updated likes count from the database (triggers handle the count)
     const { data: video, error: fetchError } = await supabase
       .from("videos")
       .select("likes_count")
@@ -78,27 +111,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Calculate new count
-    const currentCount = video.likes_count || 0;
-    const newCount = action === "like" 
-      ? currentCount + 1 
-      : Math.max(0, currentCount - 1);
-
-    // Update the likes count
-    const { error: updateError } = await supabase
-      .from("videos")
-      .update({ likes_count: newCount })
-      .eq("id", videoId);
-
-    if (updateError) {
-      console.error("Error updating likes count:", updateError);
-      return new Response(
-        JSON.stringify({ error: "Failed to update like" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`Video ${videoId} ${action}d by client ${clientId}. New count: ${newCount}`);
+    const newCount = video.likes_count || 0;
+    console.log(`Video ${videoId} ${action}d by client ${clientId}. Current count: ${newCount}`);
 
     return new Response(
       JSON.stringify({ success: true, likesCount: newCount }),
