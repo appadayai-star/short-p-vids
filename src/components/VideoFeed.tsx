@@ -7,7 +7,6 @@ import { useEntryGate } from "./EntryGate";
 import { getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
-const FETCH_TIMEOUT_MS = 10000; // 10 second timeout
 
 interface Video {
   id: string;
@@ -51,6 +50,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
+  const isFetchingRef = useRef(false);
 
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
     if (ref) {
@@ -60,6 +60,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   }, []);
 
+  // Update active container rect
   useEffect(() => {
     const updateRect = () => {
       const activeContainer = itemRefsRef.current.get(activeIndex);
@@ -87,23 +88,23 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [activeIndex, videos.length]);
 
-  const fetchVideos = useCallback(async (pageNum: number, append = false) => {
-    console.log(`[VideoFeed] fetchVideos START: page=${pageNum}`);
-    const startTime = Date.now();
-    
-    if (pageNum === 0) {
-      setIsLoading(true);
-      setLoadError(null);
-      setInitialLoadComplete(false);
-    } else {
-      setIsLoadingMore(true);
+  // Core fetch function - completely standalone, no useCallback wrapper
+  const doFetch = async (pageNum: number, search: string, category: string, append: boolean) => {
+    // Prevent duplicate fetches
+    if (isFetchingRef.current && pageNum === 0) {
+      console.log('[VideoFeed] Skipping duplicate fetch');
+      return;
     }
+    
+    isFetchingRef.current = true;
+    console.log(`[VideoFeed] doFetch START: page=${pageNum}, search="${search}", category="${category}"`);
+    const startTime = Date.now();
     
     try {
       const offset = pageNum * PAGE_SIZE;
       
-      // Simple direct query with no async complications
-      const queryPromise = supabase
+      // Build query step by step
+      let query = supabase
         .from("videos")
         .select(`
           id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
@@ -113,27 +114,25 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         .order("created_at", { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
 
-      // Apply filters
-      let query = queryPromise;
-      if (categoryFilter) {
-        query = query.contains('tags', [categoryFilter]);
+      if (category) {
+        query = query.contains('tags', [category]);
       }
-      if (searchQuery) {
-        query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+      if (search) {
+        query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
       }
 
-      const result = await query;
-      const { data, error } = result;
-
+      const { data, error } = await query;
+      
       const duration = Date.now() - startTime;
-      console.log(`[VideoFeed] fetchVideos DONE in ${duration}ms: ${data?.length || 0} videos, error:`, error?.message || 'none');
+      console.log(`[VideoFeed] doFetch DONE in ${duration}ms: ${data?.length || 0} videos, error:`, error?.message || 'none');
       
       if (error) throw error;
 
       let filtered = data || [];
       
-      if (searchQuery && data) {
-        const q = searchQuery.toLowerCase();
+      // Additional client-side filtering for username/tags
+      if (search && data) {
+        const q = search.toLowerCase();
         filtered = data.filter(v => 
           v.title?.toLowerCase().includes(q) ||
           v.description?.toLowerCase().includes(q) ||
@@ -146,7 +145,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         loadedIdsRef.current.clear();
         filtered.forEach(v => loadedIdsRef.current.add(v.id));
         setVideos(filtered);
-        setInitialLoadComplete(true);
       } else {
         const newVideos = filtered.filter(v => !loadedIdsRef.current.has(v.id));
         newVideos.forEach(v => loadedIdsRef.current.add(v.id));
@@ -154,47 +152,39 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       }
 
       setHasMore(data?.length === PAGE_SIZE);
+      setLoadError(null);
+      setInitialLoadComplete(true);
     } catch (error) {
-      console.error(`[VideoFeed] fetchVideos ERROR:`, error);
+      console.error(`[VideoFeed] doFetch ERROR:`, error);
       if (!append) {
         setVideos([]);
         setLoadError(error instanceof Error ? error.message : "Failed to load videos");
       }
     } finally {
-      // ALWAYS clear loading states
+      isFetchingRef.current = false;
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [searchQuery, categoryFilter]);
+  };
 
-  // Initial fetch on mount
+  // Initial fetch - runs on mount and when filters change
   useEffect(() => {
-    console.log("[VideoFeed] Mount effect - starting initial fetch");
+    console.log("[VideoFeed] Effect triggered - resetting and fetching");
     
+    // Reset state
     setPage(0);
     setActiveIndex(0);
-    loadedIdsRef.current.clear();
+    setIsLoading(true);
+    setLoadError(null);
     setHasWarmedUp(false);
     setInitialLoadComplete(false);
+    loadedIdsRef.current.clear();
     
-    fetchVideos(0, false);
-  }, [searchQuery, categoryFilter, fetchVideos]);
+    // Fetch immediately
+    doFetch(0, searchQuery, categoryFilter, false);
+  }, [searchQuery, categoryFilter]); // NO function dependencies!
 
-  // Watchdog: if loading takes too long, show error UI
-  useEffect(() => {
-    if (!isLoading) return;
-    
-    const watchdogTimer = setTimeout(() => {
-      if (isLoading) {
-        console.warn('[VideoFeed] Watchdog triggered - loading took too long');
-        setIsLoading(false);
-        setLoadError('Loading took too long. Tap to retry.');
-      }
-    }, FETCH_TIMEOUT_MS + 1000); // Give a bit more time than the fetch timeout
-    
-    return () => clearTimeout(watchdogTimer);
-  }, [isLoading]);
-
+  // Warmup first video
   useEffect(() => {
     if (hasWarmedUp || videos.length === 0) return;
     const firstVideo = videos[0];
@@ -208,31 +198,29 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setHasWarmedUp(true);
   }, [videos, hasWarmedUp]);
 
-  // Infinite scroll - only enabled AFTER initial load is complete
+  // Infinite scroll - only after initial load
   useEffect(() => {
-    // Don't set up observer until initial load is done
-    if (!initialLoadComplete) {
-      console.log('[VideoFeed] Skipping infinite scroll setup - initial load not complete');
+    if (!initialLoadComplete || !sentinelRef.current || !hasMore || isLoadingMore) {
       return;
     }
-    if (!sentinelRef.current || !hasMore || isLoadingMore) return;
     
-    console.log('[VideoFeed] Setting up infinite scroll observer');
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore && initialLoadComplete) {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !isFetchingRef.current) {
           const nextPage = page + 1;
-          console.log(`[VideoFeed] Infinite scroll triggered - loading page ${nextPage}`);
+          console.log(`[VideoFeed] Loading more - page ${nextPage}`);
           setPage(nextPage);
-          fetchVideos(nextPage, true);
+          setIsLoadingMore(true);
+          doFetch(nextPage, searchQuery, categoryFilter, true);
         }
       },
       { rootMargin: '200px' }
     );
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingMore, page, fetchVideos, initialLoadComplete]);
+  }, [hasMore, isLoadingMore, page, initialLoadComplete, searchQuery, categoryFilter]);
 
+  // Scroll tracking
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
@@ -258,7 +246,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     console.log('[VideoFeed] Retry triggered');
     setLoadError(null);
     setIsLoading(true);
-    fetchVideos(0, false);
+    doFetch(0, searchQuery, categoryFilter, false);
   };
 
   if (isLoading) {
