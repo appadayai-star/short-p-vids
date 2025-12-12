@@ -14,8 +14,6 @@ const setGlobalMuted = (muted: boolean) => {
 
 export const getGlobalMuted = () => globalMuted;
 
-// Scroll lock - prevent double-scroll during animation
-let isScrollLocked = false;
 
 interface Video {
   id: string;
@@ -310,22 +308,16 @@ export const SinglePlayer = memo(({
         onError={handleError}
       />
       
-      {/* Invisible tap area for mute toggle - allows scroll through */}
+      {/* Tap area - forwards wheel events to container for CSS snap scrolling */}
       <div 
         className="absolute inset-0 z-10 pointer-events-auto"
         onClick={handleVideoTap}
         onWheel={(e) => {
-          if (isScrollLocked) return;
-          isScrollLocked = true;
-          setTimeout(() => { isScrollLocked = false; }, 700);
-          
           const container = document.getElementById('video-feed-container');
           if (container) {
-            const direction = e.deltaY > 0 ? 1 : -1;
-            container.scrollBy({ top: direction * container.clientHeight, behavior: 'smooth' });
+            container.scrollTop += e.deltaY;
           }
         }}
-        style={{ touchAction: 'pan-y' }}
       />
 
       {/* Loading spinner overlay */}
