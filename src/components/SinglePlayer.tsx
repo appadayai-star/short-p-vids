@@ -270,8 +270,11 @@ export const SinglePlayer = memo(({
     }
   }, [primarySrc, startLoadTimeout]);
 
-  // Don't render if no video or no position
-  if (!video || !containerRect) return null;
+  // Don't render if no video - but handle missing containerRect gracefully
+  if (!video) return null;
+
+  // Use fallback dimensions if containerRect is not yet available
+  const rect = containerRect || { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
 
   const showLoading = status === "loading";
   const showError = status === "error";
@@ -281,10 +284,10 @@ export const SinglePlayer = memo(({
     <div 
       className="fixed z-30 pointer-events-none"
       style={{
-        top: containerRect.top,
-        left: containerRect.left,
-        width: containerRect.width,
-        height: containerRect.height,
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
       }}
     >
       {/* Video element */}
