@@ -14,10 +14,8 @@ const setGlobalMuted = (muted: boolean) => {
 
 export const getGlobalMuted = () => globalMuted;
 
-// Scroll lock - prevent multiple scrolls during animation
+// Scroll lock - prevent double-scroll during animation
 let isScrollLocked = false;
-const SCROLL_LOCK_MS = 500; // Lock duration to match smooth scroll animation
-const MIN_SCROLL_DELTA = 30; // Minimum delta to trigger scroll (filters tiny gestures)
 
 interface Video {
   id: string;
@@ -317,19 +315,14 @@ export const SinglePlayer = memo(({
         className="absolute inset-0 z-10 pointer-events-auto"
         onClick={handleVideoTap}
         onWheel={(e) => {
-          // Ignore if scroll is locked or delta is too small
-          if (isScrollLocked || Math.abs(e.deltaY) < MIN_SCROLL_DELTA) return;
-          
-          // Lock scrolling during animation
+          if (isScrollLocked) return;
           isScrollLocked = true;
-          setTimeout(() => { isScrollLocked = false; }, SCROLL_LOCK_MS);
+          setTimeout(() => { isScrollLocked = false; }, 400);
           
-          // Scroll one video at a time with snap behavior
           const container = document.getElementById('video-feed-container');
           if (container) {
             const direction = e.deltaY > 0 ? 1 : -1;
-            const itemHeight = container.clientHeight;
-            container.scrollBy({ top: direction * itemHeight, behavior: 'smooth' });
+            container.scrollBy({ top: direction * container.clientHeight, behavior: 'smooth' });
           }
         }}
         style={{ touchAction: 'pan-y' }}
