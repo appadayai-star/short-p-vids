@@ -290,22 +290,28 @@ export const SinglePlayer = memo(({
         height: rect.height,
       }}
     >
-      {/* Video element */}
+      {/* Video element - pointer-events-none to allow scroll through */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black pointer-events-auto"
+        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black pointer-events-none"
         loop
         playsInline
         muted={isMuted}
         preload="auto"
         poster={posterSrc}
-        onClick={handleVideoTap}
         onLoadedMetadata={handleLoadedMetadata}
         onCanPlay={handleCanPlay}
         onPlaying={handlePlaying}
         onWaiting={handleWaiting}
         onStalled={handleStalled}
         onError={handleError}
+      />
+      
+      {/* Invisible tap area for mute toggle - allows vertical scroll */}
+      <div 
+        className="absolute inset-0 z-10 pointer-events-auto"
+        onClick={handleVideoTap}
+        style={{ touchAction: 'pan-y' }}
       />
 
       {/* Loading spinner overlay */}
