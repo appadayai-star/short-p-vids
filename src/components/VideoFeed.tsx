@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { VideoCard } from "./VideoCard";
 import { Loader2 } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
+import { getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
 const PRELOAD_AHEAD = 2;
@@ -38,8 +39,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(0); // Start at 0 immediately
   const [page, setPage] = useState(0);
+  const [hasWarmedUp, setHasWarmedUp] = useState(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
@@ -169,8 +171,33 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   useEffect(() => {
     setPage(0);
     loadedIdsRef.current.clear();
+    setHasWarmedUp(false);
     fetchVideos(0, false);
   }, [searchQuery, categoryFilter, userId]);
+
+  // Warmup: prime connection for first video URL
+  useEffect(() => {
+    if (hasWarmedUp || videos.length === 0) return;
+    
+    const firstVideo = videos[0];
+    const videoUrl = getBestVideoSource(
+      firstVideo.cloudinary_public_id || null,
+      firstVideo.optimized_video_url || null,
+      firstVideo.stream_url || null,
+      firstVideo.video_url
+    );
+    
+    // HEAD request to prime the connection without downloading full video
+    fetch(videoUrl, { method: 'HEAD', mode: 'cors' })
+      .then(() => {
+        console.log('[VideoFeed] Warmed up first video connection');
+        setHasWarmedUp(true);
+      })
+      .catch(() => {
+        // Silently fail - video will still load normally
+        setHasWarmedUp(true);
+      });
+  }, [videos, hasWarmedUp]);
 
   // Infinite scroll - observe sentinel element
   useEffect(() => {
