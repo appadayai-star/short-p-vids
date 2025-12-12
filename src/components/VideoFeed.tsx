@@ -50,8 +50,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   const hasFetchedRef = useRef(false);
-  const currentIndexRef = useRef(0);
-  const isScrollLockedRef = useRef(false);
 
   // Handle item ref registration
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
@@ -94,8 +92,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setIsLoading(true);
     setLoadError(null);
     setActiveIndex(0);
-    currentIndexRef.current = 0;
-    isScrollLockedRef.current = false;
     setPage(0);
     loadedIdsRef.current.clear();
     
@@ -257,92 +253,23 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, isLoading, page, loadMoreVideos]);
 
-  // Keep ref in sync with state
-  useEffect(() => {
-    currentIndexRef.current = activeIndex;
-  }, [activeIndex]);
-
-  // Simple scroll handling - one video at a time, no exceptions
+  // Scroll tracking for active video
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || videos.length === 0) return;
 
-    const goToIndex = (index: number) => {
-      const maxIndex = videos.length - 1;
-      const targetIndex = Math.max(0, Math.min(index, maxIndex));
+    const handleScroll = () => {
+      const scrollTop = container.scrollTop;
       const itemHeight = container.clientHeight;
-      
-      currentIndexRef.current = targetIndex;
-      setActiveIndex(targetIndex);
-      
-      container.scrollTo({
-        top: targetIndex * itemHeight,
-        behavior: 'smooth'
-      });
-    };
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      
-      if (isScrollLockedRef.current) return;
-      
-      const delta = e.deltaY;
-      if (Math.abs(delta) < 5) return;
-      
-      isScrollLockedRef.current = true;
-      
-      const currentIdx = currentIndexRef.current;
-      const nextIdx = delta > 0 ? currentIdx + 1 : currentIdx - 1;
-      goToIndex(nextIdx);
-      
-      // Unlock after scroll animation completes
-      setTimeout(() => {
-        isScrollLockedRef.current = false;
-      }, 400);
-    };
-
-    let touchStartY = 0;
-    let touchStartIdx = 0;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      touchStartY = e.touches[0].clientY;
-      touchStartIdx = currentIndexRef.current;
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (isScrollLockedRef.current) {
-        goToIndex(touchStartIdx);
-        return;
+      const newIndex = Math.round(scrollTop / itemHeight);
+      if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
+        setActiveIndex(newIndex);
       }
-
-      const endY = e.changedTouches[0].clientY;
-      const diff = touchStartY - endY;
-      
-      if (Math.abs(diff) < 50) {
-        goToIndex(touchStartIdx);
-        return;
-      }
-      
-      isScrollLockedRef.current = true;
-      
-      const nextIdx = diff > 0 ? touchStartIdx + 1 : touchStartIdx - 1;
-      goToIndex(nextIdx);
-      
-      setTimeout(() => {
-        isScrollLockedRef.current = false;
-      }, 400);
     };
 
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    return () => {
-      container.removeEventListener('wheel', handleWheel);
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [videos.length]);
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [activeIndex, videos.length]);
 
   // Track video view
   const handleViewTracked = useCallback(async (videoId: string) => {
@@ -394,7 +321,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     <div
       ref={containerRef}
       id="video-feed-container"
-      className="w-full h-[100dvh] overflow-hidden scrollbar-hide"
+      className="w-full h-[100dvh] snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scrollbar-hide"
       style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
     >
       <SinglePlayer
