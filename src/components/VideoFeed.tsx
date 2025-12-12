@@ -65,12 +65,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         setActiveContainerRect(activeContainer.getBoundingClientRect());
       }
     };
+    // Initial update with a small delay to ensure DOM is ready
+    const initialTimeout = setTimeout(updateRect, 50);
     updateRect();
     const handleUpdate = () => requestAnimationFrame(updateRect);
     window.addEventListener('resize', handleUpdate);
     const container = containerRef.current;
     container?.addEventListener('scroll', handleUpdate);
     return () => {
+      clearTimeout(initialTimeout);
       window.removeEventListener('resize', handleUpdate);
       container?.removeEventListener('scroll', handleUpdate);
     };
