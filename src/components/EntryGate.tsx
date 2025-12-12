@@ -1,8 +1,6 @@
 import { useState, useCallback, createContext, useContext } from "react";
 import { Helmet } from "react-helmet-async";
 
-const STORAGE_KEY = "shortpv_entered";
-
 // Context to share entry state
 interface EntryGateContextType {
   hasEntered: boolean;
@@ -21,12 +19,8 @@ interface EntryGateProps {
 }
 
 export const EntryGate = ({ children }: EntryGateProps) => {
-  const [hasEntered, setHasEntered] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem(STORAGE_KEY) === "true";
-    }
-    return false;
-  });
+  // Always start fresh on page load - don't persist entry state
+  const [hasEntered, setHasEntered] = useState<boolean>(false);
   const [isExiting, setIsExiting] = useState(false);
   const [playTrigger, setPlayTrigger] = useState(0);
 
@@ -36,7 +30,6 @@ export const EntryGate = ({ children }: EntryGateProps) => {
   }, []);
 
   const handleEnter = () => {
-    localStorage.setItem(STORAGE_KEY, "true");
     setIsExiting(true);
     setHasEntered(true);
     
