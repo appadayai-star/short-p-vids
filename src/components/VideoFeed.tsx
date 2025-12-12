@@ -161,17 +161,19 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   }, [searchQuery, categoryFilter]);
 
-  // Only refetch when search/category changes, NOT when userId changes
-  // userId changes don't require refetching the video list
+  // Fetch on mount and when search/category changes
+  const hasMountedRef = useRef(false);
+  
   useEffect(() => {
-    console.log("[VideoFeed] Initial load - search/category changed");
+    // Always fetch on mount, then on search/category changes
+    console.log("[VideoFeed] Effect triggered - mounted:", hasMountedRef.current);
     setPage(0);
     setActiveIndex(0);
     loadedIdsRef.current.clear();
     setHasWarmedUp(false);
     fetchVideos(0, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, categoryFilter]);
+    hasMountedRef.current = true;
+  }, [searchQuery, categoryFilter, fetchVideos]);
 
   useEffect(() => {
     if (hasWarmedUp || videos.length === 0) return;
