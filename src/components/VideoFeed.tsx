@@ -253,22 +253,105 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, isLoading, page, loadMoreVideos]);
 
-  // Scroll tracking for active video
+  // Scroll handling with debounce to enforce single video scrolling
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
 
-    const handleScroll = () => {
-      const scrollTop = container.scrollTop;
+    let isScrolling = false;
+    let scrollTimeout: ReturnType<typeof setTimeout> | null = null;
+    let lastScrollTime = 0;
+    const scrollCooldown = 300; // ms to wait before allowing next scroll
+
+    const scrollToIndex = (index: number) => {
+      const clampedIndex = Math.max(0, Math.min(index, videos.length - 1));
       const itemHeight = container.clientHeight;
-      const newIndex = Math.round(scrollTop / itemHeight);
-      if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
-        setActiveIndex(newIndex);
+      container.scrollTo({
+        top: clampedIndex * itemHeight,
+        behavior: 'smooth'
+      });
+      setActiveIndex(clampedIndex);
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      
+      const now = Date.now();
+      if (isScrolling || now - lastScrollTime < scrollCooldown) {
+        return;
+      }
+
+      // Determine direction based on delta
+      const delta = e.deltaY;
+      if (Math.abs(delta) < 10) return; // Ignore tiny movements
+
+      isScrolling = true;
+      lastScrollTime = now;
+
+      if (delta > 0 && activeIndex < videos.length - 1) {
+        // Scroll down - next video
+        scrollToIndex(activeIndex + 1);
+      } else if (delta < 0 && activeIndex > 0) {
+        // Scroll up - previous video
+        scrollToIndex(activeIndex - 1);
+      }
+
+      // Reset scrolling flag after animation completes
+      scrollTimeout = setTimeout(() => {
+        isScrolling = false;
+      }, scrollCooldown);
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      (container as any)._touchStartY = e.touches[0].clientY;
+      (container as any)._touchStartIndex = activeIndex;
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      const startY = (container as any)._touchStartY;
+      const startIndex = (container as any)._touchStartIndex;
+      if (startY === undefined) return;
+
+      const endY = e.changedTouches[0].clientY;
+      const diff = startY - endY;
+      const threshold = 50; // Minimum swipe distance
+
+      const now = Date.now();
+      if (now - lastScrollTime < scrollCooldown) {
+        // Still in cooldown, snap back to current position
+        scrollToIndex(startIndex);
+        return;
+      }
+
+      if (Math.abs(diff) > threshold) {
+        lastScrollTime = now;
+        if (diff > 0 && startIndex < videos.length - 1) {
+          // Swipe up - next video
+          scrollToIndex(startIndex + 1);
+        } else if (diff < 0 && startIndex > 0) {
+          // Swipe down - previous video
+          scrollToIndex(startIndex - 1);
+        } else {
+          // Can't go further, snap back
+          scrollToIndex(startIndex);
+        }
+      } else {
+        // Swipe too short, snap back
+        scrollToIndex(startIndex);
       }
     };
 
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
+    // Use wheel event with passive: false to prevent default
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      container.removeEventListener('wheel', handleWheel);
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
   }, [activeIndex, videos.length]);
 
   // Track video view
@@ -321,7 +404,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     <div
       ref={containerRef}
       id="video-feed-container"
-      className="w-full h-[100dvh] snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scrollbar-hide"
+      className="w-full h-[100dvh] overflow-hidden scrollbar-hide"
       style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
     >
       <SinglePlayer
