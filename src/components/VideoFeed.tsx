@@ -106,8 +106,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       return;
     }
     
+    let isCancelled = false;
     const currentFetchId = ++fetchIdRef.current;
-    const abortController = new AbortController();
     
     const isForYouFeed = !searchQuery && !categoryFilter;
     console.log(`[VideoFeed] Starting fetch #${currentFetchId} (auth: ${authStatus}, forYou: ${isForYouFeed})`);
@@ -125,7 +125,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       const startTime = Date.now();
       
       try {
-        let videos: Video[] = [];
+        let fetchedVideos: Video[] = [];
         
         if (isForYouFeed) {
           // Use the recommendation algorithm for the main "For You" feed
@@ -135,15 +135,18 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             body: { userId: currentUserId || null, page: 0, limit: PAGE_SIZE }
           });
           
-          if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) return;
+          if (isCancelled) {
+            console.log(`[VideoFeed] Fetch #${currentFetchId} cancelled after edge function`);
+            return;
+          }
           
           if (fnError) {
             console.error(`[VideoFeed] Edge function error:`, fnError);
             throw new Error(fnError.message || "Failed to get recommendations");
           }
           
-          videos = fnData?.videos || [];
-          console.log(`[VideoFeed] Edge function returned ${videos.length} videos`);
+          fetchedVideos = fnData?.videos || [];
+          console.log(`[VideoFeed] Edge function returned ${fetchedVideos.length} videos`);
         } else {
           // Use direct query for search/category filters
           let query = supabase
@@ -165,15 +168,18 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
           const { data, error } = await query;
           
-          if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) return;
+          if (isCancelled) {
+            console.log(`[VideoFeed] Fetch #${currentFetchId} cancelled after query`);
+            return;
+          }
           if (error) throw error;
 
-          videos = data || [];
+          fetchedVideos = data || [];
           
           // Additional client-side filtering for search
-          if (searchQuery && videos.length > 0) {
+          if (searchQuery && fetchedVideos.length > 0) {
             const q = searchQuery.toLowerCase();
-            videos = videos.filter(v => 
+            fetchedVideos = fetchedVideos.filter(v => 
               v.title?.toLowerCase().includes(q) ||
               v.description?.toLowerCase().includes(q) ||
               v.profiles?.username?.toLowerCase().includes(q) ||
@@ -183,49 +189,37 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         }
         
         const duration = Date.now() - startTime;
-        console.log(`[VideoFeed] Fetch #${currentFetchId} done in ${duration}ms: ${videos.length} videos`);
+        console.log(`[VideoFeed] Fetch #${currentFetchId} done in ${duration}ms: ${fetchedVideos.length} videos`);
 
+        if (isCancelled) return;
+        
         loadedIdsRef.current.clear();
-        videos.forEach(v => loadedIdsRef.current.add(v.id));
-        setVideos(videos);
-        setHasMore(videos.length === PAGE_SIZE);
+        fetchedVideos.forEach(v => loadedIdsRef.current.add(v.id));
+        setVideos(fetchedVideos);
+        setHasMore(fetchedVideos.length === PAGE_SIZE);
         setLoadError(null);
         setInitialLoadComplete(true);
         setRetryCount(0);
+        setIsLoading(false);
       } catch (error) {
-        if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) return;
+        if (isCancelled) return;
         
         const errorMessage = error instanceof Error ? error.message : "Failed to load videos";
         console.error(`[VideoFeed] Fetch #${currentFetchId} error:`, errorMessage);
         
-        // Auto-retry once on first failure
-        if (retryCount === 0) {
-          console.log(`[VideoFeed] Auto-retrying in 500ms...`);
-          setRetryCount(1);
-          setTimeout(() => {
-            if (!abortController.signal.aborted) {
-              setRetryCount(prev => prev + 1);
-            }
-          }, 500);
-          return;
-        }
-        
         setVideos([]);
         setLoadError(errorMessage);
-      } finally {
-        if (!abortController.signal.aborted && currentFetchId === fetchIdRef.current) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     };
 
     doFetch();
     
     return () => {
-      abortController.abort();
+      isCancelled = true;
       console.log(`[VideoFeed] Cleanup fetch #${currentFetchId}`);
     };
-  }, [searchQuery, categoryFilter, retryCount, authStatus]);
+  }, [searchQuery, categoryFilter, authStatus]);
 
   // Warmup first video
   useEffect(() => {
