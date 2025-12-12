@@ -19,8 +19,10 @@ interface EntryGateProps {
 }
 
 export const EntryGate = ({ children }: EntryGateProps) => {
-  // Always start fresh on page load - don't persist entry state
-  const [hasEntered, setHasEntered] = useState<boolean>(false);
+  // Persist entry state in localStorage
+  const [hasEntered, setHasEntered] = useState<boolean>(() => {
+    return localStorage.getItem('has_entered_v1') === 'true';
+  });
   const [isExiting, setIsExiting] = useState(false);
   const [playTrigger, setPlayTrigger] = useState(0);
 
@@ -32,6 +34,7 @@ export const EntryGate = ({ children }: EntryGateProps) => {
   const handleEnter = () => {
     setIsExiting(true);
     setHasEntered(true);
+    localStorage.setItem('has_entered_v1', 'true');
     
     // Trigger play after a tiny delay to ensure state propagates
     setTimeout(() => {
