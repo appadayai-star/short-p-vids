@@ -8,7 +8,6 @@ import { getBestVideoSource } from "@/lib/cloudinary";
 import { useAuth } from "@/contexts/AuthContext";
 
 const PAGE_SIZE = 10;
-const FETCH_TIMEOUT_MS = 8000;
 
 interface Video {
   id: string;
@@ -104,7 +103,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     const currentFetchId = ++fetchIdRef.current;
     const abortController = new AbortController();
     
-    console.log(`[VideoFeed] Starting fetch #${currentFetchId} (auth status: ${authStatus})`);
+    const isForYouFeed = !searchQuery && !categoryFilter;
+    console.log(`[VideoFeed] Starting fetch #${currentFetchId} (auth: ${authStatus}, forYou: ${isForYouFeed})`);
     
     // Reset state
     setPage(0);
@@ -118,65 +118,73 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     const doFetch = async () => {
       const startTime = Date.now();
       
-      // Create timeout promise
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Request timed out")), FETCH_TIMEOUT_MS);
-      });
-      
       try {
-        let query = supabase
-          .from("videos")
-          .select(`
-            id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
-            views_count, likes_count, tags, user_id,
-            profiles(username, avatar_url)
-          `)
-          .order("created_at", { ascending: false })
-          .range(0, PAGE_SIZE - 1);
-
-        if (categoryFilter) {
-          query = query.contains('tags', [categoryFilter]);
-        }
-        if (searchQuery) {
-          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
-        }
-
-        // Race between query and timeout
-        const { data, error } = await Promise.race([
-          query,
-          timeoutPromise
-        ]);
+        let videos: Video[] = [];
         
-        // Check if aborted
-        if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) {
-          console.log(`[VideoFeed] Fetch #${currentFetchId} aborted/stale`);
-          return;
+        if (isForYouFeed) {
+          // Use the recommendation algorithm for the main "For You" feed
+          console.log(`[VideoFeed] Calling get-for-you-feed edge function...`);
+          const { data: fnData, error: fnError } = await supabase.functions.invoke('get-for-you-feed', {
+            body: { userId: userId || null, page: 0, limit: PAGE_SIZE }
+          });
+          
+          if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) return;
+          
+          if (fnError) {
+            console.error(`[VideoFeed] Edge function error:`, fnError);
+            throw new Error(fnError.message || "Failed to get recommendations");
+          }
+          
+          videos = fnData?.videos || [];
+          console.log(`[VideoFeed] Edge function returned ${videos.length} videos`);
+        } else {
+          // Use direct query for search/category filters
+          let query = supabase
+            .from("videos")
+            .select(`
+              id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
+              views_count, likes_count, tags, user_id,
+              profiles(username, avatar_url)
+            `)
+            .order("created_at", { ascending: false })
+            .range(0, PAGE_SIZE - 1);
+
+          if (categoryFilter) {
+            query = query.contains('tags', [categoryFilter]);
+          }
+          if (searchQuery) {
+            query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+          }
+
+          const { data, error } = await query;
+          
+          if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) return;
+          if (error) throw error;
+
+          videos = data || [];
+          
+          // Additional client-side filtering for search
+          if (searchQuery && videos.length > 0) {
+            const q = searchQuery.toLowerCase();
+            videos = videos.filter(v => 
+              v.title?.toLowerCase().includes(q) ||
+              v.description?.toLowerCase().includes(q) ||
+              v.profiles?.username?.toLowerCase().includes(q) ||
+              v.tags?.some(t => t.toLowerCase().includes(q))
+            );
+          }
         }
         
         const duration = Date.now() - startTime;
-        console.log(`[VideoFeed] Fetch #${currentFetchId} done in ${duration}ms: ${data?.length || 0} videos`);
-        
-        if (error) throw error;
-
-        let filtered = data || [];
-        
-        if (searchQuery && data) {
-          const q = searchQuery.toLowerCase();
-          filtered = data.filter(v => 
-            v.title?.toLowerCase().includes(q) ||
-            v.description?.toLowerCase().includes(q) ||
-            v.profiles?.username?.toLowerCase().includes(q) ||
-            v.tags?.some(t => t.toLowerCase().includes(q))
-          );
-        }
+        console.log(`[VideoFeed] Fetch #${currentFetchId} done in ${duration}ms: ${videos.length} videos`);
 
         loadedIdsRef.current.clear();
-        filtered.forEach(v => loadedIdsRef.current.add(v.id));
-        setVideos(filtered);
-        setHasMore(data?.length === PAGE_SIZE);
+        videos.forEach(v => loadedIdsRef.current.add(v.id));
+        setVideos(videos);
+        setHasMore(videos.length === PAGE_SIZE);
         setLoadError(null);
         setInitialLoadComplete(true);
-        setRetryCount(0); // Reset retry count on success
+        setRetryCount(0);
       } catch (error) {
         if (abortController.signal.aborted || currentFetchId !== fetchIdRef.current) return;
         
@@ -210,7 +218,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       abortController.abort();
       console.log(`[VideoFeed] Cleanup fetch #${currentFetchId}`);
     };
-  }, [searchQuery, categoryFilter, retryCount, authStatus]);
+  }, [searchQuery, categoryFilter, retryCount, authStatus, userId]);
 
   // Warmup first video
   useEffect(() => {
@@ -231,40 +239,56 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     if (isLoadingMore) return;
     
     setIsLoadingMore(true);
-    console.log(`[VideoFeed] Loading more - page ${pageNum}`);
+    const isForYouFeed = !searchQuery && !categoryFilter;
+    console.log(`[VideoFeed] Loading more - page ${pageNum} (forYou: ${isForYouFeed})`);
     
     try {
-      const offset = pageNum * PAGE_SIZE;
-      let query = supabase
-        .from("videos")
-        .select(`
-          id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
-          views_count, likes_count, tags, user_id,
-          profiles(username, avatar_url)
-        `)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
+      let newVideos: Video[] = [];
+      
+      if (isForYouFeed) {
+        // Use the recommendation algorithm for pagination
+        const { data: fnData, error: fnError } = await supabase.functions.invoke('get-for-you-feed', {
+          body: { userId: userId || null, page: pageNum, limit: PAGE_SIZE }
+        });
+        
+        if (fnError) throw new Error(fnError.message || "Failed to load more");
+        
+        newVideos = (fnData?.videos || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
+      } else {
+        // Use direct query for search/category filters
+        const offset = pageNum * PAGE_SIZE;
+        let query = supabase
+          .from("videos")
+          .select(`
+            id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
+            views_count, likes_count, tags, user_id,
+            profiles(username, avatar_url)
+          `)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
 
-      if (categoryFilter) {
-        query = query.contains('tags', [categoryFilter]);
+        if (categoryFilter) {
+          query = query.contains('tags', [categoryFilter]);
+        }
+        if (searchQuery) {
+          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        newVideos = (data || []).filter(v => !loadedIdsRef.current.has(v.id));
       }
-      if (searchQuery) {
-        query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      const newVideos = (data || []).filter(v => !loadedIdsRef.current.has(v.id));
+      
       newVideos.forEach(v => loadedIdsRef.current.add(v.id));
       setVideos(prev => [...prev, ...newVideos]);
-      setHasMore(data?.length === PAGE_SIZE);
+      setHasMore(newVideos.length > 0);
     } catch (error) {
       console.error('[VideoFeed] Load more error:', error);
     } finally {
       setIsLoadingMore(false);
     }
-  }, [searchQuery, categoryFilter, isLoadingMore]);
+  }, [searchQuery, categoryFilter, isLoadingMore, userId]);
 
   useEffect(() => {
     if (!initialLoadComplete || !sentinelRef.current || !hasMore || isLoadingMore) {
