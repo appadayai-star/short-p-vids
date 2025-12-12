@@ -483,6 +483,7 @@ export type Database = {
           likes_count: number
           optimized_video_url: string | null
           processing_status: string | null
+          stream_url: string | null
           tags: string[] | null
           thumbnail_generated: boolean | null
           thumbnail_url: string | null
@@ -500,6 +501,7 @@ export type Database = {
           likes_count?: number
           optimized_video_url?: string | null
           processing_status?: string | null
+          stream_url?: string | null
           tags?: string[] | null
           thumbnail_generated?: boolean | null
           thumbnail_url?: string | null
@@ -517,6 +519,7 @@ export type Database = {
           likes_count?: number
           optimized_video_url?: string | null
           processing_status?: string | null
+          stream_url?: string | null
           tags?: string[] | null
           thumbnail_generated?: boolean | null
           thumbnail_url?: string | null

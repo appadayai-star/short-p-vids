@@ -17,6 +17,8 @@ interface Video {
   description: string | null;
   tags: string[] | null;
   video_url: string;
+  optimized_video_url?: string | null;
+  stream_url?: string | null;
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;

@@ -52,6 +52,7 @@ interface Video {
   description: string | null;
   video_url: string;
   optimized_video_url?: string | null;
+  stream_url?: string | null;
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
@@ -62,6 +63,13 @@ interface Video {
     avatar_url: string | null;
   };
 }
+
+// Check if browser supports HLS natively (Safari, iOS)
+const supportsHlsNatively = () => {
+  const video = document.createElement('video');
+  return video.canPlayType('application/vnd.apple.mpegurl') !== '' ||
+         video.canPlayType('application/x-mpegURL') !== '';
+};
 
 type VideoStatus = "idle" | "loading" | "ready" | "error" | "stalled" | "needsInteraction";
 
@@ -98,9 +106,13 @@ export const VideoCard = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Core video state
-  const primarySrc = video.optimized_video_url || video.video_url;
-  const fallbackSrc = video.video_url;
+  // Core video state - prefer HLS for native support (Safari/iOS), otherwise MP4
+  const hlsSupported = supportsHlsNatively();
+  const primarySrc = hlsSupported && video.stream_url 
+    ? video.stream_url 
+    : (video.optimized_video_url || video.video_url);
+  const fallbackSrc = video.optimized_video_url || video.video_url;
+  const lastResortSrc = video.video_url;
   const posterSrc = video.thumbnail_url || undefined;
   
   const [src, setSrc] = useState(primarySrc);
@@ -132,29 +144,36 @@ export const VideoCard = memo(({
     }
   }, []);
 
-  // Retry or fallback logic
+  // Retry or fallback logic with 3 levels: primary -> fallback -> lastResort
   const retryOrFallback = useCallback((reason: "error" | "timeout") => {
     clearLoadTimeout();
-    const videoEl = videoRef.current;
     
-    console.log(`[VideoCard ${index}] retryOrFallback called: reason=${reason}, attempt=${attempt}`);
+    console.log(`[VideoCard ${index}] retryOrFallback: reason=${reason}, attempt=${attempt}, src=${src?.substring(0, 60)}...`);
     
     if (attempt === 0) {
-      // First retry: reload with cache buster on primary
+      // First retry: reload primary with cache buster
       setAttempt(1);
       const cacheBuster = primarySrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
       setSrc(primarySrc + cacheBuster);
       setStatus("loading");
-    } else if (attempt === 1 && fallbackSrc !== primarySrc) {
-      // Second retry: try fallback URL
+    } else if (attempt === 1 && fallbackSrc && fallbackSrc !== primarySrc) {
+      // Second retry: try optimized MP4 fallback
+      console.log(`[VideoCard ${index}] Trying fallback: ${fallbackSrc.substring(0, 60)}...`);
       setAttempt(2);
       setSrc(fallbackSrc);
       setStatus("loading");
+    } else if (attempt <= 2 && lastResortSrc && lastResortSrc !== fallbackSrc && lastResortSrc !== primarySrc) {
+      // Third retry: try original Supabase URL
+      console.log(`[VideoCard ${index}] Trying lastResort: ${lastResortSrc.substring(0, 60)}...`);
+      setAttempt(3);
+      setSrc(lastResortSrc);
+      setStatus("loading");
     } else {
-      // Max retries reached - show error UI
+      // All retries exhausted - show error UI
+      console.log(`[VideoCard ${index}] All retries exhausted, showing error UI`);
       setStatus("error");
     }
-  }, [attempt, primarySrc, fallbackSrc, clearLoadTimeout, index]);
+  }, [attempt, primarySrc, fallbackSrc, lastResortSrc, src, clearLoadTimeout, index]);
 
   // Start loading timeout watchdog
   const startLoadTimeout = useCallback(() => {
