@@ -76,6 +76,16 @@ serve(async (req) => {
 
     if (error) throw error;
 
+    // Shuffle function for randomization
+    const shuffleArray = <T,>(array: T[]): T[] => {
+      const shuffled = [...array];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return shuffled;
+    };
+
     // Calculate scores for each video
     const scoredVideos = (recentVideos || []).map((video: Video) => {
       // Normalize metrics (0-1 scale)
@@ -103,35 +113,45 @@ serve(async (req) => {
         affinityScore += tagOverlap * 0.2;
       }
 
-      // Penalize if already viewed
-      if (viewedVideoIds.has(video.id)) {
-        affinityScore -= 0.3;
-      }
+      // Penalize viewed videos heavily
+      const viewedPenalty = viewedVideoIds.has(video.id) ? -1.0 : 0;
 
-      // Weighted score calculation
-      const basePopularityWeight = 0.4;
-      const viewWeight = 0.1;
-      const recencyWeight = 0.3;
-      const userAffinityWeight = 0.2;
+      // Calculate base score (without randomization)
+      const baseScore =
+        0.3 * normalizedLikes +
+        0.1 * normalizedViews +
+        0.2 * recencyScore +
+        0.2 * affinityScore +
+        viewedPenalty;
 
-      const score =
-        basePopularityWeight * normalizedLikes +
-        viewWeight * normalizedViews +
-        recencyWeight * recencyScore +
-        userAffinityWeight * affinityScore +
-        Math.random() * 0.15; // Add randomization for variety
-
-      return { ...video, score };
+      return { ...video, baseScore };
     });
 
-    // Sort by score and paginate
-    const sortedVideos = scoredVideos
-      .sort((a, b) => b.score - a.score)
+    // Separate viewed and unviewed videos
+    const unviewedVideos = scoredVideos.filter(v => !viewedVideoIds.has(v.id));
+    const viewedVideos = scoredVideos.filter(v => viewedVideoIds.has(v.id));
+
+    // Sort unviewed by score, then shuffle within score tiers for variety
+    const sortedUnviewed = unviewedVideos.sort((a, b) => b.baseScore - a.baseScore);
+    
+    // Group into tiers and shuffle within each tier for TikTok-like variety
+    const tierSize = 5;
+    const shuffledResult: typeof sortedUnviewed = [];
+    for (let i = 0; i < sortedUnviewed.length; i += tierSize) {
+      const tier = sortedUnviewed.slice(i, i + tierSize);
+      shuffledResult.push(...shuffleArray(tier));
+    }
+
+    // Add shuffled viewed videos at the end as fallback
+    const finalVideos = [...shuffledResult, ...shuffleArray(viewedVideos)];
+
+    // Paginate and clean up
+    const paginatedVideos = finalVideos
       .slice(page * limit, (page + 1) * limit)
-      .map(({ score, ...video }) => video); // Remove score from response
+      .map(({ baseScore, ...video }) => video);
 
     return new Response(
-      JSON.stringify({ videos: sortedVideos }),
+      JSON.stringify({ videos: paginatedVideos }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
