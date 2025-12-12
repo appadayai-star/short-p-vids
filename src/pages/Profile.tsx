@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, Camera, Loader2 } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { getBestThumbnailUrl } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -531,16 +532,19 @@ const Profile = () => {
                       setVideoModalOpen(true);
                     }}
                   >
-                    {video.thumbnail_url ? (
-                      <img
-                        src={video.thumbnail_url}
-                        alt={video.title}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-white/10" />
-                    )}
+                    {(() => {
+                      const thumbUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+                      return thumbUrl ? (
+                        <img
+                          src={thumbUrl}
+                          alt={video.title}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-white/10" />
+                      );
+                    })()}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                       <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                     </div>
@@ -567,16 +571,19 @@ const Profile = () => {
                         setVideoModalOpen(true);
                       }}
                     >
-                      {video.thumbnail_url ? (
-                        <img
-                          src={video.thumbnail_url}
-                          alt={video.title}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-white/10" />
-                      )}
+                      {(() => {
+                        const thumbUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+                        return thumbUrl ? (
+                          <img
+                            src={thumbUrl}
+                            alt={video.title}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-white/10" />
+                        );
+                      })()}
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                         <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                       </div>
@@ -604,16 +611,19 @@ const Profile = () => {
                         setVideoModalOpen(true);
                       }}
                     >
-                      {video.thumbnail_url ? (
-                        <img
-                          src={video.thumbnail_url}
-                          alt={video.title}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-white/10" />
-                      )}
+                      {(() => {
+                        const thumbUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+                        return thumbUrl ? (
+                          <img
+                            src={thumbUrl}
+                            alt={video.title}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-white/10" />
+                        );
+                      })()}
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                         <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                       </div>
