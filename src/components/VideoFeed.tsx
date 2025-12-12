@@ -31,57 +31,17 @@ interface VideoFeedProps {
 }
 
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
-  const { isReady } = useEntryGate();
+  const { hasEntered } = useEntryGate();
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [page, setPage] = useState(0);
-  const [firstVideoWarmedUp, setFirstVideoWarmedUp] = useState(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const warmUpVideoRef = useRef<HTMLVideoElement | null>(null);
-
-  // Warm up the first video when ready
-  const warmUpFirstVideo = useCallback((video: Video) => {
-    if (warmUpVideoRef.current || firstVideoWarmedUp) return;
-
-    const videoUrl = video.optimized_video_url || video.video_url;
-    
-    // Create offscreen video element for metadata preloading
-    const offscreenVideo = document.createElement("video");
-    offscreenVideo.muted = true;
-    offscreenVideo.playsInline = true;
-    offscreenVideo.preload = "metadata";
-    offscreenVideo.src = videoUrl;
-    offscreenVideo.style.cssText = "position:absolute;left:-9999px;width:1px;height:1px;opacity:0;";
-    
-    document.body.appendChild(offscreenVideo);
-    warmUpVideoRef.current = offscreenVideo;
-
-    const cleanup = () => {
-      if (offscreenVideo.parentNode) {
-        offscreenVideo.parentNode.removeChild(offscreenVideo);
-      }
-      warmUpVideoRef.current = null;
-      setFirstVideoWarmedUp(true);
-    };
-
-    offscreenVideo.onloadedmetadata = () => {
-      // Give a tiny buffer for better first-frame readiness
-      setTimeout(cleanup, 100);
-    };
-
-    offscreenVideo.onerror = cleanup;
-    
-    // Fallback timeout
-    setTimeout(cleanup, 3000);
-
-    offscreenVideo.load();
-  }, [firstVideoWarmedUp]);
 
   // Fetch videos with pagination
   const fetchVideos = useCallback(async (pageNum: number, append = false) => {
@@ -140,11 +100,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           loadedIdsRef.current.clear();
           newVideos.forEach(v => loadedIdsRef.current.add(v.id));
           setVideos(newVideos);
-          
-          // Warm up first video when ready
-          if (isReady && newVideos.length > 0) {
-            warmUpFirstVideo(newVideos[0]);
-          }
         }
         return;
       }
@@ -167,11 +122,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             loadedIdsRef.current.clear();
             newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
             setVideos(newVideos);
-            
-            // Warm up first video when ready
-            if (isReady && newVideos.length > 0) {
-              warmUpFirstVideo(newVideos[0]);
-            }
           }
           return;
         }
@@ -203,11 +153,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         loadedIdsRef.current.clear();
         newVideos.forEach(v => loadedIdsRef.current.add(v.id));
         setVideos(newVideos);
-        
-        // Warm up first video when ready
-        if (isReady && newVideos.length > 0) {
-          warmUpFirstVideo(newVideos[0]);
-        }
       }
     } catch (error) {
       console.error("Error fetching videos:", error);
@@ -216,22 +161,14 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [searchQuery, categoryFilter, userId, isReady, warmUpFirstVideo]);
+  }, [searchQuery, categoryFilter, userId]);
 
   // Initial load - fetch videos immediately so they're visible behind overlay
   useEffect(() => {
     setPage(0);
     loadedIdsRef.current.clear();
-    setFirstVideoWarmedUp(false);
     fetchVideos(0, false);
   }, [searchQuery, categoryFilter, userId]);
-
-  // When isReady becomes true and we have videos, warm up the first one
-  useEffect(() => {
-    if (isReady && videos.length > 0 && !firstVideoWarmedUp) {
-      warmUpFirstVideo(videos[0]);
-    }
-  }, [isReady, videos, firstVideoWarmedUp, warmUpFirstVideo]);
 
   // Infinite scroll - observe sentinel element
   useEffect(() => {
@@ -259,11 +196,14 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   }, []);
 
-  // Determine which videos should preload (current + next few) - only when ready
+  // Determine which videos should preload - first video always preloads, others wait for entry
   const shouldPreload = useCallback((index: number) => {
-    if (!isReady) return false;
+    // First video always preloads (even before Enter)
+    if (index === 0) return true;
+    // Other videos only preload after entry and if near active
+    if (!hasEntered) return false;
     return index >= activeIndex && index <= activeIndex + PRELOAD_AHEAD;
-  }, [activeIndex, isReady]);
+  }, [activeIndex, hasEntered]);
 
   if (isLoading) {
     return (
@@ -306,7 +246,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           currentUserId={userId}
           shouldPreload={shouldPreload(index)}
           isFirstVideo={index === 0}
-          isReady={isReady}
+          hasEntered={hasEntered}
           onActiveChange={handleActiveChange}
         />
       ))}

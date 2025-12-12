@@ -127,7 +127,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
               currentUserId={userId}
               shouldPreload={shouldPreload(index)}
               isFirstVideo={index === 0}
-              isReady={true}
+              hasEntered={true}
               onActiveChange={handleActiveChange}
               onNavigate={onClose} 
             />

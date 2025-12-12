@@ -1,19 +1,17 @@
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
+import { useState, useCallback, createContext, useContext } from "react";
 import { Helmet } from "react-helmet-async";
 
 const STORAGE_KEY = "shortpv_entered";
 
-// Context to share entry state and trigger video warm-up
+// Context to share entry state
 interface EntryGateContextType {
   hasEntered: boolean;
-  isReady: boolean;
-  triggerWarmUp: () => void;
+  triggerPlay: () => void;
 }
 
 const EntryGateContext = createContext<EntryGateContextType>({
   hasEntered: true,
-  isReady: true,
-  triggerWarmUp: () => {},
+  triggerPlay: () => {},
 });
 
 export const useEntryGate = () => useContext(EntryGateContext);
@@ -24,48 +22,38 @@ interface EntryGateProps {
 
 export const EntryGate = ({ children }: EntryGateProps) => {
   const [hasEntered, setHasEntered] = useState<boolean>(() => {
-    // Check localStorage synchronously to avoid flash
     if (typeof window !== "undefined") {
       return localStorage.getItem(STORAGE_KEY) === "true";
     }
     return false;
   });
-  const [isReady, setIsReady] = useState(hasEntered);
   const [isExiting, setIsExiting] = useState(false);
+  const [playTrigger, setPlayTrigger] = useState(0);
 
-  // Warm-up callback that VideoFeed will use
-  const triggerWarmUp = useCallback(() => {
-    // This signals the feed that user has entered and videos should start loading
-    setIsReady(true);
+  // Trigger video playback after entry
+  const triggerPlay = useCallback(() => {
+    setPlayTrigger(prev => prev + 1);
   }, []);
 
   const handleEnter = () => {
-    // Save to localStorage immediately
     localStorage.setItem(STORAGE_KEY, "true");
-    
-    // Start exit animation
     setIsExiting(true);
-    
-    // Mark as entered and ready simultaneously for instant response
     setHasEntered(true);
-    setIsReady(true);
+    
+    // Trigger play after a tiny delay to ensure state propagates
+    setTimeout(() => {
+      triggerPlay();
+    }, 50);
   };
 
   const handleLeave = () => {
     window.location.href = "https://google.com";
   };
 
-  // If already entered, skip overlay entirely
-  if (hasEntered && !isExiting) {
-    return (
-      <EntryGateContext.Provider value={{ hasEntered: true, isReady: true, triggerWarmUp }}>
-        {children}
-      </EntryGateContext.Provider>
-    );
-  }
+  const showOverlay = !hasEntered;
 
   return (
-    <EntryGateContext.Provider value={{ hasEntered, isReady, triggerWarmUp }}>
+    <EntryGateContext.Provider value={{ hasEntered, triggerPlay }}>
       {/* Preconnect to required domains */}
       <Helmet>
         <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
@@ -74,18 +62,18 @@ export const EntryGate = ({ children }: EntryGateProps) => {
         <link rel="dns-prefetch" href="https://mbuajcicosojebakdtsn.supabase.co" />
       </Helmet>
 
-      {/* App content rendered behind overlay - visible but dimmed/blurred */}
+      {/* App content - ALWAYS rendered, blurred when overlay is shown */}
       <div 
-        className={`transition-all duration-300 ${!hasEntered ? 'blur-sm brightness-50 pointer-events-none' : ''}`}
-        aria-hidden={!hasEntered}
+        className={`transition-all duration-300 ${showOverlay ? 'blur-sm brightness-50' : ''}`}
+        style={{ pointerEvents: showOverlay ? 'none' : 'auto' }}
       >
         {children}
       </div>
 
       {/* Overlay - only shown before entry */}
-      {!hasEntered && (
+      {showOverlay && (
         <div 
-          className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-200 ${isExiting ? 'opacity-0' : 'opacity-100'}`}
+          className={`fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4 transition-opacity duration-200 ${isExiting ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
         >
           <div className="bg-card border border-border rounded-2xl p-8 max-w-md w-full text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <h1 className="text-2xl font-bold text-foreground mb-4">This is an adult website</h1>

@@ -69,7 +69,7 @@ interface VideoCardProps {
   currentUserId: string | null;
   shouldPreload: boolean;
   isFirstVideo: boolean;
-  isReady: boolean;
+  hasEntered: boolean;
   onActiveChange: (index: number, isActive: boolean) => void;
   onDelete?: (videoId: string) => void;
   onNavigate?: () => void;
@@ -81,7 +81,7 @@ export const VideoCard = memo(({
   currentUserId, 
   shouldPreload,
   isFirstVideo,
-  isReady,
+  hasEntered,
   onActiveChange,
   onDelete, 
   onNavigate 
@@ -101,7 +101,6 @@ export const VideoCard = memo(({
   const [hasTrackedView, setHasTrackedView] = useState(false);
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [videoLoaded, setVideoLoaded] = useState(false);
-  const [hasStartedLoading, setHasStartedLoading] = useState(false);
 
   // Get video source - prefer optimized, fallback to original
   const videoSrc = video.optimized_video_url || video.video_url;
@@ -161,23 +160,13 @@ export const VideoCard = memo(({
     return () => observer.disconnect();
   }, [index, isActive, onActiveChange]);
 
-  // Handle video loading - only start when ready and should preload
-  useEffect(() => {
-    if (!isReady || !shouldPreload || hasStartedLoading) return;
-    
-    const videoEl = videoRef.current;
-    if (videoEl && !videoLoaded) {
-      setHasStartedLoading(true);
-      videoEl.load();
-    }
-  }, [isReady, shouldPreload, videoLoaded, hasStartedLoading]);
-
-  // Handle video play/pause based on active state
+  // Handle video play/pause based on active state and entry
   useEffect(() => {
     const videoEl = videoRef.current;
-    if (!videoEl || !isReady) return;
+    if (!videoEl) return;
 
-    if (isActive && videoLoaded) {
+    // Only play if: active, loaded, AND user has entered
+    if (isActive && videoLoaded && hasEntered) {
       videoEl.currentTime = 0;
       videoEl.play().catch(() => {
         // Autoplay blocked - that's okay
@@ -188,10 +177,10 @@ export const VideoCard = memo(({
         trackView();
         setHasTrackedView(true);
       }
-    } else if (videoEl) {
+    } else {
       videoEl.pause();
     }
-  }, [isActive, videoLoaded, hasTrackedView, isReady]);
+  }, [isActive, videoLoaded, hasEntered, hasTrackedView]);
 
   // Fetch interaction states for logged-in users
   useEffect(() => {
@@ -322,13 +311,13 @@ export const VideoCard = memo(({
   const isOwnVideo = currentUserId === video.user_id;
 
   // Determine if we should render the video element
-  // Render video element if visible, should preload, or is first video - but only start loading when ready
-  const shouldRenderVideo = isVisible || shouldPreload || isFirstVideo;
+  // First video always renders, others render when visible or should preload
+  const shouldRenderVideo = isFirstVideo || isVisible || shouldPreload;
   
-  // Determine preload attribute based on state
+  // Determine preload attribute - first video aggressively preloads
   const getPreloadValue = () => {
-    if (!isReady) return "none";
-    if (isActive || isFirstVideo) return "auto";
+    if (isFirstVideo) return "auto";
+    if (isActive) return "auto";
     if (shouldPreload) return "metadata";
     return "none";
   };
@@ -351,11 +340,11 @@ export const VideoCard = memo(({
         />
       )}
 
-      {/* Video - only rendered when visible/preloading */}
+      {/* Video - rendered when needed, always sets src for first video */}
       {shouldRenderVideo && (
         <video
           ref={videoRef}
-          src={isReady ? videoSrc : undefined}
+          src={videoSrc}
           className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
           loop
           playsInline
