@@ -13,7 +13,6 @@ interface Video {
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
-  comments_count: number;
   user_id: string;
   tags: string[] | null;
   profiles: {
@@ -84,7 +83,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         .from("videos")
         .select(`
           id, title, description, video_url, optimized_video_url, thumbnail_url,
-          views_count, likes_count, comments_count, user_id, tags,
+          views_count, likes_count, user_id, tags,
           profiles(username, avatar_url)
         `)
         .order("created_at", { ascending: false })
