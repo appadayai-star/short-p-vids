@@ -312,10 +312,12 @@ export const SinglePlayer = memo(({
         className="absolute inset-0 z-10 pointer-events-auto"
         onClick={handleVideoTap}
         onWheel={(e) => {
-          // Forward wheel events to the feed container for desktop scrolling
+          // Scroll one video at a time with snap behavior
           const container = document.getElementById('video-feed-container');
           if (container) {
-            container.scrollBy({ top: e.deltaY, behavior: 'instant' });
+            const direction = e.deltaY > 0 ? 1 : -1;
+            const itemHeight = container.clientHeight;
+            container.scrollBy({ top: direction * itemHeight, behavior: 'smooth' });
           }
         }}
         style={{ touchAction: 'pan-y' }}
