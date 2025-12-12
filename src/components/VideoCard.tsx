@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback } from "react";
-import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX } from "lucide-react";
+import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX, Loader2, RefreshCw, Play } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -63,9 +63,12 @@ interface Video {
   };
 }
 
+type VideoStatus = "idle" | "loading" | "ready" | "error" | "stalled" | "needsInteraction";
+
 interface VideoCardProps {
   video: Video;
   index: number;
+  activeIndex: number;
   currentUserId: string | null;
   shouldPreload: boolean;
   isFirstVideo: boolean;
@@ -75,9 +78,13 @@ interface VideoCardProps {
   onNavigate?: () => void;
 }
 
+const MAX_RETRY_ATTEMPTS = 2;
+const LOAD_TIMEOUT_MS = 5000;
+
 export const VideoCard = memo(({ 
   video, 
   index,
+  activeIndex,
   currentUserId, 
   shouldPreload,
   isFirstVideo,
@@ -89,9 +96,19 @@ export const VideoCard = memo(({
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Core video state
+  const primarySrc = video.optimized_video_url || video.video_url;
+  const fallbackSrc = video.video_url;
+  const posterSrc = video.thumbnail_url || undefined;
+  
+  const [src, setSrc] = useState(primarySrc);
+  const [status, setStatus] = useState<VideoStatus>("idle");
+  const [attempt, setAttempt] = useState(0);
+  
+  // UI state
   const [isVisible, setIsVisible] = useState(false);
-  const [isActive, setIsActive] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [isSaved, setIsSaved] = useState(false);
@@ -100,11 +117,54 @@ export const VideoCard = memo(({
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [hasTrackedView, setHasTrackedView] = useState(false);
   const [isMuted, setIsMuted] = useState(globalMuted);
-  const [videoLoaded, setVideoLoaded] = useState(false);
 
-  // Get video source - prefer optimized, fallback to original
-  const videoSrc = video.optimized_video_url || video.video_url;
-  const posterSrc = video.thumbnail_url || undefined;
+  // Compute truly active - only one video can be active at a time
+  const isTrulyActive = index === activeIndex;
+  
+  // Should this video have a src loaded?
+  const shouldLoadSrc = isFirstVideo || isTrulyActive || shouldPreload || isVisible;
+
+  // Clear timeout helper
+  const clearLoadTimeout = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  // Retry or fallback logic
+  const retryOrFallback = useCallback((reason: "error" | "timeout") => {
+    clearLoadTimeout();
+    const videoEl = videoRef.current;
+    
+    console.log(`[VideoCard ${index}] retryOrFallback called: reason=${reason}, attempt=${attempt}`);
+    
+    if (attempt === 0) {
+      // First retry: reload with cache buster on primary
+      setAttempt(1);
+      const cacheBuster = primarySrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
+      setSrc(primarySrc + cacheBuster);
+      setStatus("loading");
+    } else if (attempt === 1 && fallbackSrc !== primarySrc) {
+      // Second retry: try fallback URL
+      setAttempt(2);
+      setSrc(fallbackSrc);
+      setStatus("loading");
+    } else {
+      // Max retries reached - show error UI
+      setStatus("error");
+    }
+  }, [attempt, primarySrc, fallbackSrc, clearLoadTimeout, index]);
+
+  // Start loading timeout watchdog
+  const startLoadTimeout = useCallback(() => {
+    clearLoadTimeout();
+    timeoutRef.current = setTimeout(() => {
+      console.log(`[VideoCard ${index}] Load timeout triggered`);
+      setStatus("stalled");
+      retryOrFallback("timeout");
+    }, LOAD_TIMEOUT_MS);
+  }, [clearLoadTimeout, retryOrFallback, index]);
 
   // Sync with global mute state
   useEffect(() => {
@@ -128,7 +188,7 @@ export const VideoCard = memo(({
     }
   }, [video.id, currentUserId]);
 
-  // IntersectionObserver to detect visibility and active state
+  // IntersectionObserver to detect visibility
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -139,15 +199,11 @@ export const VideoCard = memo(({
           const isIntersecting = entry.isIntersecting;
           const ratio = entry.intersectionRatio;
           
-          // Visible if any part is showing
           setIsVisible(isIntersecting);
           
-          // Active if more than 50% visible
+          // Report active state if >50% visible
           const nowActive = ratio > 0.5;
-          if (nowActive !== isActive) {
-            setIsActive(nowActive);
-            onActiveChange(index, nowActive);
-          }
+          onActiveChange(index, nowActive);
         });
       },
       { 
@@ -158,29 +214,83 @@ export const VideoCard = memo(({
 
     observer.observe(container);
     return () => observer.disconnect();
-  }, [index, isActive, onActiveChange]);
+  }, [index, onActiveChange]);
+
+  // Handle src assignment and resource cleanup
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    if (shouldLoadSrc) {
+      // Assign src and start loading
+      if (videoEl.src !== src && src) {
+        videoEl.src = src;
+        setStatus("loading");
+        startLoadTimeout();
+        videoEl.load();
+      }
+    } else {
+      // Detach src to prevent downloads and free memory
+      if (videoEl.src) {
+        videoEl.pause();
+        videoEl.src = "";
+        videoEl.load();
+        setStatus("idle");
+        clearLoadTimeout();
+      }
+    }
+  }, [shouldLoadSrc, src, startLoadTimeout, clearLoadTimeout]);
+
+  // When src changes (retry/fallback), reload video
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !shouldLoadSrc) return;
+    
+    if (status === "loading" && attempt > 0) {
+      videoEl.src = src;
+      videoEl.load();
+      startLoadTimeout();
+    }
+  }, [src, attempt, status, shouldLoadSrc, startLoadTimeout]);
 
   // Handle video play/pause based on active state and entry
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    // Only play if: active, loaded, AND user has entered
-    if (isActive && videoLoaded && hasEntered) {
+    // Only play if: truly active, ready, AND user has entered
+    if (isTrulyActive && status === "ready" && hasEntered) {
       videoEl.currentTime = 0;
-      videoEl.play().catch(() => {
-        // Autoplay blocked - that's okay
-      });
-
-      // Track view once
-      if (!hasTrackedView) {
-        trackView();
-        setHasTrackedView(true);
+      const playPromise = videoEl.play();
+      
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            // Track view once
+            if (!hasTrackedView) {
+              trackView();
+              setHasTrackedView(true);
+            }
+          })
+          .catch((error) => {
+            console.log(`[VideoCard ${index}] play() rejected:`, error.name);
+            // Autoplay blocked - show tap to play
+            if (error.name === "NotAllowedError") {
+              setStatus("needsInteraction");
+            }
+          });
       }
     } else {
       videoEl.pause();
     }
-  }, [isActive, videoLoaded, hasEntered, hasTrackedView]);
+  }, [isTrulyActive, status, hasEntered, hasTrackedView, index]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearLoadTimeout();
+    };
+  }, [clearLoadTimeout]);
 
   // Fetch interaction states for logged-in users
   useEffect(() => {
@@ -212,6 +322,40 @@ export const VideoCard = memo(({
     }
   };
 
+  // Video event handlers
+  const handleCanPlay = useCallback(() => {
+    console.log(`[VideoCard ${index}] canplay`);
+    clearLoadTimeout();
+    setStatus("ready");
+  }, [clearLoadTimeout, index]);
+
+  const handleLoadedMetadata = useCallback(() => {
+    console.log(`[VideoCard ${index}] loadedmetadata`);
+  }, [index]);
+
+  const handlePlaying = useCallback(() => {
+    console.log(`[VideoCard ${index}] playing`);
+    clearLoadTimeout();
+    setStatus("ready");
+  }, [clearLoadTimeout, index]);
+
+  const handleWaiting = useCallback(() => {
+    console.log(`[VideoCard ${index}] waiting (buffering)`);
+  }, [index]);
+
+  const handleStalled = useCallback(() => {
+    console.log(`[VideoCard ${index}] stalled`);
+    // Don't immediately error - network might recover
+  }, [index]);
+
+  const handleError = useCallback(() => {
+    const videoEl = videoRef.current;
+    console.error(`[VideoCard ${index}] error:`, videoEl?.error?.message);
+    clearLoadTimeout();
+    retryOrFallback("error");
+  }, [clearLoadTimeout, retryOrFallback, index]);
+
+  // User actions
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
     setGlobalMuted(newMuted);
@@ -219,11 +363,32 @@ export const VideoCard = memo(({
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
+  const handleVideoTap = useCallback(() => {
+    if (status === "needsInteraction") {
+      const videoEl = videoRef.current;
+      if (videoEl) {
+        videoEl.play().then(() => {
+          setStatus("ready");
+        }).catch(() => {
+          // Still blocked
+        });
+      }
+    } else {
+      toggleMute();
+    }
+  }, [status, toggleMute]);
+
+  const handleRetry = useCallback(() => {
+    console.log(`[VideoCard ${index}] Manual retry`);
+    setAttempt(0);
+    setSrc(primarySrc);
+    setStatus("loading");
+  }, [primarySrc, index]);
+
   const toggleLike = async () => {
     const clientId = getGuestClientId();
     const wasLiked = isLiked;
     
-    // Optimistic UI update
     setIsLiked(!wasLiked);
     setLikesCount(prev => wasLiked ? prev - 1 : prev + 1);
 
@@ -242,7 +407,6 @@ export const VideoCard = memo(({
         setLikesCount(data.likesCount);
       }
 
-      // Update guest likes in localStorage
       if (!currentUserId) {
         const guestLikes = getGuestLikes();
         if (wasLiked) {
@@ -252,7 +416,6 @@ export const VideoCard = memo(({
         }
       }
     } catch (error) {
-      // Revert on error
       setIsLiked(wasLiked);
       setLikesCount(prev => wasLiked ? prev + 1 : prev - 1);
       toast.error("Failed to update like");
@@ -304,68 +467,11 @@ export const VideoCard = memo(({
     navigate(`/profile/${video.user_id}`);
   };
 
-  // === TEMPORARY DEBUG HANDLERS (REMOVE IN PRODUCTION) ===
-  const logVideoEvent = useCallback((event: string, videoEl: HTMLVideoElement | null) => {
-    if (!videoEl) return;
-    console.log(`[VideoCard ${index}] ${event}`, {
-      src: videoEl.src?.substring(0, 80) + '...',
-      networkState: ['EMPTY', 'IDLE', 'LOADING', 'NO_SOURCE'][videoEl.networkState],
-      readyState: ['HAVE_NOTHING', 'HAVE_METADATA', 'HAVE_CURRENT_DATA', 'HAVE_FUTURE_DATA', 'HAVE_ENOUGH_DATA'][videoEl.readyState],
-      paused: videoEl.paused,
-      currentTime: videoEl.currentTime,
-      duration: videoEl.duration,
-      error: videoEl.error?.message || null
-    });
-  }, [index]);
-
-  const handleVideoCanPlay = useCallback(() => {
-    logVideoEvent('canplay', videoRef.current);
-    setVideoLoaded(true);
-  }, [logVideoEvent]);
-
-  const handleVideoLoadedMetadata = useCallback(() => {
-    logVideoEvent('loadedmetadata', videoRef.current);
-  }, [logVideoEvent]);
-
-  const handleVideoPlaying = useCallback(() => {
-    logVideoEvent('playing', videoRef.current);
-  }, [logVideoEvent]);
-
-  const handleVideoStalled = useCallback(() => {
-    logVideoEvent('stalled', videoRef.current);
-  }, [logVideoEvent]);
-
-  const handleVideoWaiting = useCallback(() => {
-    logVideoEvent('waiting', videoRef.current);
-  }, [logVideoEvent]);
-
-  const handleVideoError = useCallback(() => {
-    logVideoEvent('error', videoRef.current);
-    console.error(`[VideoCard ${index}] VIDEO ERROR:`, videoRef.current?.error);
-  }, [logVideoEvent, index]);
-
-  const handleVideoAbort = useCallback(() => {
-    logVideoEvent('abort', videoRef.current);
-  }, [logVideoEvent]);
-
-  const handleVideoEmptied = useCallback(() => {
-    logVideoEvent('emptied', videoRef.current);
-  }, [logVideoEvent]);
-  // === END TEMPORARY DEBUG HANDLERS ===
-
   const isOwnVideo = currentUserId === video.user_id;
-
-  // Determine if we should render the video element
-  // First video always renders, others render when visible or should preload
-  const shouldRenderVideo = isFirstVideo || isVisible || shouldPreload;
-  
-  // Determine preload attribute - first video aggressively preloads
-  const getPreloadValue = () => {
-    if (isFirstVideo) return "auto";
-    if (isActive) return "auto";
-    if (shouldPreload) return "metadata";
-    return "none";
-  };
+  const showVideo = shouldLoadSrc && status !== "idle";
+  const showLoading = status === "loading" && isTrulyActive;
+  const showError = status === "error" || status === "stalled";
+  const showTapToPlay = status === "needsInteraction" && isTrulyActive;
 
   return (
     <div 
@@ -379,35 +485,65 @@ export const VideoCard = memo(({
           alt="" 
           className={cn(
             "absolute inset-0 w-full h-full object-cover md:object-contain",
-            shouldRenderVideo && videoLoaded ? "opacity-0" : "opacity-100"
+            showVideo && status === "ready" ? "opacity-0" : "opacity-100"
           )}
           loading={isFirstVideo ? "eager" : "lazy"}
         />
       )}
 
-      {/* Video - rendered when needed, always sets src for first video */}
-      {shouldRenderVideo && (
+      {/* Video element - only rendered when needed */}
+      {shouldLoadSrc && (
         <video
           ref={videoRef}
-          src={videoSrc}
           className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
           loop
           playsInline
           muted={isMuted}
-          preload={getPreloadValue()}
+          preload={isTrulyActive || isFirstVideo ? "auto" : "metadata"}
           poster={posterSrc}
-          onClick={toggleMute}
-          onCanPlay={handleVideoCanPlay}
-          onLoadedMetadata={handleVideoLoadedMetadata}
-          onPlaying={handleVideoPlaying}
-          onStalled={handleVideoStalled}
-          onWaiting={handleVideoWaiting}
-          onError={handleVideoError}
-          onAbort={handleVideoAbort}
-          onEmptied={handleVideoEmptied}
-          // @ts-ignore - fetchpriority is valid
-          fetchpriority={isFirstVideo ? "high" : "auto"}
+          onClick={handleVideoTap}
+          onCanPlay={handleCanPlay}
+          onLoadedMetadata={handleLoadedMetadata}
+          onPlaying={handlePlaying}
+          onWaiting={handleWaiting}
+          onStalled={handleStalled}
+          onError={handleError}
         />
+      )}
+
+      {/* Loading spinner overlay */}
+      {showLoading && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+          <div className="bg-black/50 rounded-full p-3">
+            <Loader2 className="h-8 w-8 text-white animate-spin" />
+          </div>
+        </div>
+      )}
+
+      {/* Error/Retry overlay */}
+      {showError && (
+        <div className="absolute inset-0 flex items-center justify-center z-20">
+          <button
+            onClick={handleRetry}
+            className="flex flex-col items-center gap-2 bg-black/70 rounded-xl px-6 py-4 hover:bg-black/80 transition-colors"
+          >
+            <RefreshCw className="h-10 w-10 text-white" />
+            <span className="text-white text-sm font-medium">Tap to retry</span>
+          </button>
+        </div>
+      )}
+
+      {/* Tap to play overlay (autoplay blocked) */}
+      {showTapToPlay && (
+        <div className="absolute inset-0 flex items-center justify-center z-20">
+          <button
+            onClick={handleVideoTap}
+            className="flex flex-col items-center gap-2 bg-black/70 rounded-xl px-6 py-4 hover:bg-black/80 transition-colors"
+          >
+            <Play className="h-10 w-10 text-white fill-white" />
+            <span className="text-white text-sm font-medium">Tap to play</span>
+          </button>
+        </div>
       )}
 
       {/* Mute/Unmute indicator */}

@@ -105,6 +105,7 @@ const Video = () => {
           <VideoCard 
             video={video} 
             index={0}
+            activeIndex={0}
             currentUserId={currentUserId}
             shouldPreload={true}
             isFirstVideo={true}

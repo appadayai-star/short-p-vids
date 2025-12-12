@@ -243,6 +243,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           key={video.id} 
           video={video} 
           index={index}
+          activeIndex={activeIndex}
           currentUserId={userId}
           shouldPreload={shouldPreload(index)}
           isFirstVideo={index === 0}
