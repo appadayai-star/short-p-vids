@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, Camera, Loader2 } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
-import { getBestThumbnailUrl } from "@/lib/cloudinary";
+import { VideoThumbnail } from "@/components/VideoThumbnail";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -532,29 +532,12 @@ const Profile = () => {
                       setVideoModalOpen(true);
                     }}
                   >
-                    {(() => {
-                      const thumbUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
-                      if (thumbUrl) {
-                        return (
-                          <img
-                            src={thumbUrl}
-                            alt={video.title}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                        );
-                      }
-                      // Fallback: use video element to show first frame
-                      return (
-                        <video
-                          src={video.video_url}
-                          className="w-full h-full object-cover"
-                          muted
-                          playsInline
-                          preload="metadata"
-                        />
-                      );
-                    })()}
+                    <VideoThumbnail
+                      cloudinaryPublicId={video.cloudinary_public_id}
+                      thumbnailUrl={video.thumbnail_url}
+                      videoUrl={video.video_url}
+                      title={video.title}
+                    />
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                       <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                     </div>
@@ -581,29 +564,12 @@ const Profile = () => {
                         setVideoModalOpen(true);
                       }}
                     >
-                      {(() => {
-                        const thumbUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
-                        if (thumbUrl) {
-                          return (
-                            <img
-                              src={thumbUrl}
-                              alt={video.title}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                            />
-                          );
-                        }
-                        // Fallback: use video element to show first frame
-                        return (
-                          <video
-                            src={video.video_url}
-                            className="w-full h-full object-cover"
-                            muted
-                            playsInline
-                            preload="metadata"
-                          />
-                        );
-                      })()}
+                      <VideoThumbnail
+                        cloudinaryPublicId={video.cloudinary_public_id}
+                        thumbnailUrl={video.thumbnail_url}
+                        videoUrl={video.video_url}
+                        title={video.title}
+                      />
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                         <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                       </div>
@@ -631,29 +597,12 @@ const Profile = () => {
                         setVideoModalOpen(true);
                       }}
                     >
-                      {(() => {
-                        const thumbUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
-                        if (thumbUrl) {
-                          return (
-                            <img
-                              src={thumbUrl}
-                              alt={video.title}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                            />
-                          );
-                        }
-                        // Fallback: use video element to show first frame
-                        return (
-                          <video
-                            src={video.video_url}
-                            className="w-full h-full object-cover"
-                            muted
-                            playsInline
-                            preload="metadata"
-                          />
-                        );
-                      })()}
+                      <VideoThumbnail
+                        cloudinaryPublicId={video.cloudinary_public_id}
+                        thumbnailUrl={video.thumbnail_url}
+                        videoUrl={video.video_url}
+                        title={video.title}
+                      />
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                         <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                       </div>
