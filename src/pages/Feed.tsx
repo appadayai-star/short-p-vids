@@ -18,22 +18,29 @@ const Feed = () => {
   const categoryFilter = searchParams.get('category') || '';
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
 
   useEffect(() => {
-    // Set up auth state listener
+    console.log("[Feed] Setting up auth listener");
+    
+    // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("[Feed] Auth state changed:", event, session?.user?.id);
       setSession(session);
       setUser(session?.user ?? null);
+      setAuthReady(true);
     });
 
-    // Check for existing session
+    // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log("[Feed] Got existing session:", session?.user?.id);
       setSession(session);
       setUser(session?.user ?? null);
+      setAuthReady(true);
     });
 
     return () => subscription.unsubscribe();
@@ -43,7 +50,8 @@ const Feed = () => {
     setRefreshKey(prev => prev + 1);
   };
 
-  // Don't block rendering while checking auth - render feed immediately
+  // Don't wait for auth to render feed - render immediately
+  // Auth state will update asynchronously
 
   return (
     <EntryGate>
