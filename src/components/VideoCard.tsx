@@ -304,9 +304,54 @@ export const VideoCard = memo(({
     navigate(`/profile/${video.user_id}`);
   };
 
+  // === TEMPORARY DEBUG HANDLERS (REMOVE IN PRODUCTION) ===
+  const logVideoEvent = useCallback((event: string, videoEl: HTMLVideoElement | null) => {
+    if (!videoEl) return;
+    console.log(`[VideoCard ${index}] ${event}`, {
+      src: videoEl.src?.substring(0, 80) + '...',
+      networkState: ['EMPTY', 'IDLE', 'LOADING', 'NO_SOURCE'][videoEl.networkState],
+      readyState: ['HAVE_NOTHING', 'HAVE_METADATA', 'HAVE_CURRENT_DATA', 'HAVE_FUTURE_DATA', 'HAVE_ENOUGH_DATA'][videoEl.readyState],
+      paused: videoEl.paused,
+      currentTime: videoEl.currentTime,
+      duration: videoEl.duration,
+      error: videoEl.error?.message || null
+    });
+  }, [index]);
+
   const handleVideoCanPlay = useCallback(() => {
+    logVideoEvent('canplay', videoRef.current);
     setVideoLoaded(true);
-  }, []);
+  }, [logVideoEvent]);
+
+  const handleVideoLoadedMetadata = useCallback(() => {
+    logVideoEvent('loadedmetadata', videoRef.current);
+  }, [logVideoEvent]);
+
+  const handleVideoPlaying = useCallback(() => {
+    logVideoEvent('playing', videoRef.current);
+  }, [logVideoEvent]);
+
+  const handleVideoStalled = useCallback(() => {
+    logVideoEvent('stalled', videoRef.current);
+  }, [logVideoEvent]);
+
+  const handleVideoWaiting = useCallback(() => {
+    logVideoEvent('waiting', videoRef.current);
+  }, [logVideoEvent]);
+
+  const handleVideoError = useCallback(() => {
+    logVideoEvent('error', videoRef.current);
+    console.error(`[VideoCard ${index}] VIDEO ERROR:`, videoRef.current?.error);
+  }, [logVideoEvent, index]);
+
+  const handleVideoAbort = useCallback(() => {
+    logVideoEvent('abort', videoRef.current);
+  }, [logVideoEvent]);
+
+  const handleVideoEmptied = useCallback(() => {
+    logVideoEvent('emptied', videoRef.current);
+  }, [logVideoEvent]);
+  // === END TEMPORARY DEBUG HANDLERS ===
 
   const isOwnVideo = currentUserId === video.user_id;
 
@@ -353,6 +398,13 @@ export const VideoCard = memo(({
           poster={posterSrc}
           onClick={toggleMute}
           onCanPlay={handleVideoCanPlay}
+          onLoadedMetadata={handleVideoLoadedMetadata}
+          onPlaying={handleVideoPlaying}
+          onStalled={handleVideoStalled}
+          onWaiting={handleVideoWaiting}
+          onError={handleVideoError}
+          onAbort={handleVideoAbort}
+          onEmptied={handleVideoEmptied}
           // @ts-ignore - fetchpriority is valid
           fetchpriority={isFirstVideo ? "high" : "auto"}
         />
