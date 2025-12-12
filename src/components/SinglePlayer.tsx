@@ -307,10 +307,17 @@ export const SinglePlayer = memo(({
         onError={handleError}
       />
       
-      {/* Invisible tap area for mute toggle - allows vertical scroll */}
+      {/* Invisible tap area for mute toggle - allows scroll through */}
       <div 
         className="absolute inset-0 z-10 pointer-events-auto"
         onClick={handleVideoTap}
+        onWheel={(e) => {
+          // Forward wheel events to the feed container for desktop scrolling
+          const container = document.getElementById('video-feed-container');
+          if (container) {
+            container.scrollBy({ top: e.deltaY, behavior: 'instant' });
+          }
+        }}
         style={{ touchAction: 'pan-y' }}
       />
 
