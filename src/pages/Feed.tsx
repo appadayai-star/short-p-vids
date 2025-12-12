@@ -23,12 +23,7 @@ const Feed = () => {
   const { isAdmin } = useAdmin();
 
   const handleRefresh = () => {
-    // Scroll to top first
-    const container = document.getElementById('video-feed-container');
-    if (container) {
-      container.scrollTop = 0;
-    }
-    // Trigger new fetch with fresh randomization
+    // Remount VideoFeed with new key to trigger fresh fetch
     setRefreshKey(prev => prev + 1);
   };
 
