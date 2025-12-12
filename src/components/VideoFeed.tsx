@@ -161,14 +161,17 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   }, [searchQuery, categoryFilter]);
 
+  // Only refetch when search/category changes, NOT when userId changes
+  // userId changes don't require refetching the video list
   useEffect(() => {
-    console.log("[VideoFeed] Initial load");
+    console.log("[VideoFeed] Initial load - search/category changed");
     setPage(0);
     setActiveIndex(0);
     loadedIdsRef.current.clear();
     setHasWarmedUp(false);
     fetchVideos(0, false);
-  }, [searchQuery, categoryFilter, userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, categoryFilter]);
 
   useEffect(() => {
     if (hasWarmedUp || videos.length === 0) return;
