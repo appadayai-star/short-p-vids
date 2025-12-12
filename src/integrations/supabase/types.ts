@@ -475,6 +475,7 @@ export type Database = {
       }
       videos: {
         Row: {
+          cloudinary_public_id: string | null
           comments_count: number
           created_at: string
           description: string | null
@@ -493,6 +494,7 @@ export type Database = {
           views_count: number
         }
         Insert: {
+          cloudinary_public_id?: string | null
           comments_count?: number
           created_at?: string
           description?: string | null
@@ -511,6 +513,7 @@ export type Database = {
           views_count?: number
         }
         Update: {
+          cloudinary_public_id?: string | null
           comments_count?: number
           created_at?: string
           description?: string | null

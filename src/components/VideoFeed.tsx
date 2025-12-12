@@ -14,6 +14,7 @@ interface Video {
   video_url: string;
   optimized_video_url?: string | null;
   stream_url?: string | null;
+  cloudinary_public_id?: string | null;
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
@@ -60,7 +61,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         let query = supabase
           .from("videos")
           .select(`
-            id, title, description, video_url, optimized_video_url, stream_url, thumbnail_url,
+            id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
             views_count, likes_count, tags, user_id,
             profiles(username, avatar_url)
           `)
@@ -134,7 +135,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       const { data: fallbackData, error: fallbackError } = await supabase
         .from("videos")
         .select(`
-          id, title, description, video_url, optimized_video_url, stream_url, thumbnail_url,
+          id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
           views_count, likes_count, tags, user_id,
           profiles(username, avatar_url)
         `)

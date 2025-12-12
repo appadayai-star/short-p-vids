@@ -145,32 +145,17 @@ serve(async (req) => {
     console.log("Original size:", cloudinaryResult.bytes, "bytes");
     console.log("Public ID:", cloudinaryResult.public_id);
 
-    // Build URLs from the upload result
+    // Store the public_id - URLs are generated dynamically on frontend
     const publicId = cloudinaryResult.public_id;
-    
-    // Optimized MP4 URL (progressive download fallback)
-    const optimizedUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k/${publicId}.mp4`;
-    
-    // HLS stream URL (adaptive bitrate streaming)
-    // Cloudinary generates HLS with multiple quality levels automatically
-    const streamUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/sp_hd/${publicId}.m3u8`;
 
-    console.log("Optimized MP4 URL:", optimizedUrl);
-    console.log("HLS Stream URL:", streamUrl);
+    console.log("Cloudinary public_id:", publicId);
 
-    // Generate optimized thumbnail URL
-    const thumbnailUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/${publicId}.jpg`;
-
-    console.log("Generated thumbnail URL:", thumbnailUrl);
-
-    // Update the video record with all URLs
+    // Update the video record with cloudinary_public_id
+    // URLs are now generated dynamically on the frontend for flexibility
     const { error: updateError } = await supabase
       .from("videos")
       .update({
-        optimized_video_url: optimizedUrl,
-        stream_url: streamUrl,
-        thumbnail_url: thumbnailUrl,
-        thumbnail_generated: true,
+        cloudinary_public_id: publicId,
         processing_status: "completed",
       })
       .eq("id", videoId);
@@ -185,9 +170,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        optimizedUrl,
-        streamUrl,
-        thumbnailUrl,
+        cloudinaryPublicId: publicId,
         originalSize: cloudinaryResult.bytes,
         duration: cloudinaryResult.duration,
       }),
