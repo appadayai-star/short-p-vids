@@ -12,6 +12,7 @@ interface Video {
   description: string | null;
   video_url: string;
   optimized_video_url?: string | null;
+  stream_url?: string | null;
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
@@ -54,7 +55,7 @@ const Video = () => {
       const { data, error } = await supabase
         .from("videos")
         .select(`
-          id, title, description, video_url, optimized_video_url, thumbnail_url,
+          id, title, description, video_url, optimized_video_url, stream_url, thumbnail_url,
           views_count, likes_count, comments_count, user_id, tags, created_at,
           profiles(username, avatar_url)
         `)

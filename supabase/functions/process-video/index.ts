@@ -92,17 +92,18 @@ serve(async (req) => {
     // Generate Cloudinary signature for upload
     const timestamp = Math.floor(Date.now() / 1000);
     
-    // Optimized transformation parameters for fast streaming:
-    // - f_auto: Automatic best format (WebM for Chrome/Firefox, MP4 for Safari)
-    // - q_auto:eco: Aggressive compression optimized for streaming (smaller file, faster load)
-    // - c_limit,h_720: Max 720p height, maintains aspect ratio
-    // - vc_h264: H.264 codec for broad compatibility
-    // - fps_30: Cap framerate at 30fps
-    // - br_2000k: Target bitrate ~2Mbps for mobile-friendly streaming
-    const eagerTransforms = "f_auto,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k";
+    // Eager transformations:
+    // 1. MP4 for progressive download (fallback)
+    // 2. HLS for adaptive streaming (primary for mobile)
+    const eagerTransforms = [
+      // Progressive MP4 - optimized for quick start
+      "f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k",
+      // HLS adaptive streaming - multiple bitrates for smooth playback
+      "sp_hd/m3u8"
+    ].join("|");
     
     // Create signature for authenticated upload
-    const signatureString = `eager=${eagerTransforms}&folder=optimized&public_id=${videoId}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+    const signatureString = `eager=${eagerTransforms}&eager_async=true&folder=optimized&public_id=${videoId}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
     
     // Hash the signature using crypto
     const encoder = new TextEncoder();
@@ -111,7 +112,7 @@ serve(async (req) => {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
-    console.log("Uploading to Cloudinary with optimizations:", eagerTransforms);
+    console.log("Uploading to Cloudinary with HLS and MP4 transformations");
 
     // Upload video to Cloudinary with transformations
     const formData = new FormData();
@@ -123,7 +124,7 @@ serve(async (req) => {
     formData.append("folder", "optimized");
     formData.append("resource_type", "video");
     formData.append("eager", eagerTransforms);
-    formData.append("eager_async", "false");
+    formData.append("eager_async", "true"); // Process HLS in background
 
     const cloudinaryResponse = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`,
@@ -142,33 +143,32 @@ serve(async (req) => {
 
     console.log("Cloudinary upload successful:", cloudinaryResult.secure_url);
     console.log("Original size:", cloudinaryResult.bytes, "bytes");
+    console.log("Public ID:", cloudinaryResult.public_id);
 
-    // Get the optimized video URL (from eager transformation)
-    let optimizedUrl = cloudinaryResult.secure_url;
+    // Build URLs from the upload result
+    const publicId = cloudinaryResult.public_id;
     
-    // If eager transformations exist, use the transformed version
-    if (cloudinaryResult.eager && cloudinaryResult.eager.length > 0) {
-      optimizedUrl = cloudinaryResult.eager[0].secure_url;
-      console.log("Using eager transformed URL:", optimizedUrl);
-      console.log("Optimized size:", cloudinaryResult.eager[0].bytes, "bytes");
-    }
+    // Optimized MP4 URL (progressive download fallback)
+    const optimizedUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k/${publicId}.mp4`;
+    
+    // HLS stream URL (adaptive bitrate streaming)
+    // Cloudinary generates HLS with multiple quality levels automatically
+    const streamUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/sp_hd/${publicId}.m3u8`;
 
-    // Generate optimized thumbnail URL:
-    // - w_480,h_852: Mobile vertical format (~9:16 aspect ratio)
-    // - c_fill,g_auto: Smart crop focused on content
-    // - f_auto,q_auto: Auto format and quality
-    // - so_0: Start offset 0 (first frame)
-    const thumbnailUrl = cloudinaryResult.secure_url
-      .replace("/video/upload/", "/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/")
-      .replace(/\.[^/.]+$/, ".jpg");
+    console.log("Optimized MP4 URL:", optimizedUrl);
+    console.log("HLS Stream URL:", streamUrl);
 
-    console.log("Generated optimized thumbnail URL:", thumbnailUrl);
+    // Generate optimized thumbnail URL
+    const thumbnailUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/${publicId}.jpg`;
 
-    // Update the video record with optimized URLs
+    console.log("Generated thumbnail URL:", thumbnailUrl);
+
+    // Update the video record with all URLs
     const { error: updateError } = await supabase
       .from("videos")
       .update({
         optimized_video_url: optimizedUrl,
+        stream_url: streamUrl,
         thumbnail_url: thumbnailUrl,
         thumbnail_generated: true,
         processing_status: "completed",
@@ -186,6 +186,7 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         optimizedUrl,
+        streamUrl,
         thumbnailUrl,
         originalSize: cloudinaryResult.bytes,
         duration: cloudinaryResult.duration,
