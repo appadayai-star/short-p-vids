@@ -308,14 +308,17 @@ export const SinglePlayer = memo(({
         onError={handleError}
       />
       
-      {/* Tap area - forwards wheel events to container for CSS snap scrolling */}
+      {/* Tap area - forwards wheel events to container for snap scrolling */}
       <div 
         className="absolute inset-0 z-10 pointer-events-auto"
         onClick={handleVideoTap}
         onWheel={(e) => {
+          e.preventDefault();
           const container = document.getElementById('video-feed-container');
           if (container) {
-            container.scrollTop += e.deltaY;
+            const direction = e.deltaY > 0 ? 1 : -1;
+            const targetScroll = Math.round(container.scrollTop / container.clientHeight + direction) * container.clientHeight;
+            container.scrollTo({ top: targetScroll, behavior: 'smooth' });
           }
         }}
       />

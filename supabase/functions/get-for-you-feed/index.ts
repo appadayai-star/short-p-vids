@@ -118,7 +118,8 @@ serve(async (req) => {
         basePopularityWeight * normalizedLikes +
         viewWeight * normalizedViews +
         recencyWeight * recencyScore +
-        userAffinityWeight * affinityScore;
+        userAffinityWeight * affinityScore +
+        Math.random() * 0.15; // Add randomization for variety
 
       return { ...video, score };
     });
