@@ -1,5 +1,5 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { VideoFeed } from "@/components/VideoFeed";
+import { SimpleFeed } from "@/components/SimpleFeed";
 import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
 import { SEO } from "@/components/SEO";
@@ -8,7 +8,7 @@ import { Search, X } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
@@ -16,22 +16,15 @@ const Feed = () => {
   const searchQuery = searchParams.get('search') || '';
   const categoryFilter = searchParams.get('category') || '';
   
-  // Auth is non-blocking - we proceed regardless of status
-  const { user, status: authStatus, bootTimestamp } = useAuth();
+  const { user } = useAuth();
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
 
-  // Log auth status for debugging
-  useEffect(() => {
-    console.log(`[Feed] Auth status: ${authStatus}, user: ${user?.id || 'null'}, bootTimestamp: ${bootTimestamp}`);
-  }, [authStatus, user, bootTimestamp]);
-
-  const handleRefresh = () => {
-    // Remount VideoFeed with new key to trigger fresh fetch
+  const handleRefresh = useCallback(() => {
     setRefreshKey(prev => prev + 1);
-  };
+  }, []);
 
   return (
     <EntryGate>
@@ -43,6 +36,7 @@ const Feed = () => {
             : "Discover and share amazing short videos on ShortPV"
           }
         />
+        
         {/* Category filter indicator */}
         {categoryFilter && (
           <button
@@ -62,8 +56,8 @@ const Feed = () => {
           <Search className="h-6 w-6 text-white" />
         </button>
 
-        {/* VideoFeed renders immediately - does NOT wait for auth */}
-        <VideoFeed 
+        {/* Simple Feed - no auth blocking, direct DB queries */}
+        <SimpleFeed 
           key={refreshKey} 
           searchQuery={searchQuery} 
           categoryFilter={categoryFilter} 
@@ -77,6 +71,7 @@ const Feed = () => {
           unreadCount={unreadCount}
           isAdmin={isAdmin}
         />
+        
         {user && (
           <UploadModal 
             open={isUploadOpen} 
