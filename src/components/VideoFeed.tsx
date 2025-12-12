@@ -50,6 +50,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   const hasFetchedRef = useRef(false);
+  const currentIndexRef = useRef(0);
+  const isScrollLockedRef = useRef(false);
 
   // Handle item ref registration
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
@@ -92,6 +94,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setIsLoading(true);
     setLoadError(null);
     setActiveIndex(0);
+    currentIndexRef.current = 0;
+    isScrollLockedRef.current = false;
     setPage(0);
     loadedIdsRef.current.clear();
     
@@ -253,106 +257,92 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, isLoading, page, loadMoreVideos]);
 
-  // Scroll handling with debounce to enforce single video scrolling
+  // Keep ref in sync with state
+  useEffect(() => {
+    currentIndexRef.current = activeIndex;
+  }, [activeIndex]);
+
+  // Simple scroll handling - one video at a time, no exceptions
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || videos.length === 0) return;
+    if (!container) return;
 
-    let isScrolling = false;
-    let scrollTimeout: ReturnType<typeof setTimeout> | null = null;
-    let lastScrollTime = 0;
-    const scrollCooldown = 300; // ms to wait before allowing next scroll
-
-    const scrollToIndex = (index: number) => {
-      const clampedIndex = Math.max(0, Math.min(index, videos.length - 1));
+    const goToIndex = (index: number) => {
+      const maxIndex = videos.length - 1;
+      const targetIndex = Math.max(0, Math.min(index, maxIndex));
       const itemHeight = container.clientHeight;
+      
+      currentIndexRef.current = targetIndex;
+      setActiveIndex(targetIndex);
+      
       container.scrollTo({
-        top: clampedIndex * itemHeight,
+        top: targetIndex * itemHeight,
         behavior: 'smooth'
       });
-      setActiveIndex(clampedIndex);
     };
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       
-      const now = Date.now();
-      if (isScrolling || now - lastScrollTime < scrollCooldown) {
-        return;
-      }
-
-      // Determine direction based on delta
+      if (isScrollLockedRef.current) return;
+      
       const delta = e.deltaY;
-      if (Math.abs(delta) < 10) return; // Ignore tiny movements
-
-      isScrolling = true;
-      lastScrollTime = now;
-
-      if (delta > 0 && activeIndex < videos.length - 1) {
-        // Scroll down - next video
-        scrollToIndex(activeIndex + 1);
-      } else if (delta < 0 && activeIndex > 0) {
-        // Scroll up - previous video
-        scrollToIndex(activeIndex - 1);
-      }
-
-      // Reset scrolling flag after animation completes
-      scrollTimeout = setTimeout(() => {
-        isScrolling = false;
-      }, scrollCooldown);
+      if (Math.abs(delta) < 5) return;
+      
+      isScrollLockedRef.current = true;
+      
+      const currentIdx = currentIndexRef.current;
+      const nextIdx = delta > 0 ? currentIdx + 1 : currentIdx - 1;
+      goToIndex(nextIdx);
+      
+      // Unlock after scroll animation completes
+      setTimeout(() => {
+        isScrollLockedRef.current = false;
+      }, 400);
     };
 
+    let touchStartY = 0;
+    let touchStartIdx = 0;
+
     const handleTouchStart = (e: TouchEvent) => {
-      (container as any)._touchStartY = e.touches[0].clientY;
-      (container as any)._touchStartIndex = activeIndex;
+      touchStartY = e.touches[0].clientY;
+      touchStartIdx = currentIndexRef.current;
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
-      const startY = (container as any)._touchStartY;
-      const startIndex = (container as any)._touchStartIndex;
-      if (startY === undefined) return;
-
-      const endY = e.changedTouches[0].clientY;
-      const diff = startY - endY;
-      const threshold = 50; // Minimum swipe distance
-
-      const now = Date.now();
-      if (now - lastScrollTime < scrollCooldown) {
-        // Still in cooldown, snap back to current position
-        scrollToIndex(startIndex);
+      if (isScrollLockedRef.current) {
+        goToIndex(touchStartIdx);
         return;
       }
 
-      if (Math.abs(diff) > threshold) {
-        lastScrollTime = now;
-        if (diff > 0 && startIndex < videos.length - 1) {
-          // Swipe up - next video
-          scrollToIndex(startIndex + 1);
-        } else if (diff < 0 && startIndex > 0) {
-          // Swipe down - previous video
-          scrollToIndex(startIndex - 1);
-        } else {
-          // Can't go further, snap back
-          scrollToIndex(startIndex);
-        }
-      } else {
-        // Swipe too short, snap back
-        scrollToIndex(startIndex);
+      const endY = e.changedTouches[0].clientY;
+      const diff = touchStartY - endY;
+      
+      if (Math.abs(diff) < 50) {
+        goToIndex(touchStartIdx);
+        return;
       }
+      
+      isScrollLockedRef.current = true;
+      
+      const nextIdx = diff > 0 ? touchStartIdx + 1 : touchStartIdx - 1;
+      goToIndex(nextIdx);
+      
+      setTimeout(() => {
+        isScrollLockedRef.current = false;
+      }, 400);
     };
 
-    // Use wheel event with passive: false to prevent default
     container.addEventListener('wheel', handleWheel, { passive: false });
     container.addEventListener('touchstart', handleTouchStart, { passive: true });
     container.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
-      if (scrollTimeout) clearTimeout(scrollTimeout);
       container.removeEventListener('wheel', handleWheel);
       container.removeEventListener('touchstart', handleTouchStart);
       container.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [activeIndex, videos.length]);
+  }, [videos.length]);
 
   // Track video view
   const handleViewTracked = useCallback(async (videoId: string) => {
