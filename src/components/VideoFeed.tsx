@@ -7,6 +7,7 @@ import { useEntryGate } from "./EntryGate";
 import { getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
+const FETCH_TIMEOUT_MS = 10000; // 10 second timeout
 
 interface Video {
   id: string;
@@ -44,11 +45,14 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [page, setPage] = useState(0);
   const [hasWarmedUp, setHasWarmedUp] = useState(false);
   const [activeContainerRect, setActiveContainerRect] = useState<DOMRect | null>(null);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const fetchStartTimeRef = useRef<number>(0);
 
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
     if (ref) {
@@ -66,7 +70,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       }
     };
     
-    // Multiple update attempts to ensure we catch the DOM ready state
     updateRect();
     const t1 = setTimeout(updateRect, 50);
     const t2 = setTimeout(updateRect, 150);
@@ -86,12 +89,14 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [activeIndex, videos.length]);
 
-  const fetchVideos = useCallback(async (pageNum: number, append = false) => {
-    console.log(`[VideoFeed] fetchVideos: page=${pageNum}`);
+  const fetchVideos = useCallback(async (pageNum: number, append = false, signal?: AbortSignal) => {
+    console.log(`[VideoFeed] fetchVideos START: page=${pageNum}, append=${append}`);
+    fetchStartTimeRef.current = Date.now();
     
     if (pageNum === 0) {
       setIsLoading(true);
       setLoadError(null);
+      setInitialLoadComplete(false);
     } else {
       setIsLoadingMore(true);
     }
@@ -99,7 +104,12 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     try {
       const offset = pageNum * PAGE_SIZE;
       
-      // Direct database query - simple and reliable
+      // Create timeout promise
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout - please try again')), FETCH_TIMEOUT_MS);
+      });
+      
+      // Build query
       let query = supabase
         .from("videos")
         .select(`
@@ -118,9 +128,20 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
       }
 
-      const { data, error } = await query;
+      // Race between query and timeout
+      const { data, error } = await Promise.race([
+        query,
+        timeoutPromise
+      ]);
       
-      console.log(`[VideoFeed] Query result: ${data?.length || 0} videos, error:`, error);
+      // Check if aborted
+      if (signal?.aborted) {
+        console.log('[VideoFeed] Fetch aborted');
+        return;
+      }
+
+      const duration = Date.now() - fetchStartTimeRef.current;
+      console.log(`[VideoFeed] fetchVideos END: ${data?.length || 0} videos in ${duration}ms, error:`, error);
       
       if (error) throw error;
 
@@ -136,44 +157,75 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         );
       }
 
-      // For initial load (page 0), always reset and use all videos
       if (pageNum === 0) {
         loadedIdsRef.current.clear();
         filtered.forEach(v => loadedIdsRef.current.add(v.id));
         setVideos(filtered);
+        setInitialLoadComplete(true);
       } else {
-        // For pagination, filter out already loaded
         const newVideos = filtered.filter(v => !loadedIdsRef.current.has(v.id));
         newVideos.forEach(v => loadedIdsRef.current.add(v.id));
         setVideos(prev => [...prev, ...newVideos]);
       }
 
       setHasMore(data?.length === PAGE_SIZE);
+      setIsLoading(false);
+      setIsLoadingMore(false);
     } catch (error) {
-      console.error("[VideoFeed] Error:", error);
+      const duration = Date.now() - fetchStartTimeRef.current;
+      console.error(`[VideoFeed] fetchVideos ERROR after ${duration}ms:`, error);
+      
+      if (signal?.aborted) return;
+      
+      setIsLoading(false);
+      setIsLoadingMore(false);
+      
       if (!append) {
         setVideos([]);
         setLoadError(error instanceof Error ? error.message : "Failed to load videos");
       }
-    } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
     }
   }, [searchQuery, categoryFilter]);
 
-  // Fetch on mount and when search/category changes
-  const hasMountedRef = useRef(false);
-  
+  // Initial fetch on mount - runs once
   useEffect(() => {
-    // Always fetch on mount, then on search/category changes
-    console.log("[VideoFeed] Effect triggered - mounted:", hasMountedRef.current);
+    console.log("[VideoFeed] Mount effect - starting initial fetch");
+    
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    
     setPage(0);
     setActiveIndex(0);
     loadedIdsRef.current.clear();
     setHasWarmedUp(false);
-    fetchVideos(0, false);
-    hasMountedRef.current = true;
+    setInitialLoadComplete(false);
+    
+    fetchVideos(0, false, abortControllerRef.current.signal);
+    
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [searchQuery, categoryFilter, fetchVideos]);
+
+  // Watchdog: if loading takes too long, show error UI
+  useEffect(() => {
+    if (!isLoading) return;
+    
+    const watchdogTimer = setTimeout(() => {
+      if (isLoading) {
+        console.warn('[VideoFeed] Watchdog triggered - loading took too long');
+        setIsLoading(false);
+        setLoadError('Loading took too long. Tap to retry.');
+      }
+    }, FETCH_TIMEOUT_MS + 1000); // Give a bit more time than the fetch timeout
+    
+    return () => clearTimeout(watchdogTimer);
+  }, [isLoading]);
 
   useEffect(() => {
     if (hasWarmedUp || videos.length === 0) return;
@@ -188,12 +240,21 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setHasWarmedUp(true);
   }, [videos, hasWarmedUp]);
 
+  // Infinite scroll - only enabled AFTER initial load is complete
   useEffect(() => {
+    // Don't set up observer until initial load is done
+    if (!initialLoadComplete) {
+      console.log('[VideoFeed] Skipping infinite scroll setup - initial load not complete');
+      return;
+    }
     if (!sentinelRef.current || !hasMore || isLoadingMore) return;
+    
+    console.log('[VideoFeed] Setting up infinite scroll observer');
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && initialLoadComplete) {
           const nextPage = page + 1;
+          console.log(`[VideoFeed] Infinite scroll triggered - loading page ${nextPage}`);
           setPage(nextPage);
           fetchVideos(nextPage, true);
         }
@@ -202,7 +263,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingMore, page, fetchVideos]);
+  }, [hasMore, isLoadingMore, page, fetchVideos, initialLoadComplete]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -226,14 +287,23 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   }, [userId]);
 
   const handleRetry = () => {
+    console.log('[VideoFeed] Retry triggered');
     setLoadError(null);
-    fetchVideos(0, false);
+    setIsLoading(true);
+    
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    
+    fetchVideos(0, false, abortControllerRef.current.signal);
   };
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-[100dvh] bg-black">
+      <div className="flex flex-col justify-center items-center h-[100dvh] bg-black gap-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-muted-foreground text-sm">Loading videos...</p>
       </div>
     );
   }
@@ -241,9 +311,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   if (loadError) {
     return (
       <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4">
-        <p className="text-red-400 text-lg">{loadError}</p>
-        <button onClick={handleRetry} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg">
-          <RefreshCw className="h-5 w-5" /> Retry
+        <p className="text-red-400 text-lg text-center px-4">{loadError}</p>
+        <button onClick={handleRetry} className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg">
+          <RefreshCw className="h-5 w-5" /> Tap to Retry
         </button>
       </div>
     );
