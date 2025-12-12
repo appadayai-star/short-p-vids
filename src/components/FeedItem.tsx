@@ -207,8 +207,8 @@ export const FeedItem = memo(({
       ref={containerRef}
       className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center"
     >
-      {/* Thumbnail background - always visible */}
-      {posterSrc && (
+      {/* Thumbnail background - always visible, fallback gradient if no poster */}
+      {posterSrc ? (
         <img 
           src={posterSrc} 
           alt="" 
@@ -218,6 +218,13 @@ export const FeedItem = memo(({
           )}
           loading={index === 0 ? "eager" : "lazy"}
         />
+      ) : (
+        <div className={cn(
+          "absolute inset-0 w-full h-full bg-gradient-to-b from-gray-900 to-black flex items-center justify-center",
+          isActive ? "opacity-0" : "opacity-100"
+        )}>
+          <div className="text-muted-foreground text-xs">Loading...</div>
+        </div>
       )}
 
       {/* Right side actions */}
