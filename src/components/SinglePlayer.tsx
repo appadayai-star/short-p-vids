@@ -317,7 +317,7 @@ export const SinglePlayer = memo(({
         onWheel={(e) => {
           if (isScrollLocked) return;
           isScrollLocked = true;
-          setTimeout(() => { isScrollLocked = false; }, 400);
+          setTimeout(() => { isScrollLocked = false; }, 700);
           
           const container = document.getElementById('video-feed-container');
           if (container) {
