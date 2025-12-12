@@ -4,30 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Cache-Control": "public, max-age=30, stale-while-revalidate=60",
 };
-
-interface Video {
-  id: string;
-  user_id: string;
-  title: string;
-  description: string | null;
-  video_url: string;
-  optimized_video_url: string | null;
-  stream_url: string | null;
-  cloudinary_public_id: string | null;
-  thumbnail_url: string | null;
-  views_count: number;
-  likes_count: number;
-  comments_count: number;
-  tags: string[] | null;
-  created_at: string;
-  profiles: { username: string; avatar_url: string | null };
-}
-
-interface CategoryPreference {
-  category: string;
-  interaction_score: number;
-}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -35,38 +13,60 @@ serve(async (req) => {
   }
 
   try {
-    const { userId, page = 0, limit = 10 } = await req.json();
+    const { userId, page = 0, limit = 10, minimal = false } = await req.json();
     
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log(`Feed request: userId=${userId}, page=${page}, limit=${limit}`);
+    console.log(`Feed request: userId=${userId}, page=${page}, limit=${limit}, minimal=${minimal}`);
 
-    // Get total video count first
-    const { count: totalVideos } = await supabase
-      .from("videos")
-      .select("*", { count: "exact", head: true });
+    // For minimal mode (first paint), skip heavy operations
+    if (minimal && page === 0) {
+      // Fetch only essential columns for instant first paint
+      const { data: videos, error } = await supabase
+        .from("videos")
+        .select(`
+          id, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
+          views_count, likes_count, user_id
+        `)
+        .order("created_at", { ascending: false })
+        .limit(limit);
 
-    const MIN_VIDEOS_FOR_EXCLUSION = 20; // Only exclude viewed if we have enough content
+      if (error) throw error;
+
+      console.log(`Returning ${videos?.length || 0} minimal videos`);
+      
+      return new Response(
+        JSON.stringify({ videos: videos || [], minimal: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Full mode - with scoring and personalization
+    const MIN_VIDEOS_FOR_EXCLUSION = 20;
     
     // Get viewed videos if user is logged in
     let viewedVideoIds: string[] = [];
-    if (userId && totalVideos && totalVideos > MIN_VIDEOS_FOR_EXCLUSION) {
-      const { data: viewedVideos } = await supabase
-        .from("video_views")
-        .select("video_id")
-        .eq("user_id", userId);
-      
-      viewedVideoIds = viewedVideos?.map(v => v.video_id) || [];
-      
-      // Only exclude if user hasn't watched everything
-      const unwatchedCount = totalVideos - viewedVideoIds.length;
-      if (unwatchedCount < limit) {
-        console.log(`Only ${unwatchedCount} unwatched videos, showing all content`);
-        viewedVideoIds = []; // Don't exclude - show everything
-      } else {
-        console.log(`Excluding ${viewedVideoIds.length} viewed videos`);
+    if (userId) {
+      const { count: totalVideos } = await supabase
+        .from("videos")
+        .select("*", { count: "exact", head: true });
+
+      if (totalVideos && totalVideos > MIN_VIDEOS_FOR_EXCLUSION) {
+        const { data: viewedVideos } = await supabase
+          .from("video_views")
+          .select("video_id")
+          .eq("user_id", userId);
+        
+        viewedVideoIds = viewedVideos?.map(v => v.video_id) || [];
+        
+        const unwatchedCount = totalVideos - viewedVideoIds.length;
+        if (unwatchedCount < limit) {
+          viewedVideoIds = [];
+        } else {
+          console.log(`Excluding ${viewedVideoIds.length} viewed videos`);
+        }
       }
     }
 
@@ -83,11 +83,10 @@ serve(async (req) => {
         prefs.forEach(p => {
           categoryScores.set(p.category, totalScore > 0 ? p.interaction_score / totalScore : 0);
         });
-        console.log(`User has ${prefs.length} category preferences`);
       }
     }
 
-    // Fetch candidate videos
+    // Fetch candidate videos with full data
     let query = supabase
       .from("videos")
       .select(`
@@ -104,13 +103,9 @@ serve(async (req) => {
       .order("created_at", { ascending: false })
       .limit(50);
 
-    if (error) {
-      console.error("Error fetching videos:", error);
-      throw error;
-    }
+    if (error) throw error;
 
     if (!videos || videos.length === 0) {
-      console.log("No videos found");
       return new Response(
         JSON.stringify({ videos: [] }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -132,7 +127,7 @@ serve(async (req) => {
           sum + (categoryScores.get(tag) || 0), 0) / video.tags.length;
         score += catScore * 40;
       } else {
-        score += 10; // Base score for new users
+        score += 10;
       }
 
       // Engagement (0-25 pts)
@@ -152,24 +147,24 @@ serve(async (req) => {
         score += Math.min(10, rate * 20);
       }
 
-      // Diversity bonus for unexplored categories (0-5 pts)
+      // Diversity bonus (0-5 pts)
       if (video.tags?.some((t: string) => !categoryScores.has(t))) {
         score += 5;
       }
 
-      // Randomness for variety
+      // Randomness
       score += Math.random() * 5;
 
       return { ...video, score };
     });
 
-    // Sort by score and paginate
+    // Sort and paginate
     scored.sort((a, b) => b.score - a.score);
     
     const start = page * limit;
     const paged = scored.slice(start, start + limit);
 
-    // Diversify - don't show too many of same category in a row
+    // Diversify
     const result: any[] = [];
     const recentTags: string[] = [];
     
@@ -185,7 +180,7 @@ serve(async (req) => {
       }
     }
 
-    // Fill remaining slots if diversification removed some
+    // Fill remaining
     if (result.length < limit) {
       for (const video of paged) {
         if (result.length >= limit) break;

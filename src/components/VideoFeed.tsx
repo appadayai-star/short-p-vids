@@ -8,10 +8,9 @@ import { getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
 
-interface Video {
+// Minimal video data for first paint (no joins)
+interface MinimalVideo {
   id: string;
-  title: string;
-  description: string | null;
   video_url: string;
   optimized_video_url?: string | null;
   stream_url?: string | null;
@@ -19,8 +18,14 @@ interface Video {
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
-  tags: string[] | null;
   user_id: string;
+}
+
+// Full video data with profile
+interface Video extends MinimalVideo {
+  title: string;
+  description: string | null;
+  tags: string[] | null;
   profiles: {
     username: string;
     avatar_url: string | null;
@@ -32,6 +37,9 @@ interface VideoFeedProps {
   categoryFilter: string;
   userId: string | null;
 }
+
+// Default profile for lazy loading
+const DEFAULT_PROFILE = { username: "...", avatar_url: null };
 
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
@@ -48,6 +56,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
+  const profileCacheRef = useRef<Map<string, { username: string; avatar_url: string | null }>>(new Map());
 
   // Track container refs from FeedItems
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
@@ -69,19 +78,45 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
     updateRect();
     
-    // Update on scroll/resize
     const handleUpdate = () => {
       requestAnimationFrame(updateRect);
     };
 
     window.addEventListener('resize', handleUpdate);
-    containerRef.current?.addEventListener('scroll', handleUpdate);
+    const container = containerRef.current;
+    container?.addEventListener('scroll', handleUpdate);
     
     return () => {
       window.removeEventListener('resize', handleUpdate);
-      containerRef.current?.removeEventListener('scroll', handleUpdate);
+      container?.removeEventListener('scroll', handleUpdate);
     };
   }, [activeIndex, videos.length]);
+
+  // Lazy-load profiles for visible videos
+  const loadProfiles = useCallback(async (videoList: MinimalVideo[]) => {
+    const userIds = [...new Set(videoList.map(v => v.user_id))].filter(
+      id => !profileCacheRef.current.has(id)
+    );
+    
+    if (userIds.length === 0) return;
+
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, username, avatar_url")
+      .in("id", userIds);
+
+    if (profiles) {
+      profiles.forEach(p => {
+        profileCacheRef.current.set(p.id, { username: p.username, avatar_url: p.avatar_url });
+      });
+
+      // Update videos with loaded profiles
+      setVideos(prev => prev.map(v => ({
+        ...v,
+        profiles: profileCacheRef.current.get(v.user_id) || v.profiles
+      })));
+    }
+  }, []);
 
   // Fetch videos with pagination
   const fetchVideos = useCallback(async (pageNum: number, append = false) => {
@@ -94,7 +129,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     try {
       const offset = pageNum * PAGE_SIZE;
       
-      // For search/category, use direct query
+      // For search/category, use direct query with full data
       if (searchQuery || categoryFilter) {
         let query = supabase
           .from("videos")
@@ -144,24 +179,43 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         return;
       }
 
-      // For main feed, try recommendation algorithm
+      // For main feed - use minimal mode for first page
+      const isFirstPage = pageNum === 0;
+      
       try {
         const { data, error } = await supabase.functions.invoke('get-recommended-feed', {
-          body: { userId, page: pageNum, limit: PAGE_SIZE }
+          body: { userId, page: pageNum, limit: PAGE_SIZE, minimal: isFirstPage }
         });
 
         if (!error && data?.videos?.length > 0) {
-          const newVideos = data.videos.filter((v: Video) => !loadedIdsRef.current.has(v.id));
-          newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
+          const newVideos = data.videos.filter((v: MinimalVideo) => !loadedIdsRef.current.has(v.id));
+          newVideos.forEach((v: MinimalVideo) => loadedIdsRef.current.add(v.id));
           
+          // For minimal mode, add default profiles and lazy-load real ones
+          const videosWithProfiles: Video[] = newVideos.map((v: MinimalVideo) => ({
+            ...v,
+            title: "",
+            description: null,
+            tags: null,
+            profiles: profileCacheRef.current.get(v.user_id) || DEFAULT_PROFILE
+          }));
+
           setHasMore(data.videos.length === PAGE_SIZE);
           
           if (append) {
-            setVideos(prev => [...prev, ...newVideos]);
+            setVideos(prev => [...prev, ...videosWithProfiles]);
           } else {
             loadedIdsRef.current.clear();
-            newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
-            setVideos(newVideos);
+            newVideos.forEach((v: MinimalVideo) => loadedIdsRef.current.add(v.id));
+            setVideos(videosWithProfiles);
+          }
+
+          // Lazy-load profiles after render
+          if (isFirstPage && data.minimal) {
+            setTimeout(() => loadProfiles(newVideos), 50);
+            
+            // Also fetch full data for metadata
+            fetchFullVideoData(newVideos.map((v: MinimalVideo) => v.id));
           }
           return;
         }
@@ -201,7 +255,25 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [searchQuery, categoryFilter, userId]);
+  }, [searchQuery, categoryFilter, userId, loadProfiles]);
+
+  // Fetch full video data (title, description, tags) after initial render
+  const fetchFullVideoData = useCallback(async (videoIds: string[]) => {
+    if (videoIds.length === 0) return;
+
+    const { data } = await supabase
+      .from("videos")
+      .select("id, title, description, tags")
+      .in("id", videoIds);
+
+    if (data) {
+      const dataMap = new Map(data.map(v => [v.id, v]));
+      setVideos(prev => prev.map(v => {
+        const full = dataMap.get(v.id);
+        return full ? { ...v, title: full.title, description: full.description, tags: full.tags } : v;
+      }));
+    }
+  }, []);
 
   // Initial load
   useEffect(() => {
@@ -249,11 +321,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       nextVideo.video_url
     );
     
-    // Preload metadata only - no video tag needed
     fetch(videoUrl, { method: 'HEAD', mode: 'cors' }).catch(() => {});
   }, [activeIndex, videos, hasEntered]);
 
-  // Infinite scroll - observe sentinel element
+  // Infinite scroll
   useEffect(() => {
     if (!sentinelRef.current || !hasMore || isLoadingMore) return;
 
