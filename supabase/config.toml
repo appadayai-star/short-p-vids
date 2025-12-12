@@ -27,8 +27,8 @@ verify_jwt = true
 [functions.admin-delete-user]
 verify_jwt = true
 
-[functions.admin-comments]
-verify_jwt = true
+[functions.like-video]
+verify_jwt = false
 
-[functions.admin-delete-comment]
-verify_jwt = true
+[functions.sitemap]
+verify_jwt = false

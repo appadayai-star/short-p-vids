@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect, memo, useCallback } from "react";
-import { Heart, MessageCircle, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX } from "lucide-react";
+import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { CommentsDrawer } from "./CommentsDrawer";
 import { ShareDrawer } from "./ShareDrawer";
 import {
   DropdownMenu,
@@ -22,6 +21,31 @@ const setGlobalMuted = (muted: boolean) => {
   muteListeners.forEach(listener => listener(muted));
 };
 
+// Guest client ID for anonymous likes
+const getGuestClientId = (): string => {
+  const key = 'guest_client_id';
+  let clientId = localStorage.getItem(key);
+  if (!clientId) {
+    clientId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    localStorage.setItem(key, clientId);
+  }
+  return clientId;
+};
+
+// Guest likes storage
+const getGuestLikes = (): string[] => {
+  try {
+    const likes = localStorage.getItem('guest_likes_v1');
+    return likes ? JSON.parse(likes) : [];
+  } catch {
+    return [];
+  }
+};
+
+const setGuestLikes = (likes: string[]) => {
+  localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
+};
+
 interface Video {
   id: string;
   title: string;
@@ -31,7 +55,6 @@ interface Video {
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
-  comments_count: number;
   tags: string[] | null;
   user_id: string;
   profiles: {
@@ -69,11 +92,9 @@ export const VideoCard = memo(({
   const [isActive, setIsActive] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
-  const [commentsCount, setCommentsCount] = useState(video.comments_count);
   const [isSaved, setIsSaved] = useState(false);
   const [savesCount, setSavesCount] = useState(0);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
-  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [hasTrackedView, setHasTrackedView] = useState(false);
   const [isMuted, setIsMuted] = useState(globalMuted);
@@ -96,6 +117,14 @@ export const VideoCard = memo(({
       muteListeners.delete(listener);
     };
   }, []);
+
+  // Check if guest has liked this video
+  useEffect(() => {
+    if (!currentUserId) {
+      const guestLikes = getGuestLikes();
+      setIsLiked(guestLikes.includes(video.id));
+    }
+  }, [video.id, currentUserId]);
 
   // IntersectionObserver to detect visibility and active state
   useEffect(() => {
@@ -157,7 +186,7 @@ export const VideoCard = memo(({
     }
   }, [shouldPreload, videoLoaded]);
 
-  // Fetch interaction states
+  // Fetch interaction states for logged-in users
   useEffect(() => {
     if (!currentUserId || !isVisible) return;
 
@@ -196,22 +225,43 @@ export const VideoCard = memo(({
   }, [isMuted]);
 
   const toggleLike = async () => {
-    if (!currentUserId) {
-      navigate("/auth");
-      return;
-    }
+    const clientId = getGuestClientId();
+    const wasLiked = isLiked;
+    
+    // Optimistic UI update
+    setIsLiked(!wasLiked);
+    setLikesCount(prev => wasLiked ? prev - 1 : prev + 1);
 
     try {
-      if (isLiked) {
-        await supabase.from("likes").delete().eq("video_id", video.id).eq("user_id", currentUserId);
-        setIsLiked(false);
-        setLikesCount(prev => prev - 1);
-      } else {
-        await supabase.from("likes").insert({ video_id: video.id, user_id: currentUserId });
-        setIsLiked(true);
-        setLikesCount(prev => prev + 1);
+      // Call edge function for both guests and logged-in users
+      const { data, error } = await supabase.functions.invoke('like-video', {
+        body: {
+          videoId: video.id,
+          clientId: currentUserId || clientId,
+          action: wasLiked ? 'unlike' : 'like'
+        }
+      });
+
+      if (error) throw error;
+
+      // Update count from server response
+      if (data?.likesCount !== undefined) {
+        setLikesCount(data.likesCount);
+      }
+
+      // Update guest likes in localStorage
+      if (!currentUserId) {
+        const guestLikes = getGuestLikes();
+        if (wasLiked) {
+          setGuestLikes(guestLikes.filter(id => id !== video.id));
+        } else {
+          setGuestLikes([...guestLikes, video.id]);
+        }
       }
     } catch (error) {
+      // Revert on error
+      setIsLiked(wasLiked);
+      setLikesCount(prev => wasLiked ? prev + 1 : prev - 1);
       toast.error("Failed to update like");
     }
   };
@@ -237,14 +287,6 @@ export const VideoCard = memo(({
     } catch (error) {
       toast.error("Failed to save video");
     }
-  };
-
-  const handleComment = () => {
-    if (!currentUserId) {
-      navigate("/auth");
-      return;
-    }
-    setIsCommentsOpen(true);
   };
 
   const handleDelete = async (e: React.MouseEvent) => {
@@ -341,13 +383,6 @@ export const VideoCard = memo(({
           <span className="text-white text-xs font-semibold">{likesCount}</span>
         </button>
 
-        <button onClick={handleComment} className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-            <MessageCircle className="h-7 w-7 text-white" />
-          </div>
-          <span className="text-white text-xs font-semibold">{commentsCount}</span>
-        </button>
-
         <button onClick={toggleSave} className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
             <Bookmark className={cn("h-7 w-7", isSaved ? "fill-yellow-500 text-yellow-500" : "text-white")} />
@@ -414,7 +449,6 @@ export const VideoCard = memo(({
         </div>
       </div>
 
-      <CommentsDrawer videoId={video.id} isOpen={isCommentsOpen} onClose={() => setIsCommentsOpen(false)} currentUserId={currentUserId} onCommentAdded={() => setCommentsCount(c => c + 1)} />
       <ShareDrawer videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
     </div>
   );

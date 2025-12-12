@@ -15,7 +15,6 @@ interface Video {
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
-  comments_count: number;
   tags: string[] | null;
   user_id: string;
   profiles: {
@@ -40,7 +39,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
-  const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Fetch videos with pagination
@@ -60,7 +58,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           .from("videos")
           .select(`
             id, title, description, video_url, optimized_video_url, thumbnail_url,
-            views_count, likes_count, comments_count, tags, user_id,
+            views_count, likes_count, tags, user_id,
             profiles(username, avatar_url)
           `)
           .order("created_at", { ascending: false })
@@ -136,7 +134,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         .from("videos")
         .select(`
           id, title, description, video_url, optimized_video_url, thumbnail_url,
-          views_count, likes_count, comments_count, tags, user_id,
+          views_count, likes_count, tags, user_id,
           profiles(username, avatar_url)
         `)
         .order("created_at", { ascending: false })
