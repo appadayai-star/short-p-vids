@@ -5,6 +5,7 @@ import { SinglePlayer } from "./SinglePlayer";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 import { getBestVideoSource } from "@/lib/cloudinary";
+import { useAuthReady } from "@/hooks/useAuthReady";
 
 const PAGE_SIZE = 10;
 
@@ -35,6 +36,8 @@ interface VideoFeedProps {
 
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
+  const authReady = useAuthReady(); // Wait for Supabase client to be initialized
+  
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -89,13 +92,19 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [activeIndex, videos.length]);
 
-  // Initial fetch - runs on mount and when filters change
+  // Initial fetch - runs when auth is ready and when filters change
   useEffect(() => {
+    // Don't fetch until Supabase client is ready
+    if (!authReady) {
+      console.log("[VideoFeed] Waiting for auth to be ready...");
+      return;
+    }
+    
     // Increment fetch ID to invalidate any in-flight requests
     const currentFetchId = ++fetchIdRef.current;
     let cancelled = false;
     
-    console.log(`[VideoFeed] Starting fetch #${currentFetchId}`);
+    console.log(`[VideoFeed] Starting fetch #${currentFetchId} (auth ready)`);
     
     // Reset state
     setPage(0);
@@ -176,7 +185,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       cancelled = true;
       console.log(`[VideoFeed] Cleanup fetch #${currentFetchId}`);
     };
-  }, [searchQuery, categoryFilter, retryTrigger]);
+  }, [searchQuery, categoryFilter, retryTrigger, authReady]);
 
   // Warmup first video
   useEffect(() => {

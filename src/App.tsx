@@ -14,6 +14,9 @@ import Video from "./pages/Video";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
+// Initialize auth early - this starts the Supabase session hydration
+import "@/hooks/useAuthReady";
+
 const queryClient = new QueryClient();
 
 const App = () => (
