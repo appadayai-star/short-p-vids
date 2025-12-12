@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     console.log(`Fetching stats from ${startDate} to ${endDate}`);
 
     // Get stats using service client for full access
-    const [viewsResult, signupsResult, likesResult, commentsResult] = await Promise.all([
+    const [viewsResult, signupsResult, likesResult, savesResult] = await Promise.all([
       // Total video views
       serviceClient
         .from("video_views")
@@ -90,9 +90,9 @@ Deno.serve(async (req) => {
         .from("videos")
         .select("likes_count"),
       
-      // Total comments
+      // Total saves
       serviceClient
-        .from("comments")
+        .from("saved_videos")
         .select("id", { count: "exact", head: true })
         .gte("created_at", startDate)
         .lte("created_at", endDate),
@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
       views: viewsResult.count || 0,
       signups: signupsResult.count || 0,
       likes: totalLikes,
-      comments: commentsResult.count || 0,
+      saves: savesResult.count || 0,
     };
 
     console.log("Stats:", stats);

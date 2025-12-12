@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Eye, UserPlus, Heart, MessageCircle, CalendarIcon, Loader2 } from "lucide-react";
+import { Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2 } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
@@ -14,7 +14,7 @@ interface Stats {
   views: number;
   signups: number;
   likes: number;
-  comments: number;
+  saves: number;
 }
 
 const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
@@ -95,7 +95,7 @@ export const AdminStats = () => {
     { title: "Total Views", value: stats?.views ?? 0, icon: Eye, color: "text-blue-500", bgColor: "bg-blue-500/10" },
     { title: "New Signups", value: stats?.signups ?? 0, icon: UserPlus, color: "text-green-500", bgColor: "bg-green-500/10" },
     { title: "Total Likes", value: stats?.likes ?? 0, icon: Heart, color: "text-red-500", bgColor: "bg-red-500/10" },
-    { title: "Total Comments", value: stats?.comments ?? 0, icon: MessageCircle, color: "text-purple-500", bgColor: "bg-purple-500/10" },
+    { title: "Total Saves", value: stats?.saves ?? 0, icon: Bookmark, color: "text-purple-500", bgColor: "bg-purple-500/10" },
   ];
 
   return (
