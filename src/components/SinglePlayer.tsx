@@ -14,6 +14,10 @@ const setGlobalMuted = (muted: boolean) => {
 
 export const getGlobalMuted = () => globalMuted;
 
+// Scroll debounce - prevent multiple scrolls from single gesture
+let lastScrollTime = 0;
+const SCROLL_DEBOUNCE_MS = 400;
+
 interface Video {
   id: string;
   video_url: string;
@@ -312,6 +316,11 @@ export const SinglePlayer = memo(({
         className="absolute inset-0 z-10 pointer-events-auto"
         onClick={handleVideoTap}
         onWheel={(e) => {
+          // Debounce to prevent multiple scrolls from single gesture
+          const now = Date.now();
+          if (now - lastScrollTime < SCROLL_DEBOUNCE_MS) return;
+          lastScrollTime = now;
+          
           // Scroll one video at a time with snap behavior
           const container = document.getElementById('video-feed-container');
           if (container) {
