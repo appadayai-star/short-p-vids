@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
+import { getBestVideoSource, getBestThumbnailUrl, supportsHlsNatively } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +54,7 @@ interface Video {
   video_url: string;
   optimized_video_url?: string | null;
   stream_url?: string | null;
+  cloudinary_public_id?: string | null;
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
@@ -63,13 +65,6 @@ interface Video {
     avatar_url: string | null;
   };
 }
-
-// Check if browser supports HLS natively (Safari, iOS)
-const supportsHlsNatively = () => {
-  const video = document.createElement('video');
-  return video.canPlayType('application/vnd.apple.mpegurl') !== '' ||
-         video.canPlayType('application/x-mpegURL') !== '';
-};
 
 type VideoStatus = "idle" | "loading" | "ready" | "error" | "stalled" | "needsInteraction";
 
@@ -106,14 +101,16 @@ export const VideoCard = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Core video state - prefer HLS for native support (Safari/iOS), otherwise MP4
-  const hlsSupported = supportsHlsNatively();
-  const primarySrc = hlsSupported && video.stream_url 
-    ? video.stream_url 
-    : (video.optimized_video_url || video.video_url);
+  // Core video state - use dynamic Cloudinary URLs when available
+  const primarySrc = getBestVideoSource(
+    video.cloudinary_public_id || null,
+    video.optimized_video_url || null,
+    video.stream_url || null,
+    video.video_url
+  );
   const fallbackSrc = video.optimized_video_url || video.video_url;
   const lastResortSrc = video.video_url;
-  const posterSrc = video.thumbnail_url || undefined;
+  const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
   
   const [src, setSrc] = useState(primarySrc);
   const [status, setStatus] = useState<VideoStatus>("idle");

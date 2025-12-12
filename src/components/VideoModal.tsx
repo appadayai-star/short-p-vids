@@ -11,6 +11,7 @@ interface Video {
   video_url: string;
   optimized_video_url?: string | null;
   stream_url?: string | null;
+  cloudinary_public_id?: string | null;
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
@@ -83,7 +84,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       const { data, error } = await supabase
         .from("videos")
         .select(`
-          id, title, description, video_url, optimized_video_url, stream_url, thumbnail_url,
+          id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
           views_count, likes_count, user_id, tags,
           profiles(username, avatar_url)
         `)
