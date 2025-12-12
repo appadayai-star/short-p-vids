@@ -113,6 +113,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
       const { data, error } = await query;
       
+      console.log(`[VideoFeed] Query result: ${data?.length || 0} videos, error:`, error);
+      
       if (error) throw error;
 
       let filtered = data || [];
@@ -127,18 +129,19 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         );
       }
 
-      const newVideos = filtered.filter(v => !loadedIdsRef.current.has(v.id));
-      newVideos.forEach(v => loadedIdsRef.current.add(v.id));
+      // For initial load (page 0), always reset and use all videos
+      if (pageNum === 0) {
+        loadedIdsRef.current.clear();
+        filtered.forEach(v => loadedIdsRef.current.add(v.id));
+        setVideos(filtered);
+      } else {
+        // For pagination, filter out already loaded
+        const newVideos = filtered.filter(v => !loadedIdsRef.current.has(v.id));
+        newVideos.forEach(v => loadedIdsRef.current.add(v.id));
+        setVideos(prev => [...prev, ...newVideos]);
+      }
 
       setHasMore(data?.length === PAGE_SIZE);
-      
-      if (append) {
-        setVideos(prev => [...prev, ...newVideos]);
-      } else {
-        loadedIdsRef.current.clear();
-        newVideos.forEach(v => loadedIdsRef.current.add(v.id));
-        setVideos(newVideos);
-      }
     } catch (error) {
       console.error("[VideoFeed] Error:", error);
       if (!append) {
