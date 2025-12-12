@@ -7,6 +7,7 @@ import { useEntryGate } from "./EntryGate";
 import { getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
+const FETCH_TIMEOUT_MS = 10000; // 10 second hard timeout
 
 interface Video {
   id: string;
@@ -33,6 +34,36 @@ interface VideoFeedProps {
   userId: string | null;
 }
 
+// Generate unique request ID for logging
+function generateRequestId(): string {
+  return Math.random().toString(36).substring(2, 10);
+}
+
+// Fetch with timeout and abort support
+async function fetchWithTimeout<T>(
+  fetchFn: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  requestId: string
+): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.error(`[VideoFeed][${requestId}] Request timeout after ${timeoutMs}ms - aborting`);
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const result = await fetchFn(controller.signal);
+    clearTimeout(timeoutId);
+    return result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs / 1000}s`);
+    }
+    throw error;
+  }
+}
+
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
   
@@ -50,6 +81,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   const hasFetchedRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Handle item ref registration
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
@@ -86,9 +118,19 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [activeIndex, videos.length]);
 
-  // Fetch videos - simple and direct
+  // Fetch videos with timeout protection
   const fetchVideos = useCallback(async () => {
-    console.log(`[VideoFeed] Fetching videos...`);
+    const requestId = generateRequestId();
+    const startTime = Date.now();
+    
+    console.log(`[VideoFeed][${requestId}] Starting fetch - route: ${window.location.pathname}, userId: ${userId || 'null'}, search: "${searchQuery}", category: "${categoryFilter}"`);
+    
+    // Abort any in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    
     setIsLoading(true);
     setLoadError(null);
     setActiveIndex(0);
@@ -105,35 +147,66 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       let fetchedVideos: Video[] = [];
 
       if (isForYouFeed) {
-        // Use edge function for personalized feed
-        const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-          body: { userId: userId || null, page: 0, limit: PAGE_SIZE }
-        });
+        // Use edge function with timeout
+        console.log(`[VideoFeed][${requestId}] Calling get-for-you-feed edge function...`);
         
-        if (error) throw new Error(error.message || "Failed to load feed");
-        fetchedVideos = data?.videos || [];
+        const result = await fetchWithTimeout(
+          async (signal) => {
+            // Note: supabase.functions.invoke doesn't support AbortSignal directly,
+            // so we implement a race condition with the timeout
+            const fetchPromise = supabase.functions.invoke('get-for-you-feed', {
+              body: { userId: userId || null, page: 0, limit: PAGE_SIZE }
+            });
+            
+            // Check if aborted before awaiting
+            if (signal.aborted) {
+              throw new Error('Request aborted');
+            }
+            
+            return fetchPromise;
+          },
+          FETCH_TIMEOUT_MS,
+          requestId
+        );
+        
+        if (result.error) {
+          console.error(`[VideoFeed][${requestId}] Edge function error:`, result.error);
+          throw new Error(result.error.message || "Failed to load feed");
+        }
+        
+        fetchedVideos = result.data?.videos || [];
+        console.log(`[VideoFeed][${requestId}] Edge function returned ${fetchedVideos.length} videos`);
       } else {
-        // Direct query for search/category
-        let query = supabase
-          .from("videos")
-          .select(`
-            id, title, description, video_url, optimized_video_url, stream_url, 
-            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-            profiles(username, avatar_url)
-          `)
-          .order("created_at", { ascending: false })
-          .range(0, PAGE_SIZE - 1);
+        // Direct query for search/category with timeout
+        console.log(`[VideoFeed][${requestId}] Direct Supabase query...`);
+        
+        const result = await fetchWithTimeout(
+          async () => {
+            let query = supabase
+              .from("videos")
+              .select(`
+                id, title, description, video_url, optimized_video_url, stream_url, 
+                cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
+                profiles(username, avatar_url)
+              `)
+              .order("created_at", { ascending: false })
+              .range(0, PAGE_SIZE - 1);
 
-        if (categoryFilter) {
-          query = query.contains('tags', [categoryFilter]);
-        }
-        if (searchQuery) {
-          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
-        }
+            if (categoryFilter) {
+              query = query.contains('tags', [categoryFilter]);
+            }
+            if (searchQuery) {
+              query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+            }
 
-        const { data, error } = await query;
-        if (error) throw error;
-        fetchedVideos = data || [];
+            return query;
+          },
+          FETCH_TIMEOUT_MS,
+          requestId
+        );
+        
+        if (result.error) throw result.error;
+        fetchedVideos = result.data || [];
 
         // Client-side search filtering
         if (searchQuery) {
@@ -147,7 +220,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         }
       }
 
-      console.log(`[VideoFeed] Loaded ${fetchedVideos.length} videos`);
+      const elapsed = Date.now() - startTime;
+      console.log(`[VideoFeed][${requestId}] Fetch completed in ${elapsed}ms - loaded ${fetchedVideos.length} videos`);
+      
       fetchedVideos.forEach(v => loadedIdsRef.current.add(v.id));
       setVideos(fetchedVideos);
       setHasMore(fetchedVideos.length === PAGE_SIZE);
@@ -164,20 +239,32 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         fetch(url, { method: 'HEAD', mode: 'cors' }).catch(() => {});
       }
     } catch (error) {
-      console.error('[VideoFeed] Fetch error:', error);
-      setLoadError(error instanceof Error ? error.message : "Failed to load videos");
+      const elapsed = Date.now() - startTime;
+      console.error(`[VideoFeed][${requestId}] Fetch FAILED after ${elapsed}ms:`, error);
+      
+      const errorMessage = error instanceof Error ? error.message : "Failed to load videos";
+      setLoadError(errorMessage);
       setVideos([]);
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   }, [searchQuery, categoryFilter, userId]);
 
-  // Initial fetch on mount
+  // Initial fetch on mount - DO NOT wait for auth
   useEffect(() => {
     if (!hasFetchedRef.current) {
       hasFetchedRef.current = true;
+      console.log(`[VideoFeed] Initial mount fetch triggered`);
       fetchVideos();
     }
+    
+    // Cleanup: abort on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [fetchVideos]);
 
   // Re-fetch when filters change
@@ -187,48 +274,62 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   }, [searchQuery, categoryFilter]);
 
-  // Load more videos
+  // Load more videos with timeout
   const loadMoreVideos = useCallback(async (pageNum: number) => {
     if (isLoadingMore) return;
     
+    const requestId = generateRequestId();
     setIsLoadingMore(true);
-    console.log(`[VideoFeed] Loading page ${pageNum}...`);
+    console.log(`[VideoFeed][${requestId}] Loading page ${pageNum}...`);
 
     try {
       const isForYouFeed = !searchQuery && !categoryFilter;
       let newVideos: Video[] = [];
 
       if (isForYouFeed) {
-        const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-          body: { userId: userId || null, page: pageNum, limit: PAGE_SIZE }
-        });
-        if (error) throw new Error(error.message);
-        newVideos = (data?.videos || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
+        const result = await fetchWithTimeout(
+          async () => supabase.functions.invoke('get-for-you-feed', {
+            body: { userId: userId || null, page: pageNum, limit: PAGE_SIZE }
+          }),
+          FETCH_TIMEOUT_MS,
+          requestId
+        );
+        
+        if (result.error) throw new Error(result.error.message);
+        newVideos = (result.data?.videos || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
       } else {
         const offset = pageNum * PAGE_SIZE;
-        let query = supabase
-          .from("videos")
-          .select(`
-            id, title, description, video_url, optimized_video_url, stream_url,
-            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-            profiles(username, avatar_url)
-          `)
-          .order("created_at", { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1);
+        const result = await fetchWithTimeout(
+          async () => {
+            let query = supabase
+              .from("videos")
+              .select(`
+                id, title, description, video_url, optimized_video_url, stream_url,
+                cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
+                profiles(username, avatar_url)
+              `)
+              .order("created_at", { ascending: false })
+              .range(offset, offset + PAGE_SIZE - 1);
 
-        if (categoryFilter) query = query.contains('tags', [categoryFilter]);
-        if (searchQuery) query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+            if (categoryFilter) query = query.contains('tags', [categoryFilter]);
+            if (searchQuery) query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
 
-        const { data, error } = await query;
-        if (error) throw error;
-        newVideos = (data || []).filter(v => !loadedIdsRef.current.has(v.id));
+            return query;
+          },
+          FETCH_TIMEOUT_MS,
+          requestId
+        );
+        
+        if (result.error) throw result.error;
+        newVideos = (result.data || []).filter(v => !loadedIdsRef.current.has(v.id));
       }
 
+      console.log(`[VideoFeed][${requestId}] Loaded ${newVideos.length} more videos`);
       newVideos.forEach(v => loadedIdsRef.current.add(v.id));
       setVideos(prev => [...prev, ...newVideos]);
       setHasMore(newVideos.length > 0);
     } catch (error) {
-      console.error('[VideoFeed] Load more error:', error);
+      console.error(`[VideoFeed][${requestId}] Load more error:`, error);
     } finally {
       setIsLoadingMore(false);
     }
@@ -288,17 +389,20 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
   }
 
-  // Error state
+  // Error state with retry button
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4">
+      <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4 px-6">
         <AlertTriangle className="h-12 w-12 text-yellow-500" />
-        <p className="text-red-400 text-lg text-center px-4">{loadError}</p>
+        <p className="text-red-400 text-lg text-center">{loadError}</p>
         <button
-          onClick={fetchVideos}
-          className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg"
+          onClick={() => {
+            hasFetchedRef.current = false;
+            fetchVideos();
+          }}
+          className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
         >
-          <RefreshCw className="h-5 w-5" /> Try Again
+          <RefreshCw className="h-5 w-5" /> Retry
         </button>
       </div>
     );
