@@ -228,7 +228,7 @@ export const FeedItem = memo(({
       )}
 
       {/* Right side actions */}
-      <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-10">
+      <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-40">
         <button onClick={toggleLike} className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
             <Heart className={cn("h-7 w-7", isLiked ? "fill-primary text-primary" : "text-white")} />
@@ -269,7 +269,7 @@ export const FeedItem = memo(({
       </div>
 
       {/* Bottom info */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 pb-[100px] z-10 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none pr-[80px]">
+      <div className="absolute bottom-0 left-0 right-0 p-4 pb-[100px] z-40 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none pr-[80px]">
         <div className="space-y-2 pointer-events-auto">
           <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
             <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
