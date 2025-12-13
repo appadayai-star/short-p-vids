@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
 import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
-import { log } from "@/lib/feedLogger";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-// Global mute state
+// Global mute state - persisted across videos
 let globalMuted = true;
 const muteListeners = new Set<(muted: boolean) => void>();
 
@@ -23,7 +22,7 @@ const setGlobalMuted = (muted: boolean) => {
   muteListeners.forEach(listener => listener(muted));
 };
 
-// Guest client ID
+// Guest client ID for anonymous likes
 const getGuestClientId = (): string => {
   const key = 'guest_client_id';
   let clientId = localStorage.getItem(key);
@@ -34,7 +33,7 @@ const getGuestClientId = (): string => {
   return clientId;
 };
 
-// Guest likes
+// Guest likes storage
 const getGuestLikes = (): string[] => {
   try {
     const likes = localStorage.getItem('guest_likes_v1');
@@ -48,8 +47,8 @@ const setGuestLikes = (likes: string[]) => {
   localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
 };
 
-const STALL_TIMEOUT = 12000; // 12s before retry on stall (don't show error too quickly)
-const MAX_RETRIES = 2;
+// Debug mode for metrics
+const DEBUG_METRICS = import.meta.env.DEV;
 
 interface Video {
   id: string;
@@ -96,9 +95,8 @@ export const FeedItem = memo(({
   const trackedRef = useRef(false);
   const loadStartTimeRef = useRef<number>(0);
   const retryCountRef = useRef(0);
-  const stallTimeoutRef = useRef<number | null>(null);
-  const currentSrcRef = useRef<string>('');
   
+  // UI state
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
   const [isSaved, setIsSaved] = useState(false);
@@ -107,66 +105,23 @@ export const FeedItem = memo(({
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
-  const [isStalled, setIsStalled] = useState(false);
 
-  // Get video sources
-  const primarySrc = getBestVideoSource(
+  // Video sources - ALWAYS have a poster
+  const videoSrc = getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     video.stream_url || null,
     video.video_url
   );
-  const fallbackSrc = video.video_url; // Original as fallback
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
 
+  // Determine source type for metrics
   const getSourceType = () => {
     if (video.cloudinary_public_id) return 'cloudinary';
     if (video.optimized_video_url) return 'optimized';
     if (video.stream_url) return 'hls';
     return 'supabase';
   };
-
-  // Clear stall timeout
-  const clearStallTimeout = useCallback(() => {
-    if (stallTimeoutRef.current) {
-      clearTimeout(stallTimeoutRef.current);
-      stallTimeoutRef.current = null;
-    }
-  }, []);
-
-  // Handle video retry with cache buster or fallback
-  const handleVideoRetry = useCallback(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
-    
-    retryCountRef.current++;
-    setIsStalled(false);
-    setPlaybackFailed(false);
-    
-    log.warn('VIDEO_RETRY', { index, attempt: retryCountRef.current });
-    
-    if (retryCountRef.current === 1) {
-      // First retry: add cache buster
-      const cacheBuster = `?cb=${Date.now()}`;
-      currentSrcRef.current = primarySrc + cacheBuster;
-    } else if (retryCountRef.current === 2) {
-      // Second retry: use fallback source
-      currentSrcRef.current = fallbackSrc;
-    } else {
-      // Give up
-      setPlaybackFailed(true);
-      log.error('VIDEO_PLAYBACK_FAILED', { index, retries: retryCountRef.current });
-      return;
-    }
-    
-    videoEl.src = currentSrcRef.current;
-    videoEl.load();
-    videoEl.play().catch(() => {
-      if (retryCountRef.current >= MAX_RETRIES) {
-        setPlaybackFailed(true);
-      }
-    });
-  }, [primarySrc, fallbackSrc, index]);
 
   // Sync with global mute state
   useEffect(() => {
@@ -182,133 +137,82 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive
+  // Play/pause based on isActive - with faster activation
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
-      setIsStalled(false);
-      retryCountRef.current = 0;
       loadStartTimeRef.current = performance.now();
-      currentSrcRef.current = primarySrc;
       videoEl.currentTime = 0;
       
-      if (index === 0) {
-        log.info('FIRST_VIDEO_PLAY_ATTEMPT', { videoId: video.id });
-      }
-      
       const attemptPlay = () => {
-        const playPromise = videoEl.play();
-        if (playPromise) {
-          playPromise.then(() => {
-            clearStallTimeout();
+        videoEl.play().then(() => {
+          // Log time to first frame in debug mode
+          if (DEBUG_METRICS && loadStartTimeRef.current) {
             const ttff = Math.round(performance.now() - loadStartTimeRef.current);
-            
-            if (index === 0) {
-              log.info('FIRST_VIDEO_PLAYING', { ttff, source: getSourceType() });
-            }
-            
-            if (!trackedRef.current) {
-              trackedRef.current = true;
-              onViewTracked(video.id);
-            }
-          }).catch((err) => {
-            if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
+            console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${getSourceType()} | Retries: ${retryCountRef.current}`);
+          }
+          
+          if (!trackedRef.current) {
+            trackedRef.current = true;
+            onViewTracked(video.id);
+          }
+        }).catch((err) => {
+          if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
+            return;
+          }
+          if (err.name === 'NotSupportedError') {
+            retryCountRef.current++;
+            if (retryCountRef.current < 3) {
+              // Retry with reload
+              setTimeout(() => {
+                videoEl.load();
+                attemptPlay();
+              }, 500);
               return;
             }
-            log.warn('VIDEO_PLAY_ERROR', { index, error: err.name });
-            handleVideoRetry();
-          });
-        }
+          }
+          setPlaybackFailed(true);
+        });
       };
 
-      // Event handlers for stall detection
-      const handleCanPlay = () => {
-        clearStallTimeout();
-        setIsStalled(false);
-        if (index === 0) {
-          log.info('FIRST_VIDEO_CANPLAY', { 
-            delta: Math.round(performance.now() - loadStartTimeRef.current),
-            source: getSourceType(),
-            hasCloudinary: !!video.cloudinary_public_id
-          });
-        }
-        attemptPlay();
-      };
+      // Try to play immediately - no delay
+      attemptPlay();
       
-      const handleWaiting = () => {
-        // Only set stalled after a brief delay to avoid flicker
-        clearStallTimeout();
-        stallTimeoutRef.current = window.setTimeout(() => {
-          setIsStalled(true);
-        }, 2000); // Show spinner only after 2s of waiting
-        
-        // Retry timeout is longer
-        const retryTimeout = window.setTimeout(() => {
-          log.warn('VIDEO_STALL_TIMEOUT', { index, source: getSourceType() });
-          handleVideoRetry();
-        }, STALL_TIMEOUT);
-        
-        // Store retry timeout for cleanup
-        stallTimeoutRef.current = retryTimeout;
-      };
-      
-      const handleStalled = () => {
-        // Similar to waiting - delay spinner
-        clearStallTimeout();
-        stallTimeoutRef.current = window.setTimeout(() => {
-          setIsStalled(true);
-        }, 2000);
-        
-        const retryTimeout = window.setTimeout(() => {
-          log.warn('VIDEO_STALLED_TIMEOUT', { index, source: getSourceType() });
-          handleVideoRetry();
-        }, STALL_TIMEOUT);
-        
-        stallTimeoutRef.current = retryTimeout;
-      };
-      
-      const handlePlaying = () => {
-        clearStallTimeout();
-        setIsStalled(false);
-      };
-      
-      const handleError = () => {
-        log.error('VIDEO_ERROR', { index, error: videoEl.error?.message });
-        handleVideoRetry();
-      };
-      
+      // Listen for canplay for videos not ready
+      const handleCanPlay = () => attemptPlay();
       videoEl.addEventListener('canplay', handleCanPlay);
-      videoEl.addEventListener('waiting', handleWaiting);
-      videoEl.addEventListener('stalled', handleStalled);
-      videoEl.addEventListener('playing', handlePlaying);
-      videoEl.addEventListener('error', handleError);
-
-      // Try to play immediately
-      if (videoEl.readyState >= 3) {
-        attemptPlay();
-      } else {
-        videoEl.load();
-        attemptPlay();
-      }
       
-      return () => {
-        clearStallTimeout();
-        videoEl.removeEventListener('canplay', handleCanPlay);
-        videoEl.removeEventListener('waiting', handleWaiting);
-        videoEl.removeEventListener('stalled', handleStalled);
-        videoEl.removeEventListener('playing', handlePlaying);
-        videoEl.removeEventListener('error', handleError);
-      };
+      return () => videoEl.removeEventListener('canplay', handleCanPlay);
     } else {
-      clearStallTimeout();
       videoEl.pause();
     }
-  }, [isActive, hasEntered, video.id, onViewTracked, index, primarySrc, clearStallTimeout, handleVideoRetry]);
+  }, [isActive, hasEntered, video.id, onViewTracked, index]);
 
-  // Check guest likes
+  // Preload next video when this one is active
+  useEffect(() => {
+    if (!isActive || !hasEntered) return;
+    
+    // The preloading is handled by shouldPreload prop on adjacent items
+    // This effect could be used for more aggressive prefetching if needed
+  }, [isActive, hasEntered]);
+
+  const handleRetry = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+    
+    retryCountRef.current++;
+    setPlaybackFailed(false);
+    videoEl.src = videoSrc;
+    videoEl.load();
+    videoEl.play().catch(() => {
+      setPlaybackFailed(true);
+    });
+  }, [videoSrc]);
+
+  // Check if guest has liked this video
   useEffect(() => {
     if (!currentUserId) {
       const guestLikes = getGuestLikes();
@@ -316,7 +220,7 @@ export const FeedItem = memo(({
     }
   }, [video.id, currentUserId]);
 
-  // Fetch user interaction states
+  // Fetch interaction states for logged-in users
   useEffect(() => {
     if (!currentUserId) return;
 
@@ -372,7 +276,7 @@ export const FeedItem = memo(({
           setGuestLikes([...guestLikes, video.id]);
         }
       }
-    } catch {
+    } catch (error) {
       setIsLiked(wasLiked);
       setLikesCount(prev => wasLiked ? prev + 1 : prev - 1);
       toast.error("Failed to update like");
@@ -397,7 +301,7 @@ export const FeedItem = memo(({
         setSavesCount(prev => prev + 1);
         toast.success("Saved");
       }
-    } catch {
+    } catch (error) {
       toast.error("Failed to save video");
     }
   };
@@ -410,7 +314,7 @@ export const FeedItem = memo(({
       await supabase.from("videos").delete().eq("id", video.id);
       toast.success("Video deleted");
       onDelete?.(video.id);
-    } catch {
+    } catch (error) {
       toast.error("Failed to delete video");
     }
   };
@@ -431,7 +335,7 @@ export const FeedItem = memo(({
       className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
       data-video-index={index}
     >
-      {/* Poster image as background */}
+      {/* Poster image as background - ALWAYS visible until video plays */}
       <img 
         src={posterSrc} 
         alt="" 
@@ -439,34 +343,25 @@ export const FeedItem = memo(({
         style={{ paddingBottom: navOffset }}
       />
 
-      {/* Video player */}
+      {/* Video player - overlays poster */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
-        src={isActive || shouldPreload ? primarySrc : undefined}
+        src={isActive || shouldPreload ? videoSrc : undefined}
         poster={posterSrc}
         loop
         playsInline
         muted={isMuted}
-        preload={isActive ? "auto" : "metadata"}
+        preload={isActive ? "auto" : shouldPreload ? "metadata" : "none"}
         onClick={toggleMute}
       />
 
-      {/* Stalled indicator - only show after brief delay */}
-      {isStalled && !playbackFailed && isActive && (
-        <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-          <div className="bg-black/50 rounded-full p-3">
-            <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          </div>
-        </div>
-      )}
-
-      {/* Playback failed - retry UI */}
+      {/* Playback failed - retry UI - pointer-events only on button */}
       {playbackFailed && (
         <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30 pointer-events-none">
           <button 
-            onClick={handleVideoRetry}
+            onClick={handleRetry}
             className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm pointer-events-auto"
           >
             <RefreshCw className="h-8 w-8 text-white" />
@@ -475,7 +370,7 @@ export const FeedItem = memo(({
         </div>
       )}
 
-      {/* Mute indicator */}
+      {/* Mute indicator flash */}
       {showMuteIcon && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
           <div className="bg-black/50 rounded-full p-4 animate-scale-in">
