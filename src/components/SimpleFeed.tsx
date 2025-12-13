@@ -46,10 +46,11 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const loadedIds = useRef<Set<string>>(new Set());
   const page = useRef(0);
+  const hasFetched = useRef(false);
 
   // Simple, direct fetch - no edge functions, no complexity
-  const fetchVideos = useCallback(async (reset = true) => {
-    console.log("[SimpleFeed] fetchVideos called, reset:", reset);
+  const fetchVideos = useCallback(async (reset = true, sq = searchQuery, cf = categoryFilter) => {
+    console.log("[SimpleFeed] fetchVideos called, reset:", reset, "search:", sq, "category:", cf);
     
     if (reset) {
       setLoading(true);
@@ -72,12 +73,12 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
         .order("created_at", { ascending: false })
         .range(0, PAGE_SIZE - 1);
 
-      if (categoryFilter) {
-        query = query.contains('tags', [categoryFilter]);
+      if (cf) {
+        query = query.contains('tags', [cf]);
       }
       
-      if (searchQuery) {
-        query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+      if (sq) {
+        query = query.or(`title.ilike.%${sq}%,description.ilike.%${sq}%`);
       }
 
       const { data, error: fetchError } = await query;
@@ -91,36 +92,49 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       console.log("[SimpleFeed] Fetched", rawVideos.length, "videos");
       
       // Fetch profiles separately using the public view
-      const userIds = [...new Set(rawVideos.map(v => v.user_id))];
-      const { data: profilesData } = await supabase
-        .from("profiles_public")
-        .select("id, username, avatar_url")
-        .in("id", userIds);
-      
-      const profilesMap = new Map(
-        (profilesData || []).map(p => [p.id, { username: p.username || 'User', avatar_url: p.avatar_url }])
-      );
-      
-      const fetchedVideos = rawVideos.map(v => ({
-        ...v,
-        profiles: profilesMap.get(v.user_id) || { username: 'User', avatar_url: null }
-      }));
-      
-      fetchedVideos.forEach(v => loadedIds.current.add(v.id));
-      setVideos(fetchedVideos);
-      setHasMore(fetchedVideos.length === PAGE_SIZE);
+      if (rawVideos.length > 0) {
+        const userIds = [...new Set(rawVideos.map(v => v.user_id))];
+        const { data: profilesData } = await supabase
+          .from("profiles_public")
+          .select("id, username, avatar_url")
+          .in("id", userIds);
+        
+        const profilesMap = new Map(
+          (profilesData || []).map(p => [p.id, { username: p.username || 'User', avatar_url: p.avatar_url }])
+        );
+        
+        const fetchedVideos = rawVideos.map(v => ({
+          ...v,
+          profiles: profilesMap.get(v.user_id) || { username: 'User', avatar_url: null }
+        }));
+        
+        fetchedVideos.forEach(v => loadedIds.current.add(v.id));
+        setVideos(fetchedVideos);
+        setHasMore(fetchedVideos.length === PAGE_SIZE);
+      } else {
+        setVideos([]);
+        setHasMore(false);
+      }
     } catch (err) {
       console.error("[SimpleFeed] Fetch error:", err);
       setError(err instanceof Error ? err.message : "Failed to load videos");
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, categoryFilter]);
+  }, []); // No dependencies - we pass values as arguments
 
-  // Initial load
+  // Initial load - ONLY ONCE
   useEffect(() => {
-    fetchVideos();
-  }, [fetchVideos]);
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+    fetchVideos(true, searchQuery, categoryFilter);
+  }, [fetchVideos, searchQuery, categoryFilter]);
+
+  // Re-fetch when filters change (after initial load)
+  useEffect(() => {
+    if (!hasFetched.current) return; // Skip on mount
+    fetchVideos(true, searchQuery, categoryFilter);
+  }, [searchQuery, categoryFilter, fetchVideos]);
 
   // Load more
   const loadMore = useCallback(async () => {
