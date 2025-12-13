@@ -104,21 +104,30 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   // Desktop: wheel handler on window - transform-based navigation
   useEffect(() => {
     if (!isDesktop || videos.length === 0) return;
+    
+    console.log("🔵 WHEEL HANDLER REGISTERED - videos:", videos.length);
 
     const handleWheel = (e: WheelEvent) => {
       // Prevent all native scrolling on desktop
       e.preventDefault();
       
       // If locked, ignore
-      if (wheelLockRef.current) return;
+      if (wheelLockRef.current) {
+        console.log("🔒 Wheel locked, ignoring");
+        return;
+      }
       
       // Accumulate delta
       wheelDeltaAccumRef.current += e.deltaY;
+      
+      console.log("🎡 Wheel delta:", e.deltaY, "accumulated:", wheelDeltaAccumRef.current);
       
       // Only trigger when threshold reached
       if (Math.abs(wheelDeltaAccumRef.current) >= WHEEL_DELTA_THRESHOLD) {
         const direction = wheelDeltaAccumRef.current > 0 ? 1 : -1;
         const targetIndex = activeIndexRef.current + direction;
+        
+        console.log("📍 Navigating:", activeIndexRef.current, "->", targetIndex);
         
         // Reset and lock
         wheelDeltaAccumRef.current = 0;
@@ -130,13 +139,17 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         // Release lock after transition
         setTimeout(() => {
           wheelLockRef.current = false;
+          console.log("🔓 Wheel unlocked");
         }, WHEEL_LOCK_MS);
       }
     };
 
     // Listen on window to catch all wheel events
     window.addEventListener('wheel', handleWheel, { passive: false });
-    return () => window.removeEventListener('wheel', handleWheel);
+    return () => {
+      console.log("🔴 WHEEL HANDLER REMOVED");
+      window.removeEventListener('wheel', handleWheel);
+    };
   }, [isDesktop, videos.length, goToIndex]);
 
   // Mobile only: scroll-settle detection
@@ -403,10 +416,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           ref={containerRef}
           id="video-feed-container"
           className="relative z-20 w-full h-[100dvh] overflow-hidden"
-          style={{ 
-            boxShadow: 'inset 0 0 0 10px red',
-            background: 'rgba(255,0,0,0.2)'
-          }}
         >
           {/* Feed track - moves via transform */}
           <div
