@@ -156,16 +156,23 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           );
         }
 
-        // Filter out session duplicates
+        // Filter out session duplicates - but keep some if we'd have no videos
         const sessionViewed = getSessionViewedIds();
-        results = results.filter((v: Video) => !sessionViewed.has(v.id));
+        const unseenResults = results.filter((v: Video) => !sessionViewed.has(v.id));
+        
+        // Use unseen videos if available, otherwise show all (user has seen everything)
+        const videosToProcess = unseenResults.length > 0 ? unseenResults : results;
+        
+        if (DEBUG_SCROLL) {
+          console.log('[VideoFeed] Videos from API:', results.length, '| Unseen:', unseenResults.length, '| Using:', videosToProcess.length);
+        }
 
         // Apply creator diversity - no same creator within last 3 items (but don't filter if it leaves us with no videos)
         const diverseResults: Video[] = [];
         const recentCreators: string[] = [];
         const remainingVideos: Video[] = [];
         
-        for (const video of results) {
+        for (const video of videosToProcess) {
           // Skip if this creator was in last 3 videos - save for later
           if (recentCreators.slice(-3).includes(video.user_id)) {
             remainingVideos.push(video);
