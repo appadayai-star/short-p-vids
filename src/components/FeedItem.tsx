@@ -130,7 +130,7 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive - wait for canplay
+  // Play/pause based on isActive
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -141,30 +141,32 @@ export const FeedItem = memo(({
       
       const attemptPlay = () => {
         videoEl.play().then(() => {
+          console.log('[FeedItem] Playing successfully');
           if (!trackedRef.current) {
             trackedRef.current = true;
             onViewTracked(video.id);
           }
         }).catch((err) => {
-          console.log('[FeedItem] Play failed:', err.name);
-          // Ignore autoplay blocks and not-ready errors
-          if (err.name !== 'NotAllowedError' && err.name !== 'NotSupportedError') {
-            setPlaybackFailed(true);
+          console.log('[FeedItem] Play failed:', err.name, err.message);
+          // Only show retry for actual failures, not loading/autoplay issues
+          if (err.name === 'AbortError' || err.name === 'NotAllowedError' || err.name === 'NotSupportedError') {
+            // These are usually transient - video not ready yet or autoplay blocked
+            return;
           }
+          setPlaybackFailed(true);
         });
       };
 
-      // If video is ready, play immediately; otherwise wait for canplay
-      if (videoEl.readyState >= 3) {
+      // Try to play immediately
+      attemptPlay();
+      
+      // Also listen for canplay in case video wasn't ready
+      const handleCanPlay = () => {
+        console.log('[FeedItem] canplay fired, attempting play');
         attemptPlay();
-      } else {
-        const handleCanPlay = () => {
-          attemptPlay();
-          videoEl.removeEventListener('canplay', handleCanPlay);
-        };
-        videoEl.addEventListener('canplay', handleCanPlay);
-        return () => videoEl.removeEventListener('canplay', handleCanPlay);
-      }
+      };
+      videoEl.addEventListener('canplay', handleCanPlay);
+      return () => videoEl.removeEventListener('canplay', handleCanPlay);
     } else {
       videoEl.pause();
     }
