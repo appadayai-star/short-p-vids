@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestThumbnailUrl, getBestVideoSource } from "@/lib/cloudinary";
+import { getBestThumbnailUrl, getBestVideoSource, checkVideoUrlStatus } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -162,15 +162,18 @@ export const FeedItem = memo(({
   );
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
 
-  // Log debug event
+  // Log debug event - only in debug mode for production
   const logEvent = useCallback((event: string, detail?: string) => {
     const now = performance.now();
     const elapsed = srcAssignedTimeRef.current ? Math.round(now - srcAssignedTimeRef.current) : 0;
-    console.log(`[Video ${index}] ${event}${detail ? `: ${detail}` : ''} (+${elapsed}ms)`);
+    
+    if (isDebugMode()) {
+      console.log(`[Video ${index}] ${event}${detail ? `: ${detail}` : ''} (+${elapsed}ms)`);
+    }
     
     setDebugEvents(prev => {
       const newEvents = [...prev, { time: elapsed, event, detail }];
-      return newEvents.slice(-10); // Keep last 10
+      return newEvents.slice(-15); // Keep last 15 for debug
     });
   }, [index]);
 
@@ -314,6 +317,14 @@ export const FeedItem = memo(({
       isPlaying = false;
       
       logEvent('src_assigned', videoSrc.substring(0, 80) + '...');
+      logEvent('source_type', sourceType);
+      
+      // Debug mode: check URL accessibility
+      if (isDebugMode()) {
+        checkVideoUrlStatus(videoSrc).then(result => {
+          logEvent('head_check', `accessible: ${result.accessible}, status: ${result.status || 'opaque'}`);
+        });
+      }
       
       const attemptPlay = () => {
         // Only play if we have enough data
