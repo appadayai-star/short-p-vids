@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 interface VideoThumbnailProps {
   cloudinaryPublicId: string | null;
@@ -16,13 +16,6 @@ function getCloudinaryThumbnail(publicId: string): string {
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_0/${publicId}.jpg`;
 }
 
-// Generate thumbnail from video URL using Cloudinary fetch
-function getCloudinaryFetchThumbnail(videoUrl: string): string {
-  // Use base64 encoding for the URL to avoid special character issues
-  const base64Url = btoa(videoUrl);
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/fetch/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_1/${base64Url}`;
-}
-
 export function VideoThumbnail({ 
   cloudinaryPublicId, 
   thumbnailUrl, 
@@ -32,64 +25,38 @@ export function VideoThumbnail({
   className = "w-full h-full object-cover"
 }: VideoThumbnailProps) {
   const [imgError, setImgError] = useState(false);
-  const [currentSrc, setCurrentSrc] = useState<string | null>(null);
-  const [fallbackLevel, setFallbackLevel] = useState(0);
 
-  // Determine image source based on priority and fallback level
-  useState(() => {
-    if (thumbnailUrl) {
-      setCurrentSrc(thumbnailUrl);
-    } else if (cloudinaryPublicId) {
-      setCurrentSrc(getCloudinaryThumbnail(cloudinaryPublicId));
-    } else if (videoUrl) {
-      setCurrentSrc(getCloudinaryFetchThumbnail(videoUrl));
-    }
-  });
+  // Compute best thumbnail source
+  const imgSrc = useMemo(() => {
+    if (thumbnailUrl) return thumbnailUrl;
+    if (cloudinaryPublicId) return getCloudinaryThumbnail(cloudinaryPublicId);
+    return null;
+  }, [thumbnailUrl, cloudinaryPublicId]);
 
-  // Set initial source
-  if (!currentSrc && !imgError) {
-    if (thumbnailUrl) {
-      setCurrentSrc(thumbnailUrl);
-    } else if (cloudinaryPublicId) {
-      setCurrentSrc(getCloudinaryThumbnail(cloudinaryPublicId));
-    } else if (videoUrl) {
-      setCurrentSrc(getCloudinaryFetchThumbnail(videoUrl));
-    }
-  }
-
-  const handleImageError = () => {
-    console.warn("Thumbnail failed:", videoId, fallbackLevel, currentSrc);
-    
-    // Try next fallback
-    if (fallbackLevel === 0 && cloudinaryPublicId) {
-      setCurrentSrc(getCloudinaryThumbnail(cloudinaryPublicId));
-      setFallbackLevel(1);
-    } else if (fallbackLevel <= 1 && videoUrl) {
-      setCurrentSrc(getCloudinaryFetchThumbnail(videoUrl));
-      setFallbackLevel(2);
-    } else {
-      setImgError(true);
-    }
-  };
-
-  // If all image sources failed, show gradient fallback
-  if (imgError || !currentSrc) {
+  // If no image source or error, use video element to show first frame
+  if (!imgSrc || imgError) {
     return (
-      <div className={`${className} bg-gradient-to-br from-primary/30 to-secondary/30 flex items-center justify-center`}>
-        <div className="text-muted-foreground/50 text-xs text-center px-2">
-          {title?.substring(0, 20) || 'Video'}
-        </div>
-      </div>
+      <video
+        src={videoUrl}
+        className={className}
+        muted
+        playsInline
+        preload="metadata"
+        style={{ objectFit: 'cover' }}
+      />
     );
   }
 
   return (
     <img
-      src={currentSrc}
+      src={imgSrc}
       alt={title}
       className={className}
       loading="lazy"
-      onError={handleImageError}
+      onError={() => {
+        console.warn("Thumbnail load failed:", videoId, imgSrc);
+        setImgError(true);
+      }}
     />
   );
 }
