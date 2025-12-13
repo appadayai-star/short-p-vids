@@ -4,9 +4,10 @@ import { useAdmin } from "@/hooks/useAdmin";
 import { AdminStats } from "@/components/admin/AdminStats";
 import { AdminUsers } from "@/components/admin/AdminUsers";
 import { AdminVideos } from "@/components/admin/AdminVideos";
+import { AdminReprocess } from "@/components/admin/AdminReprocess";
 import { SEO } from "@/components/SEO";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, LayoutDashboard, Users, Video, ArrowLeft } from "lucide-react";
+import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const Admin = () => {
@@ -59,7 +60,7 @@ const Admin = () => {
 
       <main className="container mx-auto px-4 py-6">
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-3">
+          <TabsList className="grid w-full max-w-lg grid-cols-4">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <LayoutDashboard className="h-4 w-4" />
               <span className="hidden sm:inline">Overview</span>
@@ -71,6 +72,10 @@ const Admin = () => {
             <TabsTrigger value="videos" className="flex items-center gap-2">
               <Video className="h-4 w-4" />
               <span className="hidden sm:inline">Videos</span>
+            </TabsTrigger>
+            <TabsTrigger value="reprocess" className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              <span className="hidden sm:inline">Reprocess</span>
             </TabsTrigger>
           </TabsList>
 
@@ -84,6 +89,10 @@ const Admin = () => {
 
           <TabsContent value="videos">
             <AdminVideos />
+          </TabsContent>
+
+          <TabsContent value="reprocess">
+            <AdminReprocess />
           </TabsContent>
         </Tabs>
       </main>

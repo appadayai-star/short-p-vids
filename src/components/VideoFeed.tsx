@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { FeedItem } from "./FeedItem";
 import { Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
-import { getBestThumbnailUrl, getBestVideoSource, preloadImage, warmVideoSource } from "@/lib/cloudinary";
+import { getBestThumbnailUrl, preloadImage } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
 const SCROLL_DEBOUNCE_MS = 30;
@@ -49,28 +49,19 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const prevActiveIndexRef = useRef(0);
 
-  // Preload next video's thumbnail and warm video source
+  // Preload next video's thumbnail only (no HEAD requests)
   const preloadNextVideo = useCallback((nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= videos.length) return;
     
     const nextVideo = videos[nextIndex];
     if (!nextVideo) return;
 
-    // Preload thumbnail
+    // Preload thumbnail only - video preload handled by FeedItem
     const thumbnailUrl = getBestThumbnailUrl(
       nextVideo.cloudinary_public_id || null,
       nextVideo.thumbnail_url
     );
     preloadImage(thumbnailUrl);
-
-    // Warm video source with HEAD request
-    const videoUrl = getBestVideoSource(
-      nextVideo.cloudinary_public_id || null,
-      nextVideo.optimized_video_url || null,
-      nextVideo.stream_url || null,
-      nextVideo.video_url
-    );
-    warmVideoSource(videoUrl);
   }, [videos]);
 
   // Detect active video based on scroll position - trigger at 40% threshold
@@ -140,8 +131,13 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           body: { userId: currentUserId, page: 0, limit: PAGE_SIZE }
         });
         
-        if (error) throw new Error(error.message || "Failed to load feed");
+        if (error) {
+          console.error('[VideoFeed] Edge function error:', error);
+          throw new Error(error.message || "Failed to load feed");
+        }
+        
         fetchedVideos = data?.videos || [];
+        console.log(`[VideoFeed] Received ${fetchedVideos.length} videos, first: ${fetchedVideos[0]?.id || 'none'}`);
       } else {
         let query = supabase
           .from("videos")
@@ -179,20 +175,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       setVideos(fetchedVideos);
       setHasMore(fetchedVideos.length === PAGE_SIZE);
 
-      // Preload second video's resources
+      // Preload second video's thumbnail
       if (fetchedVideos.length > 1) {
         const secondVideo = fetchedVideos[1];
         preloadImage(getBestThumbnailUrl(secondVideo.cloudinary_public_id || null, secondVideo.thumbnail_url));
-        warmVideoSource(getBestVideoSource(
-          secondVideo.cloudinary_public_id || null,
-          secondVideo.optimized_video_url || null,
-          secondVideo.stream_url || null,
-          secondVideo.video_url
-        ));
       }
     } catch (error) {
       console.error('[VideoFeed] Fetch error:', error);
-      setLoadError(error instanceof Error ? error.message : "Failed to load videos");
+      const errorMessage = error instanceof Error ? error.message : "Failed to load videos";
+      setLoadError(errorMessage);
       setVideos([]);
     } finally {
       setIsLoading(false);
@@ -278,12 +269,12 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
   }
 
-  // Error state
+  // Error state - NEVER infinite loading, always show error
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4">
+      <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4 px-4">
         <AlertTriangle className="h-12 w-12 text-yellow-500" />
-        <p className="text-red-400 text-lg text-center px-4">{loadError}</p>
+        <p className="text-red-400 text-lg text-center">{loadError}</p>
         <button
           onClick={() => fetchVideos(searchQuery, categoryFilter, userId)}
           className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg"
