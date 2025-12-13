@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, memo, useCallback } from "react";
-import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX, RefreshCw } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX, RefreshCw, Copy, Bug } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { getBestThumbnailUrl, getOptimizedVideoUrl } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,8 +47,25 @@ const setGuestLikes = (likes: string[]) => {
   localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
 };
 
-// Debug mode for metrics
-const DEBUG_METRICS = import.meta.env.DEV;
+// Debug mode - enable via ?debug=1 or DEV mode
+const isDebugMode = () => {
+  if (typeof window === 'undefined') return false;
+  return import.meta.env.DEV || new URLSearchParams(window.location.search).has('debug');
+};
+
+// Video error code mapping
+const VIDEO_ERROR_CODES: Record<number, string> = {
+  1: 'MEDIA_ERR_ABORTED - Fetching aborted by user',
+  2: 'MEDIA_ERR_NETWORK - Network error during download',
+  3: 'MEDIA_ERR_DECODE - Error decoding video',
+  4: 'MEDIA_ERR_SRC_NOT_SUPPORTED - Format not supported',
+};
+
+interface VideoEvent {
+  time: number;
+  event: string;
+  detail?: string;
+}
 
 interface Video {
   id: string;
@@ -80,6 +97,23 @@ interface FeedItemProps {
   onDelete?: (videoId: string) => void;
 }
 
+// Smart video source selection with fallback tracking
+function getVideoSource(
+  cloudinaryPublicId: string | null,
+  originalVideoUrl: string,
+  useFallback: boolean
+): { src: string; sourceType: 'cloudinary' | 'supabase' } {
+  // If fallback mode or no cloudinary ID, use Supabase
+  if (useFallback || !cloudinaryPublicId) {
+    return { src: originalVideoUrl, sourceType: 'supabase' };
+  }
+  
+  // Use Cloudinary - getOptimizedVideoUrl handles cleanup
+  const cloudinaryUrl = getOptimizedVideoUrl(cloudinaryPublicId);
+  
+  return { src: cloudinaryUrl, sourceType: 'cloudinary' };
+}
+
 export const FeedItem = memo(({ 
   video, 
   index,
@@ -95,6 +129,12 @@ export const FeedItem = memo(({
   const trackedRef = useRef(false);
   const loadStartTimeRef = useRef<number>(0);
   const retryCountRef = useRef(0);
+  const srcAssignedTimeRef = useRef<number>(0);
+  
+  // Debug state
+  const [debugEvents, setDebugEvents] = useState<VideoEvent[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
+  const [useFallback, setUseFallback] = useState(false);
   
   // UI state
   const [isLiked, setIsLiked] = useState(false);
@@ -105,23 +145,53 @@ export const FeedItem = memo(({
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
+  const [currentError, setCurrentError] = useState<string | null>(null);
 
-  // Video sources - ALWAYS have a poster
-  const videoSrc = getBestVideoSource(
+  // Get video source with fallback logic
+  const { src: videoSrc, sourceType } = getVideoSource(
     video.cloudinary_public_id || null,
-    video.optimized_video_url || null,
-    video.stream_url || null,
-    video.video_url
+    video.video_url,
+    useFallback
   );
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
 
-  // Determine source type for metrics
-  const getSourceType = () => {
-    if (video.cloudinary_public_id) return 'cloudinary';
-    if (video.optimized_video_url) return 'optimized';
-    if (video.stream_url) return 'hls';
-    return 'supabase';
-  };
+  // Log debug event
+  const logEvent = useCallback((event: string, detail?: string) => {
+    const now = performance.now();
+    const elapsed = srcAssignedTimeRef.current ? Math.round(now - srcAssignedTimeRef.current) : 0;
+    console.log(`[Video ${index}] ${event}${detail ? `: ${detail}` : ''} (+${elapsed}ms)`);
+    
+    setDebugEvents(prev => {
+      const newEvents = [...prev, { time: elapsed, event, detail }];
+      return newEvents.slice(-10); // Keep last 10
+    });
+  }, [index]);
+
+  // Copy debug info to clipboard
+  const copyDebugInfo = useCallback(() => {
+    const videoEl = videoRef.current;
+    const info = {
+      videoId: video.id,
+      src: videoSrc,
+      sourceType,
+      cloudinaryPublicId: video.cloudinary_public_id,
+      useFallback,
+      retryCount: retryCountRef.current,
+      error: currentError,
+      videoState: videoEl ? {
+        readyState: videoEl.readyState,
+        networkState: videoEl.networkState,
+        paused: videoEl.paused,
+        muted: videoEl.muted,
+        playsInline: videoEl.playsInline,
+        currentTime: videoEl.currentTime,
+        duration: videoEl.duration,
+      } : null,
+      events: debugEvents,
+    };
+    navigator.clipboard.writeText(JSON.stringify(info, null, 2));
+    toast.success('Debug info copied!');
+  }, [video.id, videoSrc, sourceType, video.cloudinary_public_id, useFallback, currentError, debugEvents]);
 
   // Sync with global mute state
   useEffect(() => {
@@ -137,7 +207,7 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive - with stall detection
+  // Play/pause based on isActive - with stall detection and smart fallback
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -152,14 +222,15 @@ export const FeedItem = memo(({
       }
     };
 
-    const handlePlaying = () => {
+    const handlePlayingEvent = () => {
       isPlaying = true;
       clearStallTimeout();
+      logEvent('playing', `Source: ${sourceType}`);
       
-      // Log metrics in debug mode
-      if (DEBUG_METRICS && loadStartTimeRef.current) {
+      // Log metrics
+      if (loadStartTimeRef.current) {
         const ttff = Math.round(performance.now() - loadStartTimeRef.current);
-        console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${getSourceType()} | Retries: ${retryCountRef.current}`);
+        console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${sourceType} | Retries: ${retryCountRef.current}`);
       }
       
       if (!trackedRef.current) {
@@ -168,11 +239,20 @@ export const FeedItem = memo(({
       }
     };
 
-    const handleStalled = () => {
+    const handleStalledEvent = () => {
+      logEvent('stalled');
       if (!isPlaying && isActive) {
-        console.warn(`[Stall] Video ${index} stalled, retrying...`);
         retryCountRef.current++;
-        if (retryCountRef.current < 3) {
+        
+        // On 2nd retry, fallback to Supabase
+        if (retryCountRef.current === 2 && sourceType === 'cloudinary') {
+          console.warn(`[Fallback] Video ${index} switching to Supabase after Cloudinary failure`);
+          logEvent('fallback', 'Switching to Supabase');
+          setUseFallback(true);
+          return;
+        }
+        
+        if (retryCountRef.current < 4) {
           videoEl.load();
           videoEl.play().catch(() => {});
         } else {
@@ -181,43 +261,74 @@ export const FeedItem = memo(({
       }
     };
 
-    const handleWaiting = () => {
-      // Set stall timeout - if waiting too long, retry
+    const handleWaitingEvent = () => {
+      logEvent('waiting');
       if (!stallTimeout && isActive && !isPlaying) {
         stallTimeout = setTimeout(() => {
-          console.warn(`[Timeout] Video ${index} took too long, retrying...`);
-          handleStalled();
-        }, 5000); // 5 second timeout
+          console.warn(`[Timeout] Video ${index} took too long`);
+          logEvent('timeout', '5s elapsed');
+          handleStalledEvent();
+        }, 5000);
+      }
+    };
+
+    const handleErrorEvent = () => {
+      const error = videoEl.error;
+      const errorMsg = error ? VIDEO_ERROR_CODES[error.code] || `Unknown error ${error.code}` : 'Unknown error';
+      logEvent('error', errorMsg);
+      setCurrentError(errorMsg);
+      
+      // On error, try fallback to Supabase on 2nd attempt
+      retryCountRef.current++;
+      if (retryCountRef.current === 2 && sourceType === 'cloudinary') {
+        console.warn(`[Fallback] Video ${index} error, switching to Supabase`);
+        setUseFallback(true);
+      } else if (retryCountRef.current >= 4) {
+        setPlaybackFailed(true);
       }
     };
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
+      setCurrentError(null);
       loadStartTimeRef.current = performance.now();
+      srcAssignedTimeRef.current = performance.now();
       videoEl.currentTime = 0;
       isPlaying = false;
       
-      // Add event listeners for stall detection
-      videoEl.addEventListener('playing', handlePlaying);
-      videoEl.addEventListener('stalled', handleStalled);
-      videoEl.addEventListener('waiting', handleWaiting);
+      logEvent('src_assigned', videoSrc.substring(0, 80) + '...');
+      
+      // Add all event listeners
+      videoEl.addEventListener('loadstart', () => logEvent('loadstart'));
+      videoEl.addEventListener('loadedmetadata', () => logEvent('loadedmetadata', `duration: ${videoEl.duration?.toFixed(1)}s`));
+      videoEl.addEventListener('canplay', () => logEvent('canplay'));
+      videoEl.addEventListener('playing', handlePlayingEvent);
+      videoEl.addEventListener('stalled', handleStalledEvent);
+      videoEl.addEventListener('waiting', handleWaitingEvent);
+      videoEl.addEventListener('error', handleErrorEvent);
       
       // Start stall timeout immediately
       stallTimeout = setTimeout(() => {
         if (!isPlaying) {
           console.warn(`[Timeout] Video ${index} initial load timeout`);
-          handleStalled();
+          logEvent('initial_timeout');
+          handleStalledEvent();
         }
       }, 5000);
 
       const attemptPlay = () => {
         videoEl.play().catch((err) => {
+          logEvent('play_error', err.name);
           if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
             return;
           }
           if (err.name === 'NotSupportedError') {
             retryCountRef.current++;
-            if (retryCountRef.current < 3) {
+            if (retryCountRef.current === 2 && sourceType === 'cloudinary') {
+              setUseFallback(true);
+              return;
+            }
+            if (retryCountRef.current < 4) {
               setTimeout(() => {
                 videoEl.load();
                 attemptPlay();
@@ -233,22 +344,15 @@ export const FeedItem = memo(({
 
       return () => {
         clearStallTimeout();
-        videoEl.removeEventListener('playing', handlePlaying);
-        videoEl.removeEventListener('stalled', handleStalled);
-        videoEl.removeEventListener('waiting', handleWaiting);
+        videoEl.removeEventListener('playing', handlePlayingEvent);
+        videoEl.removeEventListener('stalled', handleStalledEvent);
+        videoEl.removeEventListener('waiting', handleWaitingEvent);
+        videoEl.removeEventListener('error', handleErrorEvent);
       };
     } else {
       videoEl.pause();
     }
-  }, [isActive, hasEntered, video.id, onViewTracked, index]);
-
-  // Preload next video when this one is active
-  useEffect(() => {
-    if (!isActive || !hasEntered) return;
-    
-    // The preloading is handled by shouldPreload prop on adjacent items
-    // This effect could be used for more aggressive prefetching if needed
-  }, [isActive, hasEntered]);
+  }, [isActive, hasEntered, video.id, onViewTracked, index, videoSrc, sourceType, logEvent]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
@@ -256,12 +360,19 @@ export const FeedItem = memo(({
     
     retryCountRef.current++;
     setPlaybackFailed(false);
-    videoEl.src = videoSrc;
-    videoEl.load();
-    videoEl.play().catch(() => {
-      setPlaybackFailed(true);
-    });
-  }, [videoSrc]);
+    setCurrentError(null);
+    
+    // If retrying after failure and was using Cloudinary, try Supabase
+    if (sourceType === 'cloudinary' && retryCountRef.current >= 2) {
+      setUseFallback(true);
+    } else {
+      videoEl.src = videoSrc;
+      videoEl.load();
+      videoEl.play().catch(() => {
+        setPlaybackFailed(true);
+      });
+    }
+  }, [videoSrc, sourceType]);
 
   // Check if guest has liked this video
   useEffect(() => {
@@ -418,6 +529,73 @@ export const FeedItem = memo(({
             <RefreshCw className="h-8 w-8 text-white" />
             <span className="text-white text-sm">Tap to retry</span>
           </button>
+        </div>
+      )}
+
+      {/* Debug overlay - only in debug mode */}
+      {isDebugMode() && isActive && (
+        <div className="absolute top-4 left-4 right-16 z-50 pointer-events-none">
+          <button
+            onClick={() => setShowDebug(!showDebug)}
+            className="pointer-events-auto mb-2 flex items-center gap-1 px-2 py-1 bg-black/80 rounded text-xs text-white"
+          >
+            <Bug className="h-3 w-3" />
+            {showDebug ? 'Hide' : 'Debug'}
+          </button>
+          
+          {showDebug && (
+            <div className="pointer-events-auto bg-black/90 rounded-lg p-3 text-xs font-mono text-white max-h-[60vh] overflow-auto">
+              <div className="space-y-2">
+                <div>
+                  <span className="text-gray-400">Source:</span>{' '}
+                  <span className={sourceType === 'cloudinary' ? 'text-green-400' : 'text-yellow-400'}>
+                    {sourceType.toUpperCase()}
+                  </span>
+                  {useFallback && <span className="text-red-400 ml-2">(FALLBACK)</span>}
+                </div>
+                
+                <div className="break-all">
+                  <span className="text-gray-400">URL:</span>{' '}
+                  <span className="text-blue-300">{videoSrc.substring(0, 60)}...</span>
+                </div>
+                
+                <div>
+                  <span className="text-gray-400">Public ID:</span>{' '}
+                  <span className="text-purple-300">{video.cloudinary_public_id || 'none'}</span>
+                </div>
+                
+                <div>
+                  <span className="text-gray-400">Retries:</span> {retryCountRef.current}
+                </div>
+                
+                {currentError && (
+                  <div className="text-red-400">
+                    <span className="text-gray-400">Error:</span> {currentError}
+                  </div>
+                )}
+                
+                <div className="text-gray-400 mt-2">Events (last 10):</div>
+                <div className="space-y-0.5 max-h-32 overflow-auto">
+                  {debugEvents.map((ev, i) => (
+                    <div key={i} className="text-gray-300">
+                      <span className="text-gray-500">+{ev.time}ms</span>{' '}
+                      <span className={ev.event.includes('error') ? 'text-red-400' : 'text-white'}>
+                        {ev.event}
+                      </span>
+                      {ev.detail && <span className="text-gray-400"> - {ev.detail}</span>}
+                    </div>
+                  ))}
+                </div>
+                
+                <button
+                  onClick={copyDebugInfo}
+                  className="mt-2 flex items-center gap-1 px-2 py-1 bg-white/20 rounded hover:bg-white/30"
+                >
+                  <Copy className="h-3 w-3" /> Copy Debug Info
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
