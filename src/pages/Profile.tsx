@@ -537,6 +537,7 @@ const Profile = () => {
                       thumbnailUrl={video.thumbnail_url}
                       videoUrl={video.video_url}
                       title={video.title}
+                      videoId={video.id}
                     />
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                       <div className="text-white text-xs font-semibold">{video.views_count} views</div>
@@ -569,6 +570,7 @@ const Profile = () => {
                         thumbnailUrl={video.thumbnail_url}
                         videoUrl={video.video_url}
                         title={video.title}
+                        videoId={video.id}
                       />
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                         <div className="text-white text-xs font-semibold">{video.views_count} views</div>
@@ -602,6 +604,7 @@ const Profile = () => {
                         thumbnailUrl={video.thumbnail_url}
                         videoUrl={video.video_url}
                         title={video.title}
+                        videoId={video.id}
                       />
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                         <div className="text-white text-xs font-semibold">{video.views_count} views</div>
