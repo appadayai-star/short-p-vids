@@ -8,13 +8,14 @@ const CLOUDINARY_CLOUD_NAME = 'domj6omwb';
 export const DEFAULT_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="480" height="852" viewBox="0 0 480 852"%3E%3Cdefs%3E%3ClinearGradient id="g" x1="0%25" y1="0%25" x2="0%25" y2="100%25"%3E%3Cstop offset="0%25" style="stop-color:%231a1a2e"%2F%3E%3Cstop offset="100%25" style="stop-color:%230f0f1a"%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect fill="url(%23g)" width="480" height="852"%2F%3E%3C%2Fsvg%3E';
 
 export function getOptimizedVideoUrl(publicId: string): string {
-  // Simple MP4 - let Cloudinary auto-optimize
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_auto,q_auto/${publicId}`;
+  // MP4 with faststart for instant playback, lower bitrate for quick start
+  // fl_faststart ensures moov atom at start for immediate playback
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,q_auto:eco,vc_h264,fl_faststart,br_1500k,fps_30/${publicId}`;
 }
 
 export function getStreamUrl(publicId: string): string {
-  // HLS adaptive streaming - simplified
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${publicId}.m3u8`;
+  // HLS adaptive streaming with faststart hint
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/fl_faststart/${publicId}.m3u8`;
 }
 
 export function getThumbnailUrl(publicId: string): string {
@@ -75,10 +76,22 @@ export function preloadImage(src: string): void {
   }
 }
 
-// Warm video source - completely non-blocking, never throws
-// Using Image instead of fetch to avoid CORS issues
+// Warm video source with Range request for first 200KB
+// This primes DNS/TLS and caches the video start for instant playback
 export function warmVideoSource(src: string): void {
   if (!src) return;
-  // Don't actually make requests - just let video preload handle it
-  // Previous HEAD requests caused CORS issues
+  
+  try {
+    // Use Range request to fetch first 200KB (enough for moov atom + first frames)
+    fetch(src, {
+      method: 'GET',
+      headers: { 'Range': 'bytes=0-204799' },
+      mode: 'cors',
+      credentials: 'omit',
+    }).catch(() => {
+      // Ignore errors - this is just warming
+    });
+  } catch {
+    // Ignore - non-blocking warmup
+  }
 }

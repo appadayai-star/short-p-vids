@@ -137,55 +137,87 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive - with faster activation
+  // Play/pause based on isActive - with aggressive instant start
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
+      
+      // Performance marks for instrumentation
+      if (DEBUG_METRICS) {
+        performance.mark(`video_${index}_src_set`);
+      }
       loadStartTimeRef.current = performance.now();
       videoEl.currentTime = 0;
       
       const attemptPlay = () => {
-        videoEl.play().then(() => {
-          // Log time to first frame in debug mode
-          if (DEBUG_METRICS && loadStartTimeRef.current) {
-            const ttff = Math.round(performance.now() - loadStartTimeRef.current);
-            console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${getSourceType()} | Retries: ${retryCountRef.current}`);
-          }
-          
-          if (!trackedRef.current) {
-            trackedRef.current = true;
-            onViewTracked(video.id);
-          }
-        }).catch((err) => {
-          if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
-            return;
-          }
-          if (err.name === 'NotSupportedError') {
-            retryCountRef.current++;
-            if (retryCountRef.current < 3) {
-              // Retry with reload
-              setTimeout(() => {
-                videoEl.load();
-                attemptPlay();
-              }, 500);
+        const playPromise = videoEl.play();
+        if (playPromise) {
+          playPromise.then(() => {
+            // Log detailed metrics in debug mode
+            if (DEBUG_METRICS && loadStartTimeRef.current) {
+              const ttff = Math.round(performance.now() - loadStartTimeRef.current);
+              performance.mark(`video_${index}_playing`);
+              console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${getSourceType()} | Retries: ${retryCountRef.current} | ReadyState: ${videoEl.readyState}`);
+            }
+            
+            if (!trackedRef.current) {
+              trackedRef.current = true;
+              onViewTracked(video.id);
+            }
+          }).catch((err) => {
+            if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
               return;
             }
-          }
-          setPlaybackFailed(true);
-        });
+            if (err.name === 'NotSupportedError') {
+              retryCountRef.current++;
+              if (retryCountRef.current < 3) {
+                setTimeout(() => {
+                  videoEl.load();
+                  attemptPlay();
+                }, 300);
+                return;
+              }
+            }
+            setPlaybackFailed(true);
+          });
+        }
       };
 
-      // Try to play immediately - no delay
-      attemptPlay();
+      // Add instrumentation event listeners
+      const handleLoadedMetadata = () => {
+        if (DEBUG_METRICS) {
+          performance.mark(`video_${index}_loadedmetadata`);
+          console.log(`[Metrics] Video ${index} | loadedmetadata at ${Math.round(performance.now() - loadStartTimeRef.current)}ms`);
+        }
+      };
       
-      // Listen for canplay for videos not ready
-      const handleCanPlay = () => attemptPlay();
+      const handleCanPlay = () => {
+        if (DEBUG_METRICS) {
+          performance.mark(`video_${index}_canplay`);
+          console.log(`[Metrics] Video ${index} | canplay at ${Math.round(performance.now() - loadStartTimeRef.current)}ms`);
+        }
+        attemptPlay();
+      };
+      
+      videoEl.addEventListener('loadedmetadata', handleLoadedMetadata);
       videoEl.addEventListener('canplay', handleCanPlay);
+
+      // Try to play immediately - video may already be cached from preload
+      if (videoEl.readyState >= 3) {
+        attemptPlay();
+      } else {
+        // Force load if not ready
+        videoEl.load();
+        attemptPlay();
+      }
       
-      return () => videoEl.removeEventListener('canplay', handleCanPlay);
+      return () => {
+        videoEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        videoEl.removeEventListener('canplay', handleCanPlay);
+      };
     } else {
       videoEl.pause();
     }
@@ -343,7 +375,7 @@ export const FeedItem = memo(({
         style={{ paddingBottom: navOffset }}
       />
 
-      {/* Video player - overlays poster */}
+      {/* Video player - overlays poster with aggressive preload */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
@@ -353,7 +385,7 @@ export const FeedItem = memo(({
         loop
         playsInline
         muted={isMuted}
-        preload={isActive ? "auto" : shouldPreload ? "metadata" : "none"}
+        preload={isActive || shouldPreload ? "auto" : "none"}
         onClick={toggleMute}
       />
 
