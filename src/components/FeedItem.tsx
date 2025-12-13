@@ -228,23 +228,6 @@ export const FeedItem = memo(({
         WebkitBackfaceVisibility: 'hidden',
       }}
     >
-      {/* Thumbnail/background layer - ALWAYS visible to prevent black flashes */}
-      <div 
-        className="absolute inset-0 w-full h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900"
-        style={{ 
-          paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
-        }}
-      >
-        {thumbnailUrl && !thumbnailError && (
-          <img
-            src={thumbnailUrl}
-            alt=""
-            className="w-full h-full object-cover md:object-contain"
-            loading={isActive ? "eager" : "lazy"}
-            onError={() => setThumbnailError(true)}
-          />
-        )}
-      </div>
       {/* Only render overlays for active item to prevent ghost outlines */}
       {shouldRenderContent && (
         <>
