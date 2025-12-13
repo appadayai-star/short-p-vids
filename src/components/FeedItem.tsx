@@ -298,52 +298,61 @@ export const FeedItem = memo(({
       
       logEvent('src_assigned', videoSrc.substring(0, 80) + '...');
       
+      const attemptPlay = () => {
+        // Only play if we have enough data
+        if (videoEl.readyState >= 3) { // HAVE_FUTURE_DATA or better
+          videoEl.play().catch((err) => {
+            logEvent('play_error', err.name);
+            if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
+              return;
+            }
+            // Don't retry on AbortError - just wait for canplay
+          });
+        }
+      };
+
+      const handleCanPlay = () => {
+        logEvent('canplay', `readyState: ${videoEl.readyState}`);
+        clearStallTimeout();
+        attemptPlay();
+      };
+
+      const handleLoadedMetadata = () => {
+        logEvent('loadedmetadata', `duration: ${videoEl.duration?.toFixed(1)}s`);
+      };
+
+      const handleLoadStart = () => {
+        logEvent('loadstart');
+      };
+      
       // Add all event listeners
-      videoEl.addEventListener('loadstart', () => logEvent('loadstart'));
-      videoEl.addEventListener('loadedmetadata', () => logEvent('loadedmetadata', `duration: ${videoEl.duration?.toFixed(1)}s`));
-      videoEl.addEventListener('canplay', () => logEvent('canplay'));
+      videoEl.addEventListener('loadstart', handleLoadStart);
+      videoEl.addEventListener('loadedmetadata', handleLoadedMetadata);
+      videoEl.addEventListener('canplay', handleCanPlay);
       videoEl.addEventListener('playing', handlePlayingEvent);
       videoEl.addEventListener('stalled', handleStalledEvent);
       videoEl.addEventListener('waiting', handleWaitingEvent);
       videoEl.addEventListener('error', handleErrorEvent);
       
-      // Start stall timeout immediately
+      // Start stall timeout - only trigger if we never reach canplay
       stallTimeout = setTimeout(() => {
-        if (!isPlaying) {
-          console.warn(`[Timeout] Video ${index} initial load timeout`);
-          logEvent('initial_timeout');
+        if (!isPlaying && videoEl.readyState < 3) {
+          console.warn(`[Timeout] Video ${index} initial load timeout, readyState: ${videoEl.readyState}`);
+          logEvent('initial_timeout', `readyState: ${videoEl.readyState}`);
           handleStalledEvent();
         }
-      }, 5000);
+      }, 8000); // Increased to 8s for slower connections
 
-      const attemptPlay = () => {
-        videoEl.play().catch((err) => {
-          logEvent('play_error', err.name);
-          if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
-            return;
-          }
-          if (err.name === 'NotSupportedError') {
-            retryCountRef.current++;
-            if (retryCountRef.current === 2 && sourceType === 'cloudinary') {
-              setUseFallback(true);
-              return;
-            }
-            if (retryCountRef.current < 4) {
-              setTimeout(() => {
-                videoEl.load();
-                attemptPlay();
-              }, 500);
-              return;
-            }
-          }
-          setPlaybackFailed(true);
-        });
-      };
-
-      attemptPlay();
+      // If already ready (cached), play immediately
+      if (videoEl.readyState >= 3) {
+        attemptPlay();
+      }
 
       return () => {
         clearStallTimeout();
+        videoEl.removeEventListener('loadstart', handleLoadStart);
+        videoEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        videoEl.removeEventListener('canplay', handleCanPlay);
         videoEl.removeEventListener('playing', handlePlayingEvent);
         videoEl.removeEventListener('stalled', handleStalledEvent);
         videoEl.removeEventListener('waiting', handleWaitingEvent);
