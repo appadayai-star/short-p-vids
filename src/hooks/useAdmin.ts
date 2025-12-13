@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 
 export const useAdmin = () => {
-  const { status, user } = useAuth();
+  const { status, user, session } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -10,7 +10,7 @@ export const useAdmin = () => {
     if (status !== "ready") return;
 
     const checkAdminStatus = async () => {
-      if (!user) {
+      if (!user || !session?.access_token) {
         setIsAdmin(false);
         setLoading(false);
         return;
@@ -19,13 +19,13 @@ export const useAdmin = () => {
       try {
         console.log("Checking admin status for user:", user.id);
         
-        // Use raw fetch to avoid Supabase client hanging
+        // Use raw fetch with the user's access token for proper RLS
         const response = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/user_roles?user_id=eq.${user.id}&role=eq.admin&select=role`,
           {
             headers: {
               'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              'Authorization': `Bearer ${session.access_token}`,
               'Content-Type': 'application/json',
             },
           }
@@ -46,7 +46,7 @@ export const useAdmin = () => {
     };
 
     checkAdminStatus();
-  }, [status, user?.id]);
+  }, [status, user?.id, session?.access_token]);
 
   return { user, isAdmin, loading };
 };
