@@ -68,7 +68,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
-  const recentCreatorsRef = useRef<string[]>([]); // Track recent creators for diversity
+  const pageRef = useRef(0);
 
   // Preload next video's source
   const preloadNextVideo = useCallback((nextIndex: number) => {
@@ -105,103 +105,72 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setTimeout(cleanup, 5000);
   }, [videos]);
 
-  // Fetch videos using raw fetch to bypass Supabase client issues
+  // Fetch videos using the recommendation edge function
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
 
     const fetchVideos = async () => {
-      console.log("[VideoFeed] Starting fetch with raw fetch...");
+      console.log("[VideoFeed] Starting fetch...");
       
       try {
-        // Build the query URL
-        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE * 2}`;
-        
-        if (categoryFilter) {
-          url += `&tags=cs.{${categoryFilter}}`;
-        }
-        if (searchQuery) {
-          url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
-        }
-
-        console.log("[VideoFeed] Fetching from:", url);
-        
-        const response = await fetch(url, {
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        console.log("[VideoFeed] Response status:", response.status);
-
-        if (!response.ok) {
-          throw new Error(`HTTP error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log("[VideoFeed] Got data:", data?.length);
-
-        let results = data || [];
-        
-        // Client-side search filtering
-        if (searchQuery) {
-          const q = searchQuery.toLowerCase();
-          results = results.filter((v: Video) =>
-            v.title?.toLowerCase().includes(q) ||
-            v.description?.toLowerCase().includes(q) ||
-            v.profiles?.username?.toLowerCase().includes(q) ||
-            v.tags?.some(t => t.toLowerCase().includes(q))
-          );
-        }
-
-        // Filter out session duplicates - but keep some if we'd have no videos
-        const sessionViewed = getSessionViewedIds();
-        const unseenResults = results.filter((v: Video) => !sessionViewed.has(v.id));
-        
-        // Use unseen videos if available, otherwise show all (user has seen everything)
-        const videosToProcess = unseenResults.length > 0 ? unseenResults : results;
-        
-        if (DEBUG_SCROLL) {
-          console.log('[VideoFeed] Videos from API:', results.length, '| Unseen:', unseenResults.length, '| Using:', videosToProcess.length);
-        }
-
-        // Apply creator diversity - no same creator within last 3 items (but don't filter if it leaves us with no videos)
-        const diverseResults: Video[] = [];
-        const recentCreators: string[] = [];
-        const remainingVideos: Video[] = [];
-        
-        for (const video of videosToProcess) {
-          // Skip if this creator was in last 3 videos - save for later
-          if (recentCreators.slice(-3).includes(video.user_id)) {
-            remainingVideos.push(video);
-            continue;
-          }
-          diverseResults.push(video);
-          recentCreators.push(video.user_id);
-          loadedIdsRef.current.add(video.id);
+        // For search/category, use direct query; for main feed, use recommendation algorithm
+        if (searchQuery || categoryFilter) {
+          // Direct query for filtered views
+          let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE * 2}`;
           
-          if (diverseResults.length >= PAGE_SIZE) break;
-        }
-        
-        // If diversity filter left us with too few videos, add remaining videos
-        if (diverseResults.length < PAGE_SIZE) {
-          for (const video of remainingVideos) {
-            if (diverseResults.length >= PAGE_SIZE) break;
-            diverseResults.push(video);
-            loadedIdsRef.current.add(video.id);
+          if (categoryFilter) {
+            url += `&tags=cs.{${categoryFilter}}`;
           }
-        }
+          if (searchQuery) {
+            url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
+          }
 
-        recentCreatorsRef.current = recentCreators;
-        setVideos(diverseResults);
-        setHasMore(diverseResults.length >= PAGE_SIZE);
-        
-        // Preload second video
-        if (diverseResults.length > 1) {
-          const thumb = getBestThumbnailUrl(diverseResults[1].cloudinary_public_id || null, diverseResults[1].thumbnail_url);
-          preloadImage(thumb);
+          const response = await fetch(url, {
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+
+          let results = await response.json() || [];
+          
+          if (searchQuery) {
+            const q = searchQuery.toLowerCase();
+            results = results.filter((v: Video) =>
+              v.title?.toLowerCase().includes(q) ||
+              v.description?.toLowerCase().includes(q) ||
+              v.profiles?.username?.toLowerCase().includes(q) ||
+              v.tags?.some(t => t.toLowerCase().includes(q))
+            );
+          }
+
+          results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
+          setVideos(results.slice(0, PAGE_SIZE));
+          setHasMore(results.length >= PAGE_SIZE);
+        } else {
+          // Use recommendation edge function for main feed
+          const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
+            body: { userId, page: 0, limit: PAGE_SIZE }
+          });
+
+          if (error) throw error;
+
+          const resultVideos = data?.videos || [];
+          console.log("[VideoFeed] Got recommended videos:", resultVideos.length);
+          
+          resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
+          setVideos(resultVideos);
+          setHasMore(resultVideos.length >= PAGE_SIZE);
+          
+          // Preload second video thumbnail
+          if (resultVideos.length > 1) {
+            const thumb = getBestThumbnailUrl(resultVideos[1].cloudinary_public_id || null, resultVideos[1].thumbnail_url);
+            preloadImage(thumb);
+          }
         }
       } catch (err) {
         console.error("[VideoFeed] Fetch error:", err);
@@ -214,7 +183,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
 
     fetchVideos();
-  }, []);
+  }, [userId]);
 
   // Re-fetch when filters change
   useEffect(() => {
@@ -225,21 +194,17 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       setLoading(true);
       setActiveIndex(0);
       loadedIdsRef.current.clear();
-      recentCreatorsRef.current = [];
+      pageRef.current = 0;
       
       if (containerRef.current) {
         containerRef.current.scrollTop = 0;
       }
 
       try {
-        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE * 2}`;
+        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE}`;
         
-        if (categoryFilter) {
-          url += `&tags=cs.{${categoryFilter}}`;
-        }
-        if (searchQuery) {
-          url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
-        }
+        if (categoryFilter) url += `&tags=cs.{${categoryFilter}}`;
+        if (searchQuery) url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
 
         const response = await fetch(url, {
           headers: {
@@ -251,8 +216,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
         if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
 
-        const data = await response.json();
-        let results = data || [];
+        let results = await response.json() || [];
         
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
@@ -264,34 +228,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           );
         }
 
-        // Apply creator diversity with fallback
-        const diverseResults: Video[] = [];
-        const recentCreators: string[] = [];
-        const remainingVideos: Video[] = [];
-        
-        for (const video of results) {
-          if (recentCreators.slice(-3).includes(video.user_id)) {
-            remainingVideos.push(video);
-            continue;
-          }
-          diverseResults.push(video);
-          recentCreators.push(video.user_id);
-          loadedIdsRef.current.add(video.id);
-          if (diverseResults.length >= PAGE_SIZE) break;
-        }
-        
-        // Add remaining if needed
-        if (diverseResults.length < PAGE_SIZE) {
-          for (const video of remainingVideos) {
-            if (diverseResults.length >= PAGE_SIZE) break;
-            diverseResults.push(video);
-            loadedIdsRef.current.add(video.id);
-          }
-        }
-
-        recentCreatorsRef.current = recentCreators;
-        setVideos(diverseResults);
-        setHasMore(diverseResults.length >= PAGE_SIZE);
+        results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
+        setVideos(results);
+        setHasMore(results.length >= PAGE_SIZE);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load videos");
       } finally {
@@ -338,65 +277,54 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [activeIndex, videos.length, videos, preloadNextVideo]);
 
-  // Load more
+  // Load more - use edge function for main feed, direct query for filters
   useEffect(() => {
     if (!hasMore || isLoadingMore || loading || videos.length === 0) return;
     if (activeIndex < videos.length - 3) return;
 
     const loadMore = async () => {
       setIsLoadingMore(true);
+      pageRef.current += 1;
+      
       try {
-        const offset = videos.length;
-        
-        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&offset=${offset}&limit=${PAGE_SIZE * 2}`;
-        
-        if (categoryFilter) url += `&tags=cs.{${categoryFilter}}`;
-        if (searchQuery) url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
-
-        const response = await fetch(url, {
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-
-        const data = await response.json();
-        const sessionViewed = getSessionViewedIds();
-        
-        // Filter and apply diversity with fallback
-        const newVideos: Video[] = [];
-        const skippedVideos: Video[] = [];
-        
-        for (const video of (data || [])) {
-          if (loadedIdsRef.current.has(video.id)) continue;
-          if (sessionViewed.has(video.id)) continue;
+        if (searchQuery || categoryFilter) {
+          // Direct query for filtered views
+          const offset = videos.length;
+          let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&offset=${offset}&limit=${PAGE_SIZE}`;
           
-          if (recentCreatorsRef.current.slice(-3).includes(video.user_id)) {
-            skippedVideos.push(video);
-            continue;
-          }
+          if (categoryFilter) url += `&tags=cs.{${categoryFilter}}`;
+          if (searchQuery) url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
+
+          const response = await fetch(url, {
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+
+          const data = await response.json();
+          const newVideos = (data || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
+          newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           
-          newVideos.push(video);
-          loadedIdsRef.current.add(video.id);
-          recentCreatorsRef.current.push(video.user_id);
+          setVideos(prev => [...prev, ...newVideos]);
+          setHasMore(newVideos.length > 0);
+        } else {
+          // Use edge function for paginated feed
+          const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
+            body: { userId, page: pageRef.current, limit: PAGE_SIZE }
+          });
+
+          if (error) throw error;
+
+          const newVideos = (data?.videos || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
+          newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           
-          if (newVideos.length >= PAGE_SIZE) break;
+          setVideos(prev => [...prev, ...newVideos]);
+          setHasMore(newVideos.length > 0);
         }
-        
-        // Add skipped videos if needed
-        if (newVideos.length < PAGE_SIZE) {
-          for (const video of skippedVideos) {
-            if (newVideos.length >= PAGE_SIZE) break;
-            newVideos.push(video);
-            loadedIdsRef.current.add(video.id);
-          }
-        }
-        
-        setVideos(prev => [...prev, ...newVideos]);
-        setHasMore(newVideos.length > 0);
       } catch (err) {
         console.error("Load more error:", err);
       } finally {
@@ -405,7 +333,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
 
     loadMore();
-  }, [activeIndex, videos.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter]);
+  }, [activeIndex, videos.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
 
   const handleViewTracked = useCallback(async (videoId: string) => {
     addSessionViewedId(videoId);
