@@ -4,7 +4,6 @@ import { FeedItem } from "./FeedItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 import { getBestThumbnailUrl, preloadImage } from "@/lib/cloudinary";
-import { useAuth } from "@/contexts/AuthContext";
 
 const PAGE_SIZE = 10;
 
@@ -35,7 +34,6 @@ interface VideoFeedProps {
 
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
-  const { status: authStatus } = useAuth();
   
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,34 +44,18 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
+  const hasFetchedRef = useRef(false);
 
-  console.log("[VideoFeed] Render", { authStatus, loading, videosCount: videos.length });
-
-  // Fetch videos
+  // Fetch videos immediately on mount - don't wait for auth
   useEffect(() => {
-    console.log("[VideoFeed] useEffect triggered", { authStatus });
-    
-    if (authStatus !== "ready") {
-      console.log("[VideoFeed] Auth not ready, waiting...");
-      return;
-    }
+    // Only fetch once
+    if (hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
 
-    let cancelled = false;
-    
     const fetchVideos = async () => {
-      console.log("[VideoFeed] Starting fetchVideos...");
-      setLoading(true);
-      setError(null);
-      setActiveIndex(0);
-      loadedIdsRef.current.clear();
+      console.log("[VideoFeed] Starting fetch (no auth wait)...");
       
-      if (containerRef.current) {
-        containerRef.current.scrollTop = 0;
-      }
-
       try {
-        console.log("[VideoFeed] Making Supabase query...");
-        
         let query = supabase
           .from("videos")
           .select(`
@@ -91,18 +73,19 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
         }
 
-        console.log("[VideoFeed] Awaiting query...");
-        const { data, error: queryError } = await query;
-        console.log("[VideoFeed] Query returned", { data: data?.length, error: queryError });
+        console.log("[VideoFeed] Executing query...");
+        const result = await query;
+        console.log("[VideoFeed] Query result:", result);
         
-        if (cancelled) {
-          console.log("[VideoFeed] Cancelled, ignoring result");
-          return;
+        const { data, error: queryError } = result;
+
+        if (queryError) {
+          console.error("[VideoFeed] Query error:", queryError);
+          throw queryError;
         }
 
-        if (queryError) throw queryError;
-
         let results = data || [];
+        console.log("[VideoFeed] Got videos:", results.length);
         
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
@@ -117,32 +100,81 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         results.forEach(v => loadedIdsRef.current.add(v.id));
         setVideos(results);
         setHasMore(results.length === PAGE_SIZE);
-        console.log("[VideoFeed] Videos set", { count: results.length });
         
         if (results.length > 1) {
           const thumb = getBestThumbnailUrl(results[1].cloudinary_public_id || null, results[1].thumbnail_url);
           preloadImage(thumb);
         }
       } catch (err) {
-        if (cancelled) return;
         console.error("[VideoFeed] Fetch error:", err);
         setError(err instanceof Error ? err.message : "Failed to load videos");
         setVideos([]);
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-          console.log("[VideoFeed] Loading set to false");
-        }
+        setLoading(false);
+        console.log("[VideoFeed] Fetch complete, loading=false");
       }
     };
 
     fetchVideos();
+  }, []); // No dependencies - run once on mount
+
+  // Re-fetch when filters change
+  useEffect(() => {
+    if (!hasFetchedRef.current) return; // Don't run on initial mount
     
-    return () => { 
-      cancelled = true; 
-      console.log("[VideoFeed] Cleanup, setting cancelled");
+    const refetch = async () => {
+      setLoading(true);
+      setActiveIndex(0);
+      loadedIdsRef.current.clear();
+      
+      if (containerRef.current) {
+        containerRef.current.scrollTop = 0;
+      }
+
+      try {
+        let query = supabase
+          .from("videos")
+          .select(`
+            id, title, description, video_url, optimized_video_url, stream_url, 
+            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
+            profiles(username, avatar_url)
+          `)
+          .order("created_at", { ascending: false })
+          .limit(PAGE_SIZE);
+
+        if (categoryFilter) {
+          query = query.contains('tags', [categoryFilter]);
+        }
+        if (searchQuery) {
+          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        }
+
+        const { data, error: queryError } = await query;
+        if (queryError) throw queryError;
+
+        let results = data || [];
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          results = results.filter(v =>
+            v.title?.toLowerCase().includes(q) ||
+            v.description?.toLowerCase().includes(q) ||
+            v.profiles?.username?.toLowerCase().includes(q) ||
+            v.tags?.some(t => t.toLowerCase().includes(q))
+          );
+        }
+
+        results.forEach(v => loadedIdsRef.current.add(v.id));
+        setVideos(results);
+        setHasMore(results.length === PAGE_SIZE);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load videos");
+      } finally {
+        setLoading(false);
+      }
     };
-  }, [authStatus, searchQuery, categoryFilter]);
+
+    refetch();
+  }, [searchQuery, categoryFilter]);
 
   // Scroll handling
   useEffect(() => {
@@ -220,16 +252,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const handleRetry = () => {
     window.location.reload();
   };
-
-  // Loading states
-  if (authStatus !== "ready") {
-    return (
-      <div className="flex flex-col justify-center items-center h-[100dvh] bg-black gap-4">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="text-muted-foreground text-sm">Initializing...</p>
-      </div>
-    );
-  }
 
   if (loading) {
     return (
