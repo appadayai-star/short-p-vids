@@ -5,7 +5,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestThumbnailUrl } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,7 +62,6 @@ interface FeedItemProps {
   isActive: boolean;
   currentUserId: string | null;
   onDelete?: (videoId: string) => void;
-  onContainerRef: (index: number, ref: HTMLDivElement | null) => void;
 }
 
 export const FeedItem = memo(({ 
@@ -72,12 +70,8 @@ export const FeedItem = memo(({
   isActive,
   currentUserId, 
   onDelete,
-  onContainerRef
 }: FeedItemProps) => {
   const navigate = useNavigate();
-  const containerRef = useRef<HTMLDivElement>(null);
-  
-  const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
   
   // UI state
   const [isLiked, setIsLiked] = useState(false);
@@ -85,12 +79,6 @@ export const FeedItem = memo(({
   const [isSaved, setIsSaved] = useState(false);
   const [savesCount, setSavesCount] = useState(0);
   const [isShareOpen, setIsShareOpen] = useState(false);
-
-  // Register container ref with parent
-  useEffect(() => {
-    onContainerRef(index, containerRef.current);
-    return () => onContainerRef(index, null);
-  }, [index, onContainerRef]);
 
   // Check if guest has liked this video
   useEffect(() => {
@@ -204,27 +192,20 @@ export const FeedItem = memo(({
 
   return (
     <div 
-      ref={containerRef}
-      className="relative w-full bg-black flex items-center justify-center"
+      className="relative w-full flex items-center justify-center"
       style={{
         height: '100dvh',
         scrollSnapAlign: 'start',
-        scrollSnapStop: 'always'
+        scrollSnapStop: 'always',
+        // Visually neutral - no borders, outlines, shadows, transparent bg
+        background: 'transparent',
+        outline: 'none',
+        border: 'none',
+        boxShadow: 'none'
       }}
     >
-      {/* Thumbnail background - always visible */}
-      <img 
-        src={posterSrc || `https://res.cloudinary.com/dsxmzxb4u/video/fetch/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_0/${encodeURIComponent(video.video_url)}`} 
-        alt="" 
-        className={cn(
-          "absolute inset-0 w-full h-full object-cover md:object-contain bg-black",
-          isActive ? "opacity-0" : "opacity-100"
-        )}
-        loading={index === 0 ? "eager" : "lazy"}
-      />
-
-      {/* Right side actions */}
-      <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-40">
+      {/* Right side actions - pointer-events-auto for clickability */}
+      <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-40 pointer-events-auto">
         <button onClick={toggleLike} className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
             <Heart className={cn("h-7 w-7", isLiked ? "fill-primary text-primary" : "text-white")} />
@@ -264,7 +245,7 @@ export const FeedItem = memo(({
         )}
       </div>
 
-      {/* Bottom info */}
+      {/* Bottom info - pointer-events-auto for clickability */}
       <div className="absolute bottom-0 left-0 right-0 p-4 pb-[100px] z-40 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none pr-[80px]">
         <div className="space-y-2 pointer-events-auto">
           <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>

@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Loader2, RefreshCw, Play, Volume2, VolumeX } from "lucide-react";
 import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
-import { cn } from "@/lib/utils";
 
 // Global mute state - persisted across videos
 let globalMuted = true;
@@ -13,9 +12,6 @@ const setGlobalMuted = (muted: boolean) => {
 };
 
 export const getGlobalMuted = () => globalMuted;
-
-// Scroll lock to prevent multiple rapid scrolls
-let isScrolling = false;
 
 interface Video {
   id: string;
@@ -30,7 +26,6 @@ type VideoStatus = "idle" | "loading" | "ready" | "error" | "needsInteraction";
 
 interface SinglePlayerProps {
   video: Video | null;
-  containerRect: DOMRect | null;
   hasEntered: boolean;
   onViewTracked: (videoId: string) => void;
 }
@@ -40,7 +35,6 @@ const LOAD_TIMEOUT_MS = 8000;
 
 export const SinglePlayer = memo(({ 
   video, 
-  containerRect, 
   hasEntered,
   onViewTracked 
 }: SinglePlayerProps) => {
@@ -58,7 +52,7 @@ export const SinglePlayer = memo(({
   const primarySrc = video ? getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
-    null, // Skip HLS for now - use MP4 for reliability
+    null,
     video.video_url
   ) : "";
   
@@ -125,7 +119,7 @@ export const SinglePlayer = memo(({
     };
   }, []);
 
-  // Reset when video changes - proper sequence: pause → src → load → wait for canplay → play
+  // Reset when video changes
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -137,7 +131,6 @@ export const SinglePlayer = memo(({
       clearLoadTimeout();
       
       if (video) {
-        // Proper sequence for reliable playback
         videoEl.pause();
         videoEl.src = primarySrc;
         setSrc(primarySrc);
@@ -178,7 +171,6 @@ export const SinglePlayer = memo(({
         playPromise
           .then(() => {
             console.log(`[SinglePlayer] Playing video ${video.id}`);
-            // Track view once per video
             if (!trackedViewsRef.current.has(video.id)) {
               trackedViewsRef.current.add(video.id);
               onViewTracked(video.id);
@@ -273,11 +265,8 @@ export const SinglePlayer = memo(({
     }
   }, [primarySrc, startLoadTimeout]);
 
-  // Don't render if no video - but handle missing containerRect gracefully
+  // Don't render if no video
   if (!video) return null;
-
-  // Use fallback dimensions if containerRect is not yet available
-  const rect = containerRect || { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
 
   const showLoading = status === "loading";
   const showError = status === "error";
@@ -285,15 +274,10 @@ export const SinglePlayer = memo(({
 
   return (
     <div 
-      className="fixed z-30 pointer-events-none"
-      style={{
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      }}
+      className="fixed inset-0 z-10 pointer-events-none bg-black"
+      style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
     >
-      {/* Video element - pointer-events-none to allow scroll through */}
+      {/* Video element - fixed fullscreen, never moves */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black pointer-events-none"
@@ -310,25 +294,10 @@ export const SinglePlayer = memo(({
         onError={handleError}
       />
       
-      {/* Tap area - forwards wheel events to container for snap scrolling */}
+      {/* Tap area for mute toggle - pointer-events-auto only here */}
       <div 
         className="absolute inset-0 z-10 pointer-events-auto"
         onClick={handleVideoTap}
-        onWheel={(e) => {
-          e.preventDefault();
-          if (isScrolling) return;
-          
-          isScrolling = true;
-          const container = document.getElementById('video-feed-container');
-          if (container) {
-            const direction = e.deltaY > 0 ? 1 : -1;
-            const currentIndex = Math.round(container.scrollTop / container.clientHeight);
-            const targetScroll = (currentIndex + direction) * container.clientHeight;
-            container.scrollTo({ top: targetScroll, behavior: 'smooth' });
-          }
-          
-          setTimeout(() => { isScrolling = false; }, 500);
-        }}
       />
 
       {/* Loading spinner overlay */}
@@ -342,7 +311,7 @@ export const SinglePlayer = memo(({
 
       {/* Error/Retry overlay */}
       {showError && (
-        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/50">
+        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/50 pointer-events-auto">
           <button
             onClick={handleRetry}
             className="flex flex-col items-center gap-2 bg-black/70 rounded-xl px-6 py-4 hover:bg-black/80 transition-colors"
@@ -355,7 +324,7 @@ export const SinglePlayer = memo(({
 
       {/* Tap to play overlay */}
       {showTapToPlay && (
-        <div className="absolute inset-0 flex items-center justify-center z-20">
+        <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-auto">
           <button
             onClick={handleVideoTap}
             className="flex flex-col items-center gap-2 bg-black/70 rounded-xl px-6 py-4 hover:bg-black/80 transition-colors"
