@@ -46,53 +46,50 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [hasMore, setHasMore] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [page, setPage] = useState(0);
-  const [activeContainerRect, setActiveContainerRect] = useState<DOMRect | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
   
-  // Scroll control refs
+  // Scroll control refs - use refs to avoid stale closures
   const activeIndexRef = useRef(0);
   const wheelLockRef = useRef(false);
   const wheelDeltaRef = useRef(0);
   const scrollSettleTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isScrollingRef = useRef(false);
+  const videosLengthRef = useRef(0);
 
-  // Keep activeIndexRef in sync
+  // Keep refs in sync with state
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
-  // Handle item ref registration
-  const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
-    if (ref) {
-      itemRefsRef.current.set(index, ref);
-    } else {
-      itemRefsRef.current.delete(index);
-    }
-  }, []);
+  useEffect(() => {
+    videosLengthRef.current = videos.length;
+  }, [videos.length]);
 
-  // Scroll to specific index
+  // Scroll to specific index - deterministic, no smooth behavior
   const scrollToIndex = useCallback((index: number) => {
     const container = containerRef.current;
     if (!container) return;
     
-    const clampedIndex = Math.max(0, Math.min(index, videos.length - 1));
-    if (clampedIndex === activeIndexRef.current) return;
+    const maxIndex = videosLengthRef.current - 1;
+    const clampedIndex = Math.max(0, Math.min(index, maxIndex));
     
-    isScrollingRef.current = true;
+    // Skip if already at target or out of bounds
+    if (clampedIndex === activeIndexRef.current || maxIndex < 0) return;
+    
+    // Immediate scroll - no smooth animation
     container.scrollTo({
       top: clampedIndex * container.clientHeight,
-      behavior: 'smooth'
+      behavior: 'auto'
     });
     
+    // Update state immediately
     setActiveIndex(clampedIndex);
     activeIndexRef.current = clampedIndex;
-  }, [videos.length]);
+  }, []);
 
-  // Desktop wheel handler with lock and delta accumulation
+  // Desktop wheel handler - one-step navigation with lock
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
@@ -100,19 +97,25 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       
+      // If locked, ignore all wheel events
       if (wheelLockRef.current) return;
       
+      // Accumulate delta
       wheelDeltaRef.current += e.deltaY;
       
+      // Only trigger when threshold is reached
       if (Math.abs(wheelDeltaRef.current) >= WHEEL_DELTA_THRESHOLD) {
         const direction = wheelDeltaRef.current > 0 ? 1 : -1;
         const targetIndex = activeIndexRef.current + direction;
         
+        // Reset delta and set lock
         wheelDeltaRef.current = 0;
         wheelLockRef.current = true;
         
+        // Navigate
         scrollToIndex(targetIndex);
         
+        // Release lock after delay
         setTimeout(() => {
           wheelLockRef.current = false;
         }, WHEEL_LOCK_MS);
@@ -123,28 +126,28 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     return () => container.removeEventListener('wheel', handleWheel);
   }, [videos.length, scrollToIndex]);
 
-  // Mobile: update activeIndex after scroll settles
+  // Mobile: update activeIndex only after scroll settles (debounce)
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
 
     const handleScroll = () => {
-      // Clear existing timer
+      // Clear any pending timer
       if (scrollSettleTimerRef.current) {
         clearTimeout(scrollSettleTimerRef.current);
       }
       
-      // Debounce: wait for scroll to settle
+      // Debounce: wait for scroll to settle before updating index
       scrollSettleTimerRef.current = setTimeout(() => {
         const scrollTop = container.scrollTop;
         const itemHeight = container.clientHeight;
         const newIndex = Math.round(scrollTop / itemHeight);
         
-        if (newIndex !== activeIndexRef.current && newIndex >= 0 && newIndex < videos.length) {
+        // Only update if different and valid
+        if (newIndex !== activeIndexRef.current && newIndex >= 0 && newIndex < videosLengthRef.current) {
           setActiveIndex(newIndex);
           activeIndexRef.current = newIndex;
         }
-        isScrollingRef.current = false;
       }, SCROLL_SETTLE_MS);
     };
 
@@ -157,31 +160,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [videos.length]);
 
-  // Update active container rect when activeIndex or videos change
-  useEffect(() => {
-    const updateRect = () => {
-      const activeContainer = itemRefsRef.current.get(activeIndex);
-      if (activeContainer) {
-        setActiveContainerRect(activeContainer.getBoundingClientRect());
-      }
-    };
-    
-    updateRect();
-    const timers = [
-      setTimeout(updateRect, 50),
-      setTimeout(updateRect, 150),
-    ];
-    
-    const handleUpdate = () => requestAnimationFrame(updateRect);
-    window.addEventListener('resize', handleUpdate);
-    
-    return () => {
-      timers.forEach(clearTimeout);
-      window.removeEventListener('resize', handleUpdate);
-    };
-  }, [activeIndex, videos.length]);
-
-  // Fetch videos - simple and direct
+  // Fetch videos
   const fetchVideos = useCallback(async (currentSearchQuery: string, currentCategoryFilter: string, currentUserId: string | null) => {
     console.log(`[VideoFeed] Fetching videos...`);
     setIsLoading(true);
@@ -191,7 +170,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setPage(0);
     loadedIdsRef.current.clear();
     
-    // Scroll to top
     if (containerRef.current) {
       containerRef.current.scrollTop = 0;
     }
@@ -247,6 +225,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       setVideos(fetchedVideos);
       setHasMore(fetchedVideos.length === PAGE_SIZE);
 
+      // Warmup first video
       if (fetchedVideos.length > 0) {
         const first = fetchedVideos[0];
         const url = getBestVideoSource(
@@ -384,39 +363,43 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const activeVideo = videos[activeIndex] || null;
 
   return (
-    <div
-      ref={containerRef}
-      id="video-feed-container"
-      className="w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide"
-      style={{ 
-        scrollSnapType: 'y mandatory',
-        overscrollBehaviorY: 'contain',
-        WebkitOverflowScrolling: 'touch',
-        paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))'
-      }}
-    >
+    <>
+      {/* Fixed fullscreen video player - z-10, never moves */}
       <SinglePlayer
         video={activeVideo}
-        containerRect={activeContainerRect}
         hasEntered={hasEntered}
         onViewTracked={handleViewTracked}
       />
-      {videos.map((video, index) => (
-        <FeedItem
-          key={video.id}
-          video={video}
-          index={index}
-          isActive={index === activeIndex}
-          currentUserId={userId}
-          onContainerRef={handleContainerRef}
-        />
-      ))}
-      <div ref={sentinelRef} className="h-20 w-full" />
-      {isLoadingMore && (
-        <div className="flex justify-center py-4 bg-black">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        </div>
-      )}
-    </div>
+      
+      {/* Scrollable feed layer - z-20, on top for controls/metadata */}
+      <div
+        ref={containerRef}
+        id="video-feed-container"
+        className="relative z-20 w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide"
+        style={{ 
+          scrollSnapType: 'y mandatory',
+          scrollBehavior: 'auto',
+          overscrollBehaviorY: 'contain',
+          WebkitOverflowScrolling: 'touch',
+          paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))'
+        }}
+      >
+        {videos.map((video, index) => (
+          <FeedItem
+            key={video.id}
+            video={video}
+            index={index}
+            isActive={index === activeIndex}
+            currentUserId={userId}
+          />
+        ))}
+        <div ref={sentinelRef} className="h-20 w-full" />
+        {isLoadingMore && (
+          <div className="flex justify-center py-4 bg-black">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        )}
+      </div>
+    </>
   );
 };
