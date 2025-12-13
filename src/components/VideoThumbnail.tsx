@@ -54,7 +54,6 @@ export function VideoThumbnail({
       className={className}
       loading="lazy"
       onError={() => {
-        console.warn("Thumbnail load failed:", videoId, imgSrc);
         setImgError(true);
       }}
     />

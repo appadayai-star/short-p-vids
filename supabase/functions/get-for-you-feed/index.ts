@@ -31,31 +31,11 @@ serve(async (req) => {
   }
 
   try {
-    const { userId, page = 0, limit = 10 } = await req.json();
+    const { userId, page = 0, limit = 10, clientId } = await req.json();
 
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? ""
-    );
-
-    // Get user's liked videos and viewed videos for personalization
-    const { data: userLikes } = await supabaseClient
-      .from("likes")
-      .select("video_id, videos(user_id, tags)")
-      .eq("user_id", userId);
-
-    const { data: userViews } = await supabaseClient
-      .from("video_views")
-      .select("video_id")
-      .eq("user_id", userId);
-
-    // Extract user preferences
-    const viewedVideoIds = new Set(userViews?.map((v) => v.video_id) || []);
-    const likedUploaderIds = new Set(
-      userLikes?.map((l: any) => l.videos?.user_id).filter(Boolean) || []
-    );
-    const likedTags = new Set(
-      userLikes?.flatMap((l: any) => l.videos?.tags || []) || []
     );
 
     // Fetch recent videos (last 500 or last 30 days)
@@ -85,6 +65,67 @@ serve(async (req) => {
       }
       return shuffled;
     };
+
+    // For guests (no userId), just return randomized videos sorted by engagement
+    if (!userId) {
+      const scoredVideos = (recentVideos || []).map((video: Video) => {
+        const maxLikes = Math.max(...(recentVideos?.map((v: any) => v.likes_count) || [1]));
+        const maxViews = Math.max(...(recentVideos?.map((v: any) => v.views_count) || [1]));
+        
+        const normalizedLikes = video.likes_count / (1 + maxLikes);
+        const normalizedViews = video.views_count / (1 + maxViews);
+        
+        const ageInDays = (Date.now() - new Date(video.created_at).getTime()) / (1000 * 60 * 60 * 24);
+        const recencyScore = Math.exp(-ageInDays / 7);
+        
+        // Add randomization for variety on each refresh
+        const randomFactor = Math.random() * 0.3;
+        
+        const score = 0.3 * normalizedLikes + 0.2 * normalizedViews + 0.2 * recencyScore + randomFactor;
+        
+        return { ...video, score };
+      });
+
+      // Sort by score and shuffle within tiers for variety
+      const sortedVideos = scoredVideos.sort((a, b) => b.score - a.score);
+      const tierSize = 5;
+      const shuffledResult: typeof sortedVideos = [];
+      for (let i = 0; i < sortedVideos.length; i += tierSize) {
+        const tier = sortedVideos.slice(i, i + tierSize);
+        shuffledResult.push(...shuffleArray(tier));
+      }
+
+      const paginatedVideos = shuffledResult
+        .slice(page * limit, (page + 1) * limit)
+        .map(({ score, ...video }) => video);
+
+      return new Response(
+        JSON.stringify({ videos: paginatedVideos }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // For logged-in users, use personalized algorithm
+    const { data: userLikes } = await supabaseClient
+      .from("likes")
+      .select("video_id, videos(user_id, tags)")
+      .eq("user_id", userId);
+
+    const { data: userViews } = await supabaseClient
+      .from("video_views")
+      .select("video_id")
+      .eq("user_id", userId);
+
+    // Extract user preferences
+    const viewedVideoIds = new Set(userViews?.map((v) => v.video_id) || []);
+    const likedUploaderIds = new Set(
+      userLikes?.map((l: any) => l.videos?.user_id).filter(Boolean) || []
+    );
+    const likedTags = new Set(
+      userLikes?.flatMap((l: any) => l.videos?.tags || []) || []
+    );
 
     // Calculate scores for each video
     const scoredVideos = (recentVideos || []).map((video: Video) => {
