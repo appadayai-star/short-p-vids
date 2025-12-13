@@ -198,26 +198,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     try {
       let fetchedVideos: Video[] = [];
 
-      if (isForYouFeed) {
-        const fetchPromise = supabase.functions.invoke('get-for-you-feed', {
-          body: { userId: currentUserId, page: 0, limit: PAGE_SIZE },
-          headers: { 'x-debug-id': debugId },
-        });
-
-        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
-        
-        if (signal.aborted) {
-          debugLog("VideoFeed", "Fetch aborted");
-          return;
-        }
-        
-        if (error) {
-          debugError("VideoFeed", "Edge function error", error);
-          throw new Error(error.message || "Failed to load feed");
-        }
-        
-        fetchedVideos = data?.videos || [];
-      } else {
+      // Helper function for direct database query (fallback)
+      const fetchFromDatabase = async (): Promise<Video[]> => {
+        debugLog("VideoFeed", "Using direct database query");
         let query = supabase
           .from("videos")
           .select(`
@@ -235,26 +218,55 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           query = query.or(`title.ilike.%${currentSearchQuery}%,description.ilike.%${currentSearchQuery}%`);
         }
 
-        const fetchPromise = query;
-        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
-        
-        if (signal.aborted) {
-          debugLog("VideoFeed", "Fetch aborted");
-          return;
-        }
-        
+        const { data, error } = await query;
         if (error) throw error;
-        fetchedVideos = data || [];
-
+        
+        let videos = data || [];
         if (currentSearchQuery) {
           const q = currentSearchQuery.toLowerCase();
-          fetchedVideos = fetchedVideos.filter(v =>
+          videos = videos.filter(v =>
             v.title?.toLowerCase().includes(q) ||
             v.description?.toLowerCase().includes(q) ||
             v.profiles?.username?.toLowerCase().includes(q) ||
             v.tags?.some(t => t.toLowerCase().includes(q))
           );
         }
+        return videos;
+      };
+
+      if (isForYouFeed) {
+        try {
+          // Try edge function first with a shorter timeout
+          const edgeFunctionTimeout = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("Edge function timeout")), 5000);
+          });
+
+          const fetchPromise = supabase.functions.invoke('get-for-you-feed', {
+            body: { userId: currentUserId, page: 0, limit: PAGE_SIZE },
+            headers: { 'x-debug-id': debugId },
+          });
+
+          const { data, error } = await Promise.race([fetchPromise, edgeFunctionTimeout]);
+          
+          if (signal.aborted) {
+            debugLog("VideoFeed", "Fetch aborted");
+            return;
+          }
+          
+          if (error) {
+            debugError("VideoFeed", "Edge function error, falling back to direct query", error);
+            fetchedVideos = await fetchFromDatabase();
+          } else {
+            fetchedVideos = data?.videos || [];
+            debugLog("VideoFeed", `Edge function returned ${fetchedVideos.length} videos`);
+          }
+        } catch (edgeError) {
+          // Edge function failed, fallback to direct database query
+          debugLog("VideoFeed", "Edge function failed, using fallback", edgeError);
+          fetchedVideos = await fetchFromDatabase();
+        }
+      } else {
+        fetchedVideos = await fetchFromDatabase();
       }
 
       const duration = Date.now() - startTime;
