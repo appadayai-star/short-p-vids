@@ -193,94 +193,54 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     try {
       let fetchedVideos: Video[] = [];
 
-      // Helper function for direct database query (fallback) with its own timeout
+      // Direct database query - simple and reliable
       const fetchFromDatabase = async (): Promise<Video[]> => {
-        debugLog("VideoFeed", "Using direct database query...");
+        debugLog("VideoFeed", "Fetching from database...");
         
-        const dbTimeout = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error("Database query timeout after 8s")), 8000);
+        let query = supabase
+          .from("videos")
+          .select(`
+            id, title, description, video_url, optimized_video_url, stream_url, 
+            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
+            profiles(username, avatar_url)
+          `)
+          .order("created_at", { ascending: false })
+          .limit(PAGE_SIZE);
+
+        if (currentCategoryFilter) {
+          query = query.contains('tags', [currentCategoryFilter]);
+        }
+        if (currentSearchQuery) {
+          query = query.or(`title.ilike.%${currentSearchQuery}%,description.ilike.%${currentSearchQuery}%`);
+        }
+
+        const { data, error } = await query;
+        
+        debugLog("VideoFeed", "Database response", { 
+          hasData: !!data, 
+          count: data?.length || 0,
+          error: error?.message || null 
         });
-
-        const queryPromise = (async () => {
-          let query = supabase
-            .from("videos")
-            .select(`
-              id, title, description, video_url, optimized_video_url, stream_url, 
-              cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-              profiles(username, avatar_url)
-            `)
-            .order("created_at", { ascending: false })
-            .range(0, PAGE_SIZE - 1);
-
-          if (currentCategoryFilter) {
-            query = query.contains('tags', [currentCategoryFilter]);
-          }
-          if (currentSearchQuery) {
-            query = query.or(`title.ilike.%${currentSearchQuery}%,description.ilike.%${currentSearchQuery}%`);
-          }
-
-          const { data, error } = await query;
-          
-          debugLog("VideoFeed", "Database query completed", { 
-            hasData: !!data, 
-            count: data?.length || 0,
-            error: error?.message || null 
-          });
-          
-          if (error) throw error;
-          
-          let videos = data || [];
-          if (currentSearchQuery) {
-            const q = currentSearchQuery.toLowerCase();
-            videos = videos.filter(v =>
-              v.title?.toLowerCase().includes(q) ||
-              v.description?.toLowerCase().includes(q) ||
-              v.profiles?.username?.toLowerCase().includes(q) ||
-              v.tags?.some(t => t.toLowerCase().includes(q))
-            );
-          }
-          return videos;
-        })();
-
-        return Promise.race([queryPromise, dbTimeout]);
+        
+        if (error) throw error;
+        
+        let videos = data || [];
+        if (currentSearchQuery) {
+          const q = currentSearchQuery.toLowerCase();
+          videos = videos.filter(v =>
+            v.title?.toLowerCase().includes(q) ||
+            v.description?.toLowerCase().includes(q) ||
+            v.profiles?.username?.toLowerCase().includes(q) ||
+            v.tags?.some(t => t.toLowerCase().includes(q))
+          );
+        }
+        return videos;
       };
 
-      if (isForYouFeed) {
-        try {
-          // Try edge function first with a shorter timeout (5s)
-          const edgeFunctionTimeout = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error("Edge function timeout")), 5000);
-          });
-
-          debugLog("VideoFeed", "Trying edge function...");
-          
-          const fetchPromise = supabase.functions.invoke('get-for-you-feed', {
-            body: { userId: currentUserId, page: 0, limit: PAGE_SIZE },
-            headers: { 'x-debug-id': debugId },
-          });
-
-          const { data, error } = await Promise.race([fetchPromise, edgeFunctionTimeout]);
-          
-          if (signal.aborted) {
-            debugLog("VideoFeed", "Fetch aborted");
-            return;
-          }
-          
-          if (error) {
-            debugError("VideoFeed", "Edge function error, falling back", error);
-            fetchedVideos = await fetchFromDatabase();
-          } else {
-            fetchedVideos = data?.videos || [];
-            debugLog("VideoFeed", `Edge function returned ${fetchedVideos.length} videos`);
-          }
-        } catch (edgeError) {
-          // Edge function failed, fallback to direct database query
-          debugLog("VideoFeed", "Edge function failed, using fallback", edgeError);
-          fetchedVideos = await fetchFromDatabase();
-        }
-      } else {
-        fetchedVideos = await fetchFromDatabase();
-      }
+      // Skip edge function entirely for now - go direct to database
+      // This eliminates the timeout complexity that's causing issues
+      debugLog("VideoFeed", "Fetching videos directly from database (bypassing edge function)");
+      fetchedVideos = await fetchFromDatabase();
 
       const duration = Date.now() - startTime;
       debugLog("VideoFeed", `Fetch success`, {
