@@ -49,14 +49,13 @@ export const SinglePlayer = memo(({
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
 
   // Compute video sources - always use MP4 for reliability
-  const videoSource = video ? getBestVideoSource(
+  const primarySrc = video ? getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     null,
     video.video_url
-  ) : null;
+  ) : "";
   
-  const primarySrc = videoSource?.url || "";
   const fallbackSrc = video?.optimized_video_url || video?.video_url || "";
   const lastResortSrc = video?.video_url || "";
   const posterSrc = video ? getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url) : "";

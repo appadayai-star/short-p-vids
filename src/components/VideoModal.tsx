@@ -272,13 +272,12 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
           </div>
         ) : (
           videos.map((video, index) => {
-            const videoSource = getBestVideoSource(
+            const videoSrc = getBestVideoSource(
               video.cloudinary_public_id || null,
               video.optimized_video_url || null,
               video.stream_url || null,
               video.video_url
             );
-            const videoSrc = videoSource.url;
             const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
             const isActive = index === activeIndex;
             const isNearby = Math.abs(index - activeIndex) <= 1;

@@ -85,12 +85,14 @@ serve(async (req) => {
           .update({ processing_status: "processing" })
           .eq("id", video.id);
 
-        // CANONICAL TRANSFORMATION - same as process-video for consistency
-        const CANONICAL_TRANSFORM = "f_mp4,vc_h264,ac_aac,c_limit,h_720,fps_30,br_1200k,q_auto:eco,fl_faststart";
-        
-        // Generate Cloudinary signature - NOT async so transform completes before we continue
+        // Generate Cloudinary signature
         const timestamp = Math.floor(Date.now() / 1000);
-        const signatureString = `eager=${CANONICAL_TRANSFORM}&folder=optimized&public_id=${video.id}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+        const eagerTransforms = [
+          "f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k",
+          "sp_hd/m3u8"
+        ].join("|");
+        
+        const signatureString = `eager=${eagerTransforms}&eager_async=true&folder=optimized&public_id=${video.id}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
         
         const encoder = new TextEncoder();
         const data = encoder.encode(signatureString);
@@ -98,7 +100,7 @@ serve(async (req) => {
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
-        // Upload to Cloudinary with synchronous eager transform
+        // Upload to Cloudinary
         const formData = new FormData();
         formData.append("file", video.video_url);
         formData.append("api_key", CLOUDINARY_API_KEY);
@@ -107,8 +109,8 @@ serve(async (req) => {
         formData.append("public_id", video.id);
         formData.append("folder", "optimized");
         formData.append("resource_type", "video");
-        formData.append("eager", CANONICAL_TRANSFORM);
-        // NOT async - wait for transform to complete
+        formData.append("eager", eagerTransforms);
+        formData.append("eager_async", "true");
 
         const cloudinaryResponse = await fetch(
           `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`,
@@ -121,27 +123,11 @@ serve(async (req) => {
           throw new Error(cloudinaryResult.error.message);
         }
 
-        const publicId = cloudinaryResult.public_id;
-        
-        // Extract the eager transformation result URL (the pre-generated MP4)
-        let optimizedVideoUrl: string | null = null;
-        if (cloudinaryResult.eager && cloudinaryResult.eager.length > 0) {
-          optimizedVideoUrl = cloudinaryResult.eager[0].secure_url;
-        } else {
-          // Fallback: construct the canonical URL manually
-          optimizedVideoUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${CANONICAL_TRANSFORM}/${publicId}.mp4`;
-        }
-        
-        // Generate thumbnail URL
-        const thumbnailUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_0/${publicId}.jpg`;
-
-        // Update video with cloudinary_public_id AND optimized_video_url
+        // Update video with cloudinary_public_id
         await supabase
           .from("videos")
           .update({
-            cloudinary_public_id: publicId,
-            optimized_video_url: optimizedVideoUrl,
-            thumbnail_url: thumbnailUrl,
+            cloudinary_public_id: cloudinaryResult.public_id,
             processing_status: "completed",
           })
           .eq("id", video.id);
