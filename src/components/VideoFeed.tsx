@@ -313,6 +313,34 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   }, [searchQuery, categoryFilter, userId, isLoadingMore]);
 
+  // Preload/warm next video and thumbnail when activeIndex changes
+  useEffect(() => {
+    if (videos.length === 0) return;
+    
+    const nextIndex = activeIndex + 1;
+    if (nextIndex < videos.length) {
+      const nextVideo = videos[nextIndex];
+      const nextVideoUrl = getBestVideoSource(
+        nextVideo.cloudinary_public_id || null,
+        nextVideo.optimized_video_url || null,
+        nextVideo.stream_url || null,
+        nextVideo.video_url
+      );
+      
+      // Warm next video with HEAD request
+      fetch(nextVideoUrl, { method: 'HEAD', mode: 'cors' }).catch(() => {});
+      
+      // Also preload next thumbnail
+      const nextThumbUrl = nextVideo.cloudinary_public_id 
+        ? `https://res.cloudinary.com/dsxmzxb4u/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/${nextVideo.cloudinary_public_id}.jpg`
+        : nextVideo.thumbnail_url;
+      if (nextThumbUrl) {
+        const img = new Image();
+        img.src = nextThumbUrl;
+      }
+    }
+  }, [activeIndex, videos]);
+
   // Desktop: load more when approaching end
   useEffect(() => {
     if (!isDesktop || !hasMore || isLoadingMore || isLoading) return;
@@ -449,7 +477,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         id="video-feed-container"
         className="relative z-20 w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide"
         style={{ 
-          outline: '5px solid blue',
           scrollSnapType: 'y mandatory',
           overscrollBehavior: 'contain',
           WebkitOverflowScrolling: 'touch',

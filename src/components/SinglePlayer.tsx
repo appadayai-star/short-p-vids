@@ -272,6 +272,9 @@ export const SinglePlayer = memo(({
   const showError = status === "error";
   const showTapToPlay = status === "needsInteraction";
 
+  // Video is visible (opacity 1) only when ready
+  const videoOpacity = status === "ready" ? 1 : 0;
+
   return (
     <div 
       className="fixed inset-0 z-10 pointer-events-none"
@@ -280,20 +283,15 @@ export const SinglePlayer = memo(({
         backgroundColor: 'transparent'
       }}
     >
-      {/* Thumbnail layer - always visible underneath video */}
-      {posterSrc && (
-        <img
-          src={posterSrc}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover md:object-contain pointer-events-none"
-        />
-      )}
-      
-      {/* Video element - overlays thumbnail, transparent until loaded */}
+      {/* Video element - fades in when ready, thumbnail shows through when transparent */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain pointer-events-none"
-        style={{ backgroundColor: 'transparent' }}
+        style={{ 
+          backgroundColor: 'transparent',
+          opacity: videoOpacity,
+          transition: 'opacity 150ms ease-in-out',
+        }}
         loop
         playsInline
         muted={isMuted}

@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
+import { getBestThumbnailUrl } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -206,6 +207,9 @@ export const FeedItem = memo(({
         height: '100dvh',
       };
 
+  // Get thumbnail URL
+  const thumbnailUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+
   return (
     <div 
       className="relative w-full flex items-center justify-center"
@@ -223,6 +227,25 @@ export const FeedItem = memo(({
         WebkitBackfaceVisibility: 'hidden',
       }}
     >
+      {/* Thumbnail layer - ALWAYS visible to prevent black flashes */}
+      <div 
+        className="absolute inset-0 w-full h-full"
+        style={{ 
+          paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        {thumbnailUrl ? (
+          <img
+            src={thumbnailUrl}
+            alt=""
+            className="w-full h-full object-cover md:object-contain"
+            loading={isActive ? "eager" : "lazy"}
+          />
+        ) : (
+          /* Fallback gradient if no thumbnail */
+          <div className="w-full h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900" />
+        )}
+      </div>
       {/* Only render overlays for active item to prevent ghost outlines */}
       {shouldRenderContent && (
         <>
