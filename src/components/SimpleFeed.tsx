@@ -291,8 +291,13 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
     <div
       ref={containerRef}
       id="video-feed-container"
-      className="w-full h-[100dvh] snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scrollbar-hide"
-      style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
+      className="w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide"
+      style={{ 
+        paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        scrollSnapType: 'y mandatory',
+        scrollBehavior: 'smooth',
+        overscrollBehavior: 'contain'
+      }}
     >
       {/* Single shared video player */}
       <SimplePlayer
