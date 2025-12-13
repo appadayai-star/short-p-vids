@@ -92,18 +92,17 @@ serve(async (req) => {
     // Generate Cloudinary signature for upload
     const timestamp = Math.floor(Date.now() / 1000);
     
-    // Eager transformations:
-    // 1. MP4 for progressive download (fallback)
-    // 2. HLS for adaptive streaming (primary for mobile)
-    const eagerTransforms = [
-      // Progressive MP4 - optimized for quick start
-      "f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k",
-      // HLS adaptive streaming - multiple bitrates for smooth playback
-      "sp_hd/m3u8"
-    ].join("|");
+    // CANONICAL TRANSFORMATION - used for both eager generation AND playback URL
+    // This ensures CDN cache hits since upload and playback use identical transforms
+    const CANONICAL_TRANSFORM = "f_mp4,vc_h264,ac_aac,c_limit,h_720,fps_30,br_1200k,q_auto:eco,fl_faststart";
+    
+    // Eager transformations - generate the canonical MP4 synchronously (not async)
+    // so it's ready immediately after upload
+    const eagerTransforms = CANONICAL_TRANSFORM;
     
     // Create signature for authenticated upload
-    const signatureString = `eager=${eagerTransforms}&eager_async=true&folder=optimized&public_id=${videoId}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+    // NOTE: eager_async=false so we wait for transform to complete
+    const signatureString = `eager=${eagerTransforms}&folder=optimized&public_id=${videoId}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
     
     // Hash the signature using crypto
     const encoder = new TextEncoder();
@@ -112,7 +111,7 @@ serve(async (req) => {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
-    console.log("Uploading to Cloudinary with HLS and MP4 transformations");
+    console.log("Uploading to Cloudinary with canonical transform:", CANONICAL_TRANSFORM);
 
     // Upload video to Cloudinary with transformations
     const formData = new FormData();
@@ -124,7 +123,8 @@ serve(async (req) => {
     formData.append("folder", "optimized");
     formData.append("resource_type", "video");
     formData.append("eager", eagerTransforms);
-    formData.append("eager_async", "true"); // Process HLS in background
+    // NOT async - wait for transform to complete so URL is immediately usable
+    // formData.append("eager_async", "true");
 
     const cloudinaryResponse = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`,
@@ -145,17 +145,31 @@ serve(async (req) => {
     console.log("Original size:", cloudinaryResult.bytes, "bytes");
     console.log("Public ID:", cloudinaryResult.public_id);
 
-    // Store the public_id - URLs are generated dynamically on frontend
+    // Extract the eager transformation result URL (the pre-generated MP4)
     const publicId = cloudinaryResult.public_id;
+    let optimizedVideoUrl: string | null = null;
+    
+    // Get the eager transform result - this is the canonical URL we'll use for playback
+    if (cloudinaryResult.eager && cloudinaryResult.eager.length > 0) {
+      optimizedVideoUrl = cloudinaryResult.eager[0].secure_url;
+      console.log("Eager transform URL (canonical):", optimizedVideoUrl);
+    } else {
+      // Fallback: construct the canonical URL manually
+      optimizedVideoUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${CANONICAL_TRANSFORM}/${publicId}.mp4`;
+      console.log("Constructed canonical URL:", optimizedVideoUrl);
+    }
 
-    console.log("Cloudinary public_id:", publicId);
+    // Generate thumbnail URL with deterministic transform
+    const thumbnailUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_0/${publicId}.jpg`;
+    console.log("Thumbnail URL:", thumbnailUrl);
 
-    // Update the video record with cloudinary_public_id
-    // URLs are now generated dynamically on the frontend for flexibility
+    // Update the video record with BOTH public_id AND the canonical optimized URL
     const { error: updateError } = await supabase
       .from("videos")
       .update({
         cloudinary_public_id: publicId,
+        optimized_video_url: optimizedVideoUrl, // Store the exact URL for playback
+        thumbnail_url: thumbnailUrl,
         processing_status: "completed",
       })
       .eq("id", videoId);
