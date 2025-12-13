@@ -76,22 +76,7 @@ export function preloadImage(src: string): void {
   }
 }
 
-// Warm video source with Range request for first 200KB
-// This primes DNS/TLS and caches the video start for instant playback
+// Warm video source - simple and non-blocking
 export function warmVideoSource(src: string): void {
-  if (!src) return;
-  
-  try {
-    // Use Range request to fetch first 200KB (enough for moov atom + first frames)
-    fetch(src, {
-      method: 'GET',
-      headers: { 'Range': 'bytes=0-204799' },
-      mode: 'cors',
-      credentials: 'omit',
-    }).catch(() => {
-      // Ignore errors - this is just warming
-    });
-  } catch {
-    // Ignore - non-blocking warmup
-  }
+  // No-op - let video element handle preloading naturally
 }
