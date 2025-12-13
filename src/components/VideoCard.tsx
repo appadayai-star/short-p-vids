@@ -102,12 +102,13 @@ export const VideoCard = memo(({
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Core video state - use dynamic Cloudinary URLs when available
-  const primarySrc = getBestVideoSource(
+  const videoSource = getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     video.stream_url || null,
     video.video_url
   );
+  const primarySrc = videoSource.url;
   const fallbackSrc = video.optimized_video_url || video.video_url;
   const lastResortSrc = video.video_url;
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);

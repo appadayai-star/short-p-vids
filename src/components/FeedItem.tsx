@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestThumbnailUrl, getOptimizedVideoUrl } from "@/lib/cloudinary";
+import { getBestThumbnailUrl, getBestVideoSource } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -99,19 +99,27 @@ interface FeedItemProps {
 
 // Smart video source selection with fallback tracking
 function getVideoSource(
-  cloudinaryPublicId: string | null,
-  originalVideoUrl: string,
+  video: { 
+    cloudinary_public_id?: string | null;
+    optimized_video_url?: string | null;
+    video_url: string;
+  },
   useFallback: boolean
-): { src: string; sourceType: 'cloudinary' | 'supabase' } {
-  // If fallback mode or no cloudinary ID, use Supabase
-  if (useFallback || !cloudinaryPublicId) {
-    return { src: originalVideoUrl, sourceType: 'supabase' };
+): { src: string; sourceType: 'optimized' | 'cloudinary' | 'supabase' } {
+  // If fallback mode, use Supabase directly
+  if (useFallback) {
+    return { src: video.video_url, sourceType: 'supabase' };
   }
   
-  // Use Cloudinary - getOptimizedVideoUrl handles cleanup
-  const cloudinaryUrl = getOptimizedVideoUrl(cloudinaryPublicId);
+  // Use getBestVideoSource which prioritizes pre-generated optimized_video_url
+  const result = getBestVideoSource(
+    video.cloudinary_public_id || null,
+    video.optimized_video_url || null,
+    null,
+    video.video_url
+  );
   
-  return { src: cloudinaryUrl, sourceType: 'cloudinary' };
+  return { src: result.url, sourceType: result.type };
 }
 
 export const FeedItem = memo(({ 
@@ -149,8 +157,7 @@ export const FeedItem = memo(({
 
   // Get video source with fallback logic
   const { src: videoSrc, sourceType } = getVideoSource(
-    video.cloudinary_public_id || null,
-    video.video_url,
+    video,
     useFallback
   );
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
@@ -244,9 +251,13 @@ export const FeedItem = memo(({
       if (!isPlaying && isActive) {
         retryCountRef.current++;
         
-        // On 2nd retry, fallback to Supabase
-        if (retryCountRef.current === 2 && sourceType === 'cloudinary') {
-          console.warn(`[Fallback] Video ${index} switching to Supabase after Cloudinary failure`);
+        // For 'optimized' source (pre-generated URL), fallback immediately on first stall
+        // For 'cloudinary' (dynamic), allow one retry before fallback
+        const shouldFallback = (sourceType === 'optimized' && retryCountRef.current >= 1) ||
+                               (sourceType === 'cloudinary' && retryCountRef.current >= 2);
+        
+        if (shouldFallback && !useFallback) {
+          console.warn(`[Fallback] Video ${index} switching to Supabase after ${sourceType} failure`);
           logEvent('fallback', 'Switching to Supabase');
           setUseFallback(true);
           return;
@@ -264,8 +275,12 @@ export const FeedItem = memo(({
     const handleWaitingEvent = () => {
       logEvent('waiting');
       if (!stallTimeout && isActive && !isPlaying) {
-        // Fast fallback - 1.5s for Cloudinary (likely transform delay), 3s for Supabase
-        const timeout = sourceType === 'cloudinary' ? 1500 : 3000;
+        // First video gets longer timeout (10s), subsequent videos get shorter (5s)
+        // Pre-generated 'optimized' URLs should load fast, so shorter timeout
+        const isFirstVideo = index === 0;
+        const baseTimeout = sourceType === 'optimized' ? 3000 : (sourceType === 'cloudinary' ? 2000 : 5000);
+        const timeout = isFirstVideo ? Math.max(baseTimeout, 8000) : baseTimeout;
+        
         stallTimeout = setTimeout(() => {
           console.warn(`[Timeout] Video ${index} stalled for ${timeout}ms`);
           logEvent('timeout', `${timeout}ms elapsed`);
@@ -336,8 +351,12 @@ export const FeedItem = memo(({
       videoEl.addEventListener('waiting', handleWaitingEvent);
       videoEl.addEventListener('error', handleErrorEvent);
       
-      // Start stall timeout - fast for Cloudinary (on-the-fly transforms are slow), longer for Supabase
-      const initialTimeout = sourceType === 'cloudinary' ? 2000 : 4000;
+      // Initial timeout - first video gets more time to establish connection
+      // Pre-generated 'optimized' URLs should be fast (already cached), cloudinary slower
+      const isFirstVideo = index === 0;
+      const baseTimeout = sourceType === 'optimized' ? 4000 : (sourceType === 'cloudinary' ? 3000 : 6000);
+      const initialTimeout = isFirstVideo ? 10000 : baseTimeout;
+      
       stallTimeout = setTimeout(() => {
         if (!isPlaying && videoEl.readyState < 3) {
           console.warn(`[Timeout] Video ${index} initial load timeout after ${initialTimeout}ms, readyState: ${videoEl.readyState}`);

@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { FeedItem } from "./FeedItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
-import { getBestThumbnailUrl, preloadImage, getBestVideoSource } from "@/lib/cloudinary";
+import { getBestThumbnailUrl, preloadImage, getBestVideoSource, warmupVideoUrl } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -82,7 +82,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     preloadImage(thumb);
     
     // Warm video source by creating a hidden video element
-    const videoSrc = getBestVideoSource(
+    const videoSource = getBestVideoSource(
       nextVideo.cloudinary_public_id || null,
       nextVideo.optimized_video_url || null,
       nextVideo.stream_url || null,
@@ -92,7 +92,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     // Create hidden preload video
     const preloadVideo = document.createElement('video');
     preloadVideo.preload = 'metadata';
-    preloadVideo.src = videoSrc;
+    preloadVideo.src = videoSource.url;
     preloadVideo.muted = true;
     preloadVideo.load();
     
@@ -232,6 +232,17 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
         setVideos(results);
         setHasMore(results.length >= PAGE_SIZE);
+        
+        // Warmup first video URL with HEAD request for faster initial load
+        if (results.length > 0) {
+          const firstVideoSource = getBestVideoSource(
+            results[0].cloudinary_public_id || null,
+            results[0].optimized_video_url || null,
+            results[0].stream_url || null,
+            results[0].video_url
+          );
+          warmupVideoUrl(firstVideoSource.url);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load videos");
       } finally {
