@@ -69,7 +69,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
   const pageRef = useRef(0);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Preload next video's source
   const preloadNextVideo = useCallback((nextIndex: number) => {
@@ -154,8 +153,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setHasMore(results.length >= PAGE_SIZE);
         } else {
           // Use recommendation edge function for main feed
+          const sessionViewedIds = Array.from(getSessionViewedIds());
           const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-            body: { userId, page: 0, limit: PAGE_SIZE }
+            body: { userId, page: 0, limit: PAGE_SIZE, sessionViewedIds }
           });
 
           if (error) throw error;
@@ -242,42 +242,42 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     refetch();
   }, [searchQuery, categoryFilter]);
 
-  // Native scroll-snap based detection - simple and reliable
+  // Intersection observer for active detection - 40% threshold for earlier activation
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || videos.length === 0) return;
 
-    const handleScroll = () => {
-      // Debounce scroll events
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-      
-      scrollTimeoutRef.current = setTimeout(() => {
-        const scrollTop = container.scrollTop;
-        const itemHeight = container.clientHeight;
-        const newIndex = Math.round(scrollTop / itemHeight);
-        
-        if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
-          setActiveIndex(newIndex);
-          
-          // Track session view
-          if (videos[newIndex]) {
-            addSessionViewedId(videos[newIndex].id);
-          }
-          
-          // Preload next video
-          preloadNextVideo(newIndex + 1);
-        }
-      }, 100);
-    };
+    const observers: IntersectionObserver[] = [];
+    
+    const items = container.querySelectorAll('[data-video-index]');
+    items.forEach((item) => {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
+              const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
+              if (idx !== activeIndex) {
+                setActiveIndex(idx);
+                
+                // Track session view
+                if (videos[idx]) {
+                  addSessionViewedId(videos[idx].id);
+                }
+                
+                // Preload next video immediately
+                preloadNextVideo(idx + 1);
+              }
+            }
+          });
+        },
+        { threshold: [0.4, 0.6, 0.8], root: container }
+      );
+      observer.observe(item);
+      observers.push(observer);
+    });
 
-    container.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
-      container.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
+      observers.forEach(obs => obs.disconnect());
     };
   }, [videos, activeIndex, preloadNextVideo]);
 
@@ -321,8 +321,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setHasMore(newVideos.length > 0);
         } else {
           // Use edge function for paginated feed
+          const sessionViewedIds = Array.from(getSessionViewedIds());
           const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-            body: { userId, page: pageRef.current, limit: PAGE_SIZE }
+            body: { userId, page: pageRef.current, limit: PAGE_SIZE, sessionViewedIds }
           });
 
           if (error) throw error;
@@ -396,18 +397,33 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         scrollSnapType: 'y mandatory',
       }}
     >
-      {videos.map((video, index) => (
-        <FeedItem
-          key={video.id}
-          video={video}
-          index={index}
-          isActive={index === activeIndex}
-          shouldPreload={Math.abs(index - activeIndex) <= 1}
-          hasEntered={hasEntered}
-          currentUserId={userId}
-          onViewTracked={handleViewTracked}
-        />
-      ))}
+      {videos.map((video, index) => {
+        // Virtualization: only render videos within range
+        const isInRange = Math.abs(index - activeIndex) <= 3;
+        if (!isInRange) {
+          // Placeholder for virtualized items
+          return (
+            <div
+              key={video.id}
+              data-video-index={index}
+              className="w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
+            />
+          );
+        }
+        
+        return (
+          <FeedItem
+            key={video.id}
+            video={video}
+            index={index}
+            isActive={index === activeIndex}
+            shouldPreload={Math.abs(index - activeIndex) <= 1}
+            hasEntered={hasEntered}
+            currentUserId={userId}
+            onViewTracked={handleViewTracked}
+          />
+        );
+      })}
       {isLoadingMore && (
         <div className="flex justify-center py-4 bg-black h-20">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
