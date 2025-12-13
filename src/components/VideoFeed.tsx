@@ -1,14 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { FeedItem } from "./FeedItem";
+import { FeedThumbnail } from "./feed/FeedThumbnail";
+import { SinglePlayer } from "./feed/SinglePlayer";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
-import { getBestThumbnailUrl, preloadImage, getBestVideoSource, warmupVideoUrl } from "@/lib/cloudinary";
+import { getBestThumbnailUrl, preloadImage } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const DEBUG_SCROLL = import.meta.env.DEV;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SCROLL_SETTLE_DELAY = 120; // ms to wait after scroll stops
 
 interface Video {
   id: string;
@@ -35,7 +36,7 @@ interface VideoFeedProps {
   userId: string | null;
 }
 
-// Get session-viewed videos to prevent duplicates within session
+// Session-viewed tracking
 const getSessionViewedIds = (): Set<string> => {
   try {
     const viewed = sessionStorage.getItem('session_viewed_videos');
@@ -49,7 +50,6 @@ const addSessionViewedId = (videoId: string) => {
   try {
     const viewed = getSessionViewedIds();
     viewed.add(videoId);
-    // Keep only last 100 to prevent storage bloat
     const arr = Array.from(viewed).slice(-100);
     sessionStorage.setItem('session_viewed_videos', JSON.stringify(arr));
   } catch {}
@@ -64,67 +64,75 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [activeIndex, setActiveIndex] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const [abortedPrefetches, setAbortedPrefetches] = useState(0);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
   const pageRef = useRef(0);
+  const scrollSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefetchAbortRef = useRef<AbortController | null>(null);
+  const pendingIndexRef = useRef<number | null>(null);
 
-  // Preload next video's source
-  const preloadNextVideo = useCallback((nextIndex: number) => {
+  // Prefetch next video's poster (only ONE at a time)
+  const prefetchNext = useCallback((nextIndex: number) => {
+    // Cancel any existing prefetch
+    if (prefetchAbortRef.current) {
+      prefetchAbortRef.current.abort();
+      setAbortedPrefetches(prev => prev + 1);
+    }
+    
     if (nextIndex < 0 || nextIndex >= videos.length) return;
     
     const nextVideo = videos[nextIndex];
     if (!nextVideo) return;
     
-    // Preload thumbnail
+    prefetchAbortRef.current = new AbortController();
+    
+    // Preload thumbnail only
     const thumb = getBestThumbnailUrl(nextVideo.cloudinary_public_id || null, nextVideo.thumbnail_url);
     preloadImage(thumb);
-    
-    // Warm video source by creating a hidden video element
-    const videoSource = getBestVideoSource(
-      nextVideo.cloudinary_public_id || null,
-      nextVideo.optimized_video_url || null,
-      nextVideo.stream_url || null,
-      nextVideo.video_url
-    );
-    
-    // Create hidden preload video
-    const preloadVideo = document.createElement('video');
-    preloadVideo.preload = 'metadata';
-    preloadVideo.src = videoSource.url;
-    preloadVideo.muted = true;
-    preloadVideo.load();
-    
-    // Clean up after metadata loaded or timeout
-    const cleanup = () => {
-      preloadVideo.src = '';
-      preloadVideo.load();
-    };
-    preloadVideo.onloadedmetadata = cleanup;
-    setTimeout(cleanup, 5000);
   }, [videos]);
 
-  // Fetch videos using the recommendation edge function
+  // Scroll settle handler - only update activeIndex after scroll stops
+  const handleScrollSettle = useCallback((newIndex: number) => {
+    if (scrollSettleTimeoutRef.current) {
+      clearTimeout(scrollSettleTimeoutRef.current);
+    }
+    
+    pendingIndexRef.current = newIndex;
+    setIsScrolling(true);
+    
+    scrollSettleTimeoutRef.current = setTimeout(() => {
+      setIsScrolling(false);
+      if (pendingIndexRef.current !== null && pendingIndexRef.current !== activeIndex) {
+        setActiveIndex(pendingIndexRef.current);
+        
+        // Track session view
+        if (videos[pendingIndexRef.current]) {
+          addSessionViewedId(videos[pendingIndexRef.current].id);
+        }
+        
+        // Prefetch next
+        prefetchNext(pendingIndexRef.current + 1);
+      }
+      pendingIndexRef.current = null;
+    }, SCROLL_SETTLE_DELAY);
+  }, [activeIndex, videos, prefetchNext]);
+
+  // Initial fetch
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
 
     const fetchVideos = async () => {
-      console.log("[VideoFeed] Starting fetch...");
-      
       try {
-        // For search/category, use direct query; for main feed, use recommendation algorithm
         if (searchQuery || categoryFilter) {
-          // Direct query for filtered views
           let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE * 2}`;
           
-          if (categoryFilter) {
-            url += `&tags=cs.{${categoryFilter}}`;
-          }
-          if (searchQuery) {
-            url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
-          }
+          if (categoryFilter) url += `&tags=cs.{${categoryFilter}}`;
+          if (searchQuery) url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
 
           const response = await fetch(url, {
             headers: {
@@ -152,7 +160,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setVideos(results.slice(0, PAGE_SIZE));
           setHasMore(results.length >= PAGE_SIZE);
         } else {
-          // Use recommendation edge function for main feed
           const sessionViewedIds = Array.from(getSessionViewedIds());
           const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
             body: { userId, page: 0, limit: PAGE_SIZE, sessionViewedIds }
@@ -161,8 +168,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           if (error) throw error;
 
           const resultVideos = data?.videos || [];
-          console.log("[VideoFeed] Got recommended videos:", resultVideos.length);
-          
           resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(resultVideos);
           setHasMore(resultVideos.length >= PAGE_SIZE);
@@ -179,7 +184,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         setVideos([]);
       } finally {
         setLoading(false);
-        console.log("[VideoFeed] Fetch complete");
       }
     };
 
@@ -232,17 +236,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
         setVideos(results);
         setHasMore(results.length >= PAGE_SIZE);
-        
-        // Warmup first video URL with HEAD request for faster initial load
-        if (results.length > 0) {
-          const firstVideoSource = getBestVideoSource(
-            results[0].cloudinary_public_id || null,
-            results[0].optimized_video_url || null,
-            results[0].stream_url || null,
-            results[0].video_url
-          );
-          warmupVideoUrl(firstVideoSource.url);
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load videos");
       } finally {
@@ -253,7 +246,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     refetch();
   }, [searchQuery, categoryFilter]);
 
-  // Intersection observer for active detection - 40% threshold for earlier activation
+  // IntersectionObserver for active detection - threshold 0.4
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
@@ -267,17 +260,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           entries.forEach((entry) => {
             if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
               const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
-              if (idx !== activeIndex) {
-                setActiveIndex(idx);
-                
-                // Track session view
-                if (videos[idx]) {
-                  addSessionViewedId(videos[idx].id);
-                }
-                
-                // Preload next video immediately
-                preloadNextVideo(idx + 1);
-              }
+              handleScrollSettle(idx);
             }
           });
         },
@@ -290,16 +273,12 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     return () => {
       observers.forEach(obs => obs.disconnect());
     };
-  }, [videos, activeIndex, preloadNextVideo]);
+  }, [videos, handleScrollSettle]);
 
-  // Load more - trigger earlier (within last 2 items instead of 3)
+  // Load more when near end
   useEffect(() => {
     if (!hasMore || isLoadingMore || loading || videos.length === 0) return;
-    if (activeIndex < videos.length - 2) return; // Changed from -3 to -2 for earlier trigger
-    
-    if (DEBUG_SCROLL) {
-      console.log('[Pagination] Triggering load more:', { activeIndex, videosLength: videos.length, hasMore });
-    }
+    if (activeIndex < videos.length - 2) return;
 
     const loadMore = async () => {
       setIsLoadingMore(true);
@@ -307,7 +286,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       
       try {
         if (searchQuery || categoryFilter) {
-          // Direct query for filtered views
           const offset = videos.length;
           let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&offset=${offset}&limit=${PAGE_SIZE}`;
           
@@ -331,7 +309,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setVideos(prev => [...prev, ...newVideos]);
           setHasMore(newVideos.length > 0);
         } else {
-          // Use edge function for paginated feed
           const sessionViewedIds = Array.from(getSessionViewedIds());
           const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
             body: { userId, page: pageRef.current, limit: PAGE_SIZE, sessionViewedIds }
@@ -355,16 +332,32 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     loadMore();
   }, [activeIndex, videos.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
 
-  const handleViewTracked = useCallback(async (videoId: string) => {
-    addSessionViewedId(videoId);
+  // Track view when playback starts
+  const handlePlaybackStarted = useCallback(async () => {
+    const video = videos[activeIndex];
+    if (!video) return;
+    
+    addSessionViewedId(video.id);
     try {
-      await supabase.from("video_views").insert({ video_id: videoId, user_id: userId });
+      await supabase.from("video_views").insert({ video_id: video.id, user_id: userId });
     } catch {}
-  }, [userId]);
+  }, [activeIndex, videos, userId]);
 
   const handleRetry = () => {
     window.location.reload();
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollSettleTimeoutRef.current) {
+        clearTimeout(scrollSettleTimeoutRef.current);
+      }
+      if (prefetchAbortRef.current) {
+        prefetchAbortRef.current.abort();
+      }
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -399,6 +392,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
   }
 
+  const activeVideo = videos[activeIndex];
+
   return (
     <div
       ref={containerRef}
@@ -408,11 +403,29 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         scrollSnapType: 'y mandatory',
       }}
     >
+      {/* SinglePlayer overlay - positioned over active item */}
+      {hasEntered && activeVideo && (
+        <div 
+          className="fixed inset-0 z-30 pointer-events-none"
+          style={{ top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          <div className="pointer-events-auto w-full h-full">
+            <SinglePlayer
+              video={activeVideo}
+              activeIndex={activeIndex}
+              isScrolling={isScrolling}
+              abortedPrefetches={abortedPrefetches}
+              onPlaybackStarted={handlePlaybackStarted}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Feed items - thumbnails + metadata only */}
       {videos.map((video, index) => {
-        // Virtualization: only render videos within range
+        // Virtualization: only render items within range
         const isInRange = Math.abs(index - activeIndex) <= 3;
         if (!isInRange) {
-          // Placeholder for virtualized items
           return (
             <div
               key={video.id}
@@ -423,18 +436,16 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         }
         
         return (
-          <FeedItem
+          <FeedThumbnail
             key={video.id}
             video={video}
             index={index}
             isActive={index === activeIndex}
-            shouldPreload={Math.abs(index - activeIndex) <= 1}
-            hasEntered={hasEntered}
             currentUserId={userId}
-            onViewTracked={handleViewTracked}
           />
         );
       })}
+      
       {isLoadingMore && (
         <div className="flex justify-center py-4 bg-black h-20">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
