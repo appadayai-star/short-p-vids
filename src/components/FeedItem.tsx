@@ -70,6 +70,7 @@ interface FeedItemProps {
   video: Video;
   index: number;
   isActive: boolean;
+  shouldPreload?: boolean;
   hasEntered: boolean;
   currentUserId: string | null;
   onViewTracked: (videoId: string) => void;
@@ -81,6 +82,7 @@ export const FeedItem = memo(({
   video, 
   index,
   isActive,
+  shouldPreload = false,
   hasEntered,
   currentUserId, 
   onViewTracked,
@@ -288,7 +290,7 @@ export const FeedItem = memo(({
         loop
         playsInline
         muted={isMuted}
-        preload={isActive ? "auto" : "metadata"}
+        preload={isActive || shouldPreload ? "auto" : "none"}
         onClick={toggleMute}
       />
 
