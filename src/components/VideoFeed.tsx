@@ -5,7 +5,7 @@ import { Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 
 const PAGE_SIZE = 10;
-const SCROLL_DEBOUNCE_MS = 100;
+const SCROLL_DEBOUNCE_MS = 30;
 
 interface Video {
   id: string;
@@ -47,14 +47,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Detect active video based on scroll position
+  // Detect active video based on scroll position - trigger at 40% threshold for faster response
   const updateActiveIndex = useCallback(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
     
     const scrollTop = container.scrollTop;
     const itemHeight = container.clientHeight;
-    const newIndex = Math.round(scrollTop / itemHeight);
+    // Use floor + 0.4 offset to trigger earlier (when 40% of next video is visible)
+    const newIndex = Math.floor((scrollTop + itemHeight * 0.4) / itemHeight);
     
     if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
       setActiveIndex(newIndex);
