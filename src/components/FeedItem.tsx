@@ -306,13 +306,6 @@ export const FeedItem = memo(({
         className="absolute right-4 flex flex-col items-center gap-5 z-40"
         style={{ bottom: navOffset, paddingBottom: '140px' }}
       >
-        {/* Mute button */}
-        <button onClick={toggleMute} className="flex flex-col items-center">
-          <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm">
-            {isMuted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
-          </div>
-        </button>
-
         {/* Like */}
         <button onClick={toggleLike} className="flex flex-col items-center gap-1">
           <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
@@ -333,6 +326,13 @@ export const FeedItem = memo(({
         <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center">
           <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
             <Share2 className="h-6 w-6 text-white" />
+          </div>
+        </button>
+
+        {/* Mute button */}
+        <button onClick={toggleMute} className="flex flex-col items-center">
+          <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+            {isMuted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
           </div>
         </button>
 
