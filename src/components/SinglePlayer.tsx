@@ -58,7 +58,7 @@ export const SinglePlayer = memo(({
   
   const fallbackSrc = video?.optimized_video_url || video?.video_url || "";
   const lastResortSrc = video?.video_url || "";
-  const posterSrc = video ? getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.video_url) : "";
+  const posterSrc = video ? getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url) : "";
 
   const [src, setSrc] = useState(primarySrc);
 

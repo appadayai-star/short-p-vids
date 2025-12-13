@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { FeedItem } from "./FeedItem";
 import { Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
+import { getBestThumbnailUrl, getBestVideoSource, preloadImage, warmVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
 const SCROLL_DEBOUNCE_MS = 30;
@@ -46,21 +47,54 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const prevActiveIndexRef = useRef(0);
 
-  // Detect active video based on scroll position - trigger at 40% threshold for faster response
+  // Preload next video's thumbnail and warm video source
+  const preloadNextVideo = useCallback((nextIndex: number) => {
+    if (nextIndex < 0 || nextIndex >= videos.length) return;
+    
+    const nextVideo = videos[nextIndex];
+    if (!nextVideo) return;
+
+    // Preload thumbnail
+    const thumbnailUrl = getBestThumbnailUrl(
+      nextVideo.cloudinary_public_id || null,
+      nextVideo.thumbnail_url
+    );
+    preloadImage(thumbnailUrl);
+
+    // Warm video source with HEAD request
+    const videoUrl = getBestVideoSource(
+      nextVideo.cloudinary_public_id || null,
+      nextVideo.optimized_video_url || null,
+      nextVideo.stream_url || null,
+      nextVideo.video_url
+    );
+    warmVideoSource(videoUrl);
+  }, [videos]);
+
+  // Detect active video based on scroll position - trigger at 40% threshold
   const updateActiveIndex = useCallback(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
     
     const scrollTop = container.scrollTop;
     const itemHeight = container.clientHeight;
-    // Use floor + 0.4 offset to trigger earlier (when 40% of next video is visible)
+    // Trigger at 40% visibility for faster response
     const newIndex = Math.floor((scrollTop + itemHeight * 0.4) / itemHeight);
     
     if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
       setActiveIndex(newIndex);
+      
+      // Preload next video when active index changes
+      if (newIndex > prevActiveIndexRef.current) {
+        preloadNextVideo(newIndex + 1);
+      } else if (newIndex < prevActiveIndexRef.current) {
+        preloadNextVideo(newIndex - 1);
+      }
+      prevActiveIndexRef.current = newIndex;
     }
-  }, [activeIndex, videos.length]);
+  }, [activeIndex, videos.length, preloadNextVideo]);
 
   // Scroll handler with debounce
   useEffect(() => {
@@ -91,6 +125,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setActiveIndex(0);
     setPage(0);
     loadedIdsRef.current.clear();
+    prevActiveIndexRef.current = 0;
     
     if (containerRef.current) {
       containerRef.current.scrollTop = 0;
@@ -143,6 +178,18 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       fetchedVideos.forEach(v => loadedIdsRef.current.add(v.id));
       setVideos(fetchedVideos);
       setHasMore(fetchedVideos.length === PAGE_SIZE);
+
+      // Preload second video's resources
+      if (fetchedVideos.length > 1) {
+        const secondVideo = fetchedVideos[1];
+        preloadImage(getBestThumbnailUrl(secondVideo.cloudinary_public_id || null, secondVideo.thumbnail_url));
+        warmVideoSource(getBestVideoSource(
+          secondVideo.cloudinary_public_id || null,
+          secondVideo.optimized_video_url || null,
+          secondVideo.stream_url || null,
+          secondVideo.video_url
+        ));
+      }
     } catch (error) {
       console.error('[VideoFeed] Fetch error:', error);
       setLoadError(error instanceof Error ? error.message : "Failed to load videos");
