@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { SimplePlayer } from "./SimplePlayer";
 import { FeedItem } from "./FeedItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
@@ -38,27 +37,18 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const loadedIds = useRef<Set<string>>(new Set());
   const page = useRef(0);
   const hasFetched = useRef(false);
   
-  // Use ref for activeIndex to avoid effect re-runs
-  const activeIndexRef = useRef(0);
-  const [activeIndex, setActiveIndex] = useState(0);
-  
-  // Scroll lock ref
+  // Scroll control refs
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
-
-  // Update ref when state changes
-  useEffect(() => {
-    activeIndexRef.current = activeIndex;
-  }, [activeIndex]);
 
   // Fetch using the smart algorithm edge function
   const fetchVideos = useCallback(async (reset = true) => {
@@ -68,7 +58,6 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       setLoading(true);
       setError(null);
       setActiveIndex(0);
-      activeIndexRef.current = 0;
       page.current = 0;
       loadedIds.current.clear();
     }
@@ -229,54 +218,61 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
     }
   }, [loadingMore, hasMore, userId, searchQuery, categoryFilter]);
 
-  // Navigate to specific video index
+  // Navigate to video index
   const goToVideo = useCallback((newIndex: number) => {
-    const videosLength = videos.length;
-    if (newIndex < 0 || newIndex >= videosLength) return;
+    if (newIndex < 0 || newIndex >= videos.length) return;
     
     setActiveIndex(newIndex);
-    activeIndexRef.current = newIndex;
+    
+    // Scroll to the video
+    const container = containerRef.current;
+    if (container) {
+      container.scrollTo({
+        top: newIndex * window.innerHeight,
+        behavior: 'smooth'
+      });
+    }
     
     // Load more when near end
-    if (newIndex >= videosLength - 3 && hasMore && !loadingMore) {
+    if (newIndex >= videos.length - 3 && hasMore && !loadingMore) {
       loadMore();
     }
   }, [videos.length, hasMore, loadingMore, loadMore]);
 
-  // Wheel/trackpad handler - SINGLE VIDEO SCROLL
+  // Wheel handler - ONE video at a time
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     let accumulatedDelta = 0;
-    const SCROLL_THRESHOLD = 30;
+    const THRESHOLD = 50;
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       
-      // Block if currently scrolling
       if (isScrollingRef.current) return;
       
       accumulatedDelta += e.deltaY;
       
-      if (Math.abs(accumulatedDelta) >= SCROLL_THRESHOLD) {
+      if (Math.abs(accumulatedDelta) >= THRESHOLD) {
         isScrollingRef.current = true;
         const direction = accumulatedDelta > 0 ? 1 : -1;
-        const currentIndex = activeIndexRef.current;
-        const newIndex = currentIndex + direction;
+        const newIndex = activeIndex + direction;
         
-        goToVideo(newIndex);
+        if (newIndex >= 0 && newIndex < videos.length) {
+          goToVideo(newIndex);
+        }
+        
         accumulatedDelta = 0;
         
-        // Lock scrolling for 350ms
         clearTimeout(scrollTimeoutRef.current);
         scrollTimeoutRef.current = setTimeout(() => {
           isScrollingRef.current = false;
-        }, 350);
+        }, 400);
       }
     };
 
-    // Touch handling for mobile
+    // Touch handling
     let touchStartY = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
@@ -289,18 +285,19 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       const touchEndY = e.changedTouches[0].clientY;
       const deltaY = touchStartY - touchEndY;
       
-      if (Math.abs(deltaY) > 50) {
+      if (Math.abs(deltaY) > 60) {
         isScrollingRef.current = true;
         const direction = deltaY > 0 ? 1 : -1;
-        const currentIndex = activeIndexRef.current;
-        const newIndex = currentIndex + direction;
+        const newIndex = activeIndex + direction;
         
-        goToVideo(newIndex);
+        if (newIndex >= 0 && newIndex < videos.length) {
+          goToVideo(newIndex);
+        }
         
         clearTimeout(scrollTimeoutRef.current);
         scrollTimeoutRef.current = setTimeout(() => {
           isScrollingRef.current = false;
-        }, 350);
+        }, 400);
       }
     };
 
@@ -314,37 +311,7 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       container.removeEventListener('touchend', handleTouchEnd);
       clearTimeout(scrollTimeoutRef.current);
     };
-  }, [goToVideo]);
-
-  // Get active container rect for video player positioning
-  const getActiveRect = useCallback(() => {
-    const activeRef = itemRefs.current.get(activeIndex);
-    return activeRef?.getBoundingClientRect() || null;
-  }, [activeIndex]);
-
-  const [activeRect, setActiveRect] = useState<DOMRect | null>(null);
-  
-  useEffect(() => {
-    const updateRect = () => setActiveRect(getActiveRect());
-    updateRect();
-    
-    const timer = setTimeout(updateRect, 100);
-    window.addEventListener('resize', updateRect);
-    
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', updateRect);
-    };
-  }, [activeIndex, videos.length, getActiveRect]);
-
-  // Register item refs
-  const handleRef = useCallback((index: number, ref: HTMLDivElement | null) => {
-    if (ref) {
-      itemRefs.current.set(index, ref);
-    } else {
-      itemRefs.current.delete(index);
-    }
-  }, []);
+  }, [activeIndex, videos.length, goToVideo]);
 
   // Track view
   const handleViewTracked = useCallback(async (videoId: string) => {
@@ -390,43 +357,32 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
     );
   }
 
-  const activeVideo = videos[activeIndex] || null;
-
   return (
     <div
       ref={containerRef}
       id="video-feed-container"
-      className="relative w-full h-[100dvh] overflow-hidden bg-black"
-      style={{ touchAction: 'none' }}
+      className="w-full h-[100dvh] overflow-y-auto overflow-x-hidden snap-y snap-mandatory scrollbar-hide"
+      style={{ 
+        scrollSnapType: 'y mandatory',
+        scrollBehavior: 'smooth',
+        overscrollBehavior: 'none'
+      }}
     >
-      {/* Feed items - translated based on activeIndex */}
-      <div 
-        className="absolute inset-0 transition-transform duration-300 ease-out"
-        style={{ transform: `translateY(-${activeIndex * 100}%)` }}
-      >
-        {videos.map((video, index) => (
-          <FeedItem
-            key={video.id}
-            video={video}
-            index={index}
-            isActive={index === activeIndex}
-            currentUserId={userId}
-            onContainerRef={handleRef}
-          />
-        ))}
-      </div>
-      
-      {/* Single shared video player */}
-      <SimplePlayer
-        video={activeVideo}
-        containerRect={activeRect}
-        hasEntered={hasEntered}
-        onViewTracked={handleViewTracked}
-      />
+      {videos.map((video, index) => (
+        <FeedItem
+          key={video.id}
+          video={video}
+          index={index}
+          isActive={index === activeIndex}
+          currentUserId={userId}
+          hasEntered={hasEntered}
+          onViewTracked={handleViewTracked}
+        />
+      ))}
       
       {/* Loading more indicator */}
       {loadingMore && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50">
+        <div className="flex justify-center py-4 bg-black snap-start">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       )}
