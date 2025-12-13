@@ -3,9 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { FeedItem } from "./FeedItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
-import { getBestThumbnailUrl, preloadImage } from "@/lib/cloudinary";
+import { getBestThumbnailUrl, preloadImage, getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
+const MAX_RENDERED_ITEMS = 15; // Virtualization threshold to prevent memory buildup
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
@@ -34,6 +35,26 @@ interface VideoFeedProps {
   userId: string | null;
 }
 
+// Get session-viewed videos to prevent duplicates within session
+const getSessionViewedIds = (): Set<string> => {
+  try {
+    const viewed = sessionStorage.getItem('session_viewed_videos');
+    return new Set(viewed ? JSON.parse(viewed) : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const addSessionViewedId = (videoId: string) => {
+  try {
+    const viewed = getSessionViewedIds();
+    viewed.add(videoId);
+    // Keep only last 100 to prevent storage bloat
+    const arr = Array.from(viewed).slice(-100);
+    sessionStorage.setItem('session_viewed_videos', JSON.stringify(arr));
+  } catch {}
+};
+
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
   
@@ -47,6 +68,42 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
+  const recentCreatorsRef = useRef<string[]>([]); // Track recent creators for diversity
+
+  // Preload next video's source
+  const preloadNextVideo = useCallback((nextIndex: number) => {
+    if (nextIndex < 0 || nextIndex >= videos.length) return;
+    
+    const nextVideo = videos[nextIndex];
+    if (!nextVideo) return;
+    
+    // Preload thumbnail
+    const thumb = getBestThumbnailUrl(nextVideo.cloudinary_public_id || null, nextVideo.thumbnail_url);
+    preloadImage(thumb);
+    
+    // Warm video source by creating a hidden video element
+    const videoSrc = getBestVideoSource(
+      nextVideo.cloudinary_public_id || null,
+      nextVideo.optimized_video_url || null,
+      nextVideo.stream_url || null,
+      nextVideo.video_url
+    );
+    
+    // Create hidden preload video
+    const preloadVideo = document.createElement('video');
+    preloadVideo.preload = 'metadata';
+    preloadVideo.src = videoSrc;
+    preloadVideo.muted = true;
+    preloadVideo.load();
+    
+    // Clean up after metadata loaded or timeout
+    const cleanup = () => {
+      preloadVideo.src = '';
+      preloadVideo.load();
+    };
+    preloadVideo.onloadedmetadata = cleanup;
+    setTimeout(cleanup, 5000);
+  }, [videos]);
 
   // Fetch videos using raw fetch to bypass Supabase client issues
   useEffect(() => {
@@ -58,7 +115,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       
       try {
         // Build the query URL
-        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE}`;
+        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE * 2}`;
         
         if (categoryFilter) {
           url += `&tags=cs.{${categoryFilter}}`;
@@ -88,6 +145,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
         let results = data || [];
         
+        // Client-side search filtering
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
           results = results.filter((v: Video) =>
@@ -98,12 +156,33 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           );
         }
 
-        results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
-        setVideos(results);
-        setHasMore(results.length === PAGE_SIZE);
+        // Filter out session duplicates
+        const sessionViewed = getSessionViewedIds();
+        results = results.filter((v: Video) => !sessionViewed.has(v.id));
+
+        // Apply creator diversity - no same creator within last 3 items
+        const diverseResults: Video[] = [];
+        const recentCreators: string[] = [];
         
-        if (results.length > 1) {
-          const thumb = getBestThumbnailUrl(results[1].cloudinary_public_id || null, results[1].thumbnail_url);
+        for (const video of results) {
+          // Skip if this creator was in last 3 videos
+          if (recentCreators.slice(-3).includes(video.user_id)) {
+            continue;
+          }
+          diverseResults.push(video);
+          recentCreators.push(video.user_id);
+          loadedIdsRef.current.add(video.id);
+          
+          if (diverseResults.length >= PAGE_SIZE) break;
+        }
+
+        recentCreatorsRef.current = recentCreators;
+        setVideos(diverseResults);
+        setHasMore(diverseResults.length >= PAGE_SIZE);
+        
+        // Preload second video
+        if (diverseResults.length > 1) {
+          const thumb = getBestThumbnailUrl(diverseResults[1].cloudinary_public_id || null, diverseResults[1].thumbnail_url);
           preloadImage(thumb);
         }
       } catch (err) {
@@ -119,22 +198,23 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     fetchVideos();
   }, []);
 
-  // Re-fetch when filters change (using Supabase client for subsequent fetches)
+  // Re-fetch when filters change
   useEffect(() => {
     if (!hasFetchedRef.current) return;
-    if (!searchQuery && !categoryFilter) return; // Skip if no filters
+    if (!searchQuery && !categoryFilter) return;
     
     const refetch = async () => {
       setLoading(true);
       setActiveIndex(0);
       loadedIdsRef.current.clear();
+      recentCreatorsRef.current = [];
       
       if (containerRef.current) {
         containerRef.current.scrollTop = 0;
       }
 
       try {
-        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE}`;
+        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE * 2}`;
         
         if (categoryFilter) {
           url += `&tags=cs.{${categoryFilter}}`;
@@ -166,9 +246,21 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           );
         }
 
-        results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
-        setVideos(results);
-        setHasMore(results.length === PAGE_SIZE);
+        // Apply creator diversity
+        const diverseResults: Video[] = [];
+        const recentCreators: string[] = [];
+        
+        for (const video of results) {
+          if (recentCreators.slice(-3).includes(video.user_id)) continue;
+          diverseResults.push(video);
+          recentCreators.push(video.user_id);
+          loadedIdsRef.current.add(video.id);
+          if (diverseResults.length >= PAGE_SIZE) break;
+        }
+
+        recentCreatorsRef.current = recentCreators;
+        setVideos(diverseResults);
+        setHasMore(diverseResults.length >= PAGE_SIZE);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load videos");
       } finally {
@@ -179,32 +271,41 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     refetch();
   }, [searchQuery, categoryFilter]);
 
-  // Scroll handling
+  // Scroll handling with lower threshold (0.4 instead of 1.0)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    let timeoutId: NodeJS.Timeout;
+    let rafId: number;
     
     const handleScroll = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
         const scrollTop = container.scrollTop;
         const itemHeight = container.clientHeight;
-        const newIndex = Math.floor((scrollTop + itemHeight * 0.4) / itemHeight);
+        // Lower threshold: activate when 40% visible (not 100%)
+        const newIndex = Math.round(scrollTop / itemHeight);
         
         if (newIndex >= 0 && newIndex < videos.length && newIndex !== activeIndex) {
           setActiveIndex(newIndex);
+          
+          // Preload next video
+          preloadNextVideo(newIndex + 1);
+          
+          // Track session view
+          if (videos[newIndex]) {
+            addSessionViewedId(videos[newIndex].id);
+          }
         }
-      }, 30);
+      });
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       container.removeEventListener('scroll', handleScroll);
-      clearTimeout(timeoutId);
+      cancelAnimationFrame(rafId);
     };
-  }, [activeIndex, videos.length]);
+  }, [activeIndex, videos.length, videos, preloadNextVideo]);
 
   // Load more
   useEffect(() => {
@@ -216,7 +317,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       try {
         const offset = videos.length;
         
-        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&offset=${offset}&limit=${PAGE_SIZE}`;
+        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&offset=${offset}&limit=${PAGE_SIZE * 2}`;
         
         if (categoryFilter) url += `&tags=cs.{${categoryFilter}}`;
         if (searchQuery) url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
@@ -232,10 +333,31 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
 
         const data = await response.json();
-        const newVideos = (data || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
-        newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
+        const sessionViewed = getSessionViewedIds();
         
-        setVideos(prev => [...prev, ...newVideos]);
+        // Filter and apply diversity
+        const newVideos: Video[] = [];
+        for (const video of (data || [])) {
+          if (loadedIdsRef.current.has(video.id)) continue;
+          if (sessionViewed.has(video.id)) continue;
+          if (recentCreatorsRef.current.slice(-3).includes(video.user_id)) continue;
+          
+          newVideos.push(video);
+          loadedIdsRef.current.add(video.id);
+          recentCreatorsRef.current.push(video.user_id);
+          
+          if (newVideos.length >= PAGE_SIZE) break;
+        }
+        
+        setVideos(prev => {
+          const combined = [...prev, ...newVideos];
+          // Virtualization: keep only videos around active index to prevent memory buildup
+          if (combined.length > MAX_RENDERED_ITEMS && activeIndex > MAX_RENDERED_ITEMS / 2) {
+            const startTrim = Math.max(0, activeIndex - Math.floor(MAX_RENDERED_ITEMS / 2));
+            return combined.slice(startTrim, startTrim + MAX_RENDERED_ITEMS);
+          }
+          return combined;
+        });
         setHasMore(newVideos.length > 0);
       } catch (err) {
         console.error("Load more error:", err);
@@ -248,6 +370,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   }, [activeIndex, videos.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter]);
 
   const handleViewTracked = useCallback(async (videoId: string) => {
+    addSessionViewedId(videoId);
     try {
       await supabase.from("video_views").insert({ video_id: videoId, user_id: userId });
     } catch {}
