@@ -27,7 +27,7 @@ export function getBestThumbnail(video: {
   thumbnail_url?: string | null;
   cloudinary_public_id?: string | null;
   video_url?: string;
-}): string {
+}): string | null {
   // Priority 1: Stored thumbnail URL (most reliable if exists)
   if (video.thumbnail_url) {
     return video.thumbnail_url;
@@ -40,8 +40,7 @@ export function getBestThumbnail(video: {
   if (video.video_url) {
     return getCloudinaryFetchThumbnail(video.video_url);
   }
-  // Fallback: gradient placeholder (never null)
-  return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 852"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:%23374151"/><stop offset="100%" style="stop-color:%231f2937"/></linearGradient></defs><rect fill="url(%23g)" width="480" height="852"/></svg>';
+  return null;
 }
 
 export function VideoThumbnail({ 
@@ -53,38 +52,54 @@ export function VideoThumbnail({
   className = "w-full h-full object-cover"
 }: VideoThumbnailProps) {
   const [imgError, setImgError] = useState(false);
-  const [currentSrc, setCurrentSrc] = useState<string>('');
+  const [retryCount, setRetryCount] = useState(0);
 
+  // Reset error state when props change
   useEffect(() => {
-    // Reset error state when props change
     setImgError(false);
-    
-    const src = getBestThumbnail({ 
-      thumbnail_url: thumbnailUrl, 
-      cloudinary_public_id: cloudinaryPublicId, 
-      video_url: videoUrl 
-    });
-    
-    // Debug logging for production issues
+    setRetryCount(0);
+  }, [thumbnailUrl, cloudinaryPublicId, videoUrl]);
+
+  const primarySrc = getBestThumbnail({ 
+    thumbnail_url: thumbnailUrl, 
+    cloudinary_public_id: cloudinaryPublicId, 
+    video_url: videoUrl 
+  });
+  
+  // Debug logging for production issues
+  useEffect(() => {
     if (!thumbnailUrl && !cloudinaryPublicId) {
       console.warn("Missing thumbnail data", videoId || title, { thumbnailUrl, cloudinaryPublicId, videoUrl });
     }
-    
-    setCurrentSrc(src);
   }, [thumbnailUrl, cloudinaryPublicId, videoUrl, videoId, title]);
 
-  // If primary image failed, try cloudinary fetch as fallback
+  // Handle image load error with retry logic
   const handleError = () => {
-    if (!imgError && videoUrl) {
+    if (retryCount < 2) {
+      setRetryCount(prev => prev + 1);
+    } else {
       setImgError(true);
-      // Try cloudinary fetch as last resort
-      setCurrentSrc(getCloudinaryFetchThumbnail(videoUrl));
     }
   };
 
+  // If all image attempts failed, show gradient placeholder
+  if (imgError || !primarySrc) {
+    return (
+      <div 
+        className={`${className} bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center`}
+        title={title}
+      >
+        <span className="text-white/30 text-xs text-center px-2">
+          {title?.substring(0, 20) || 'Video'}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <img
-      src={currentSrc}
+      key={`${primarySrc}-${retryCount}`}
+      src={primarySrc}
       alt={title}
       className={className}
       loading="lazy"
