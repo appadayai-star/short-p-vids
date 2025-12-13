@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
@@ -22,7 +23,7 @@ import {
 const Profile = () => {
   const navigate = useNavigate();
   const { userId } = useParams();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const { status: authStatus, user: currentUser } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [myVideos, setMyVideos] = useState<any[]>([]);
@@ -43,15 +44,13 @@ const Profile = () => {
   const isOwnProfile = !userId || userId === currentUser?.id;
 
   useEffect(() => {
-    checkUser();
-  }, [userId]);
+    if (authStatus !== "ready") return;
+    loadProfile();
+  }, [userId, authStatus, currentUser?.id]);
 
-  const checkUser = async () => {
+  const loadProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUser(user);
-
-      const profileId = userId || user?.id;
+      const profileId = userId || currentUser?.id;
       
       if (!profileId) {
         setIsLoading(false);
@@ -60,11 +59,11 @@ const Profile = () => {
 
       await fetchProfile(profileId);
       await fetchUserVideos(profileId);
-      if (userId && user) {
-        await checkFollowStatus(user.id, userId);
-      } else if (user) {
-        await fetchLikedVideos(user.id);
-        await fetchSavedVideos(user.id);
+      if (userId && currentUser) {
+        await checkFollowStatus(currentUser.id, userId);
+      } else if (currentUser) {
+        await fetchLikedVideos(currentUser.id);
+        await fetchSavedVideos(currentUser.id);
       }
     } catch (error) {
       console.error("Error loading profile:", error);

@@ -1,67 +1,52 @@
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { User } from "@supabase/supabase-js";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const useAdmin = () => {
-  const [user, setUser] = useState<User | null>(null);
+  const { status, user } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkAdminStatus = async (userId: string): Promise<boolean> => {
-      try {
-        console.log("Checking admin status for user:", userId);
-        const { data, error } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", userId)
-          .eq("role", "admin")
-          .maybeSingle();
+    if (status !== "ready") return;
 
-        console.log("Admin check result:", { data, error });
-        
-        if (error) {
-          console.error("Error checking admin status:", error);
-          return false;
-        }
-        return !!data;
-      } catch (err) {
-        console.error("Error in admin check:", err);
-        return false;
+    const checkAdminStatus = async () => {
+      if (!user) {
+        setIsAdmin(false);
+        setLoading(false);
+        return;
       }
-    };
 
-    const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        const adminStatus = await checkAdminStatus(session.user.id);
+      try {
+        console.log("Checking admin status for user:", user.id);
+        
+        // Use raw fetch to avoid Supabase client hanging
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/user_roles?user_id=eq.${user.id}&role=eq.admin&select=role`,
+          {
+            headers: {
+              'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        const data = await response.json();
+        console.log("Admin check result:", data);
+        
+        const adminStatus = Array.isArray(data) && data.length > 0;
         console.log("Setting isAdmin to:", adminStatus);
         setIsAdmin(adminStatus);
-      }
-      
-      setLoading(false);
-    };
-
-    initAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          const adminStatus = await checkAdminStatus(session.user.id);
-          console.log("Setting isAdmin to:", adminStatus);
-          setIsAdmin(adminStatus);
-        } else {
-          setIsAdmin(false);
-        }
+      } catch (err) {
+        console.error("Error checking admin status:", err);
+        setIsAdmin(false);
+      } finally {
         setLoading(false);
       }
-    );
+    };
 
-    return () => subscription.unsubscribe();
-  }, []);
+    checkAdminStatus();
+  }, [status, user?.id]);
 
   return { user, isAdmin, loading };
 };
