@@ -414,6 +414,27 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     } catch {}
   }, [userId]);
 
+  // Debug scroll - must be before any conditional returns
+  useEffect(() => {
+    if (!DEBUG_SCROLL || !containerRef.current) return;
+    
+    const container = containerRef.current;
+    
+    const debugWheel = (e: WheelEvent) => {
+      console.log('[Scroll Debug] wheel event:', {
+        deltaY: e.deltaY,
+        defaultPrevented: e.defaultPrevented,
+        scrollTop: container.scrollTop,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        elementAtCenter: document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)?.tagName,
+      });
+    };
+    
+    container.addEventListener('wheel', debugWheel, { passive: true });
+    return () => container.removeEventListener('wheel', debugWheel);
+  }, [videos.length]);
+
   const handleRetry = () => {
     window.location.reload();
   };
@@ -450,27 +471,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       </div>
     );
   }
-
-  // Debug scroll state on every render
-  useEffect(() => {
-    if (!DEBUG_SCROLL || !containerRef.current) return;
-    
-    const container = containerRef.current;
-    
-    const debugWheel = (e: WheelEvent) => {
-      console.log('[Scroll Debug] wheel event:', {
-        deltaY: e.deltaY,
-        defaultPrevented: e.defaultPrevented,
-        scrollTop: container.scrollTop,
-        scrollHeight: container.scrollHeight,
-        clientHeight: container.clientHeight,
-        elementAtCenter: document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)?.tagName,
-      });
-    };
-    
-    container.addEventListener('wheel', debugWheel, { passive: true });
-    return () => container.removeEventListener('wheel', debugWheel);
-  }, []);
 
   return (
     <div
