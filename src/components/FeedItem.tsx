@@ -95,8 +95,6 @@ export const FeedItem = memo(({
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackedRef = useRef(false);
-  const playbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const retryCountRef = useRef(0);
   
   // UI state
   const [isLiked, setIsLiked] = useState(false);
@@ -107,7 +105,6 @@ export const FeedItem = memo(({
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(false);
 
   // Video sources - ALWAYS have a poster
   const videoSrc = getBestVideoSource(
@@ -133,99 +130,42 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Clear timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (playbackTimeoutRef.current) {
-        clearTimeout(playbackTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Play/pause based on isActive with timeout safety
+  // Play/pause based on isActive - SIMPLE logic
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    // Clear any existing timeout
-    if (playbackTimeoutRef.current) {
-      clearTimeout(playbackTimeoutRef.current);
-      playbackTimeoutRef.current = null;
-    }
-
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
-      setIsBuffering(true);
       videoEl.currentTime = 0;
       
-      // Start playback timeout
-      playbackTimeoutRef.current = setTimeout(() => {
-        // If still buffering after timeout, try retry
-        if (isBuffering && retryCountRef.current < 1) {
-          retryCountRef.current++;
-          // Retry with cache buster
-          const cacheBuster = `${videoSrc.includes('?') ? '&' : '?'}cb=${Date.now()}`;
-          videoEl.src = videoSrc + cacheBuster;
-          videoEl.load();
-          videoEl.play().catch(() => {
-            setPlaybackFailed(true);
-            setIsBuffering(false);
-          });
-        } else if (isBuffering) {
-          setPlaybackFailed(true);
-          setIsBuffering(false);
-        }
-      }, PLAYBACK_TIMEOUT_MS);
-
+      // Just play - no complex buffering state
       videoEl.play().then(() => {
-        setIsBuffering(false);
-        if (playbackTimeoutRef.current) {
-          clearTimeout(playbackTimeoutRef.current);
-          playbackTimeoutRef.current = null;
-        }
         if (!trackedRef.current) {
           trackedRef.current = true;
           onViewTracked(video.id);
         }
-      }).catch(() => {
-        // Will be handled by timeout
+      }).catch((err) => {
+        console.log('[FeedItem] Play failed:', err.name);
+        // Only show failed UI if it's not just autoplay block
+        if (err.name !== 'NotAllowedError') {
+          setPlaybackFailed(true);
+        }
       });
     } else {
       videoEl.pause();
-      setIsBuffering(false);
-      retryCountRef.current = 0;
     }
-  }, [isActive, hasEntered, video.id, onViewTracked, videoSrc, isBuffering]);
-
-  // Handle video events
-  const handleCanPlay = useCallback(() => {
-    setIsBuffering(false);
-    if (playbackTimeoutRef.current) {
-      clearTimeout(playbackTimeoutRef.current);
-      playbackTimeoutRef.current = null;
-    }
-  }, []);
-
-  const handleWaiting = useCallback(() => {
-    setIsBuffering(true);
-  }, []);
-
-  const handlePlaying = useCallback(() => {
-    setIsBuffering(false);
-  }, []);
+  }, [isActive, hasEntered, video.id, onViewTracked]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
     
     setPlaybackFailed(false);
-    setIsBuffering(true);
-    retryCountRef.current = 0;
     videoEl.src = videoSrc;
     videoEl.load();
     videoEl.play().catch(() => {
       setPlaybackFailed(true);
-      setIsBuffering(false);
     });
   }, [videoSrc]);
 
@@ -375,9 +315,6 @@ export const FeedItem = memo(({
         muted={isMuted}
         preload={isActive || shouldPreload ? "auto" : "none"}
         onClick={toggleMute}
-        onCanPlay={handleCanPlay}
-        onWaiting={handleWaiting}
-        onPlaying={handlePlaying}
       />
 
       {/* Playback failed - retry UI */}
