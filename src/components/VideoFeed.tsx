@@ -46,92 +46,83 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
-  const hasFetchedRef = useRef(false);
 
-  // Simple fetch function - no complex timeout/retry logic
-  const fetchVideos = useCallback(async () => {
-    console.log("[VideoFeed] Starting fetch...");
-    setLoading(true);
-    setError(null);
-    setActiveIndex(0);
-    loadedIdsRef.current.clear();
-    
-    if (containerRef.current) {
-      containerRef.current.scrollTop = 0;
-    }
-
-    try {
-      let query = supabase
-        .from("videos")
-        .select(`
-          id, title, description, video_url, optimized_video_url, stream_url, 
-          cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-          profiles(username, avatar_url)
-        `)
-        .order("created_at", { ascending: false })
-        .limit(PAGE_SIZE);
-
-      if (categoryFilter) {
-        query = query.contains('tags', [categoryFilter]);
-      }
-      if (searchQuery) {
-        query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
-      }
-
-      const { data, error: queryError } = await query;
-      
-      console.log("[VideoFeed] Query complete", { count: data?.length, error: queryError?.message });
-
-      if (queryError) {
-        throw queryError;
-      }
-
-      let results = data || [];
-      
-      // Client-side filter for search
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        results = results.filter(v =>
-          v.title?.toLowerCase().includes(q) ||
-          v.description?.toLowerCase().includes(q) ||
-          v.profiles?.username?.toLowerCase().includes(q) ||
-          v.tags?.some(t => t.toLowerCase().includes(q))
-        );
-      }
-
-      results.forEach(v => loadedIdsRef.current.add(v.id));
-      setVideos(results);
-      setHasMore(results.length === PAGE_SIZE);
-      
-      // Preload second video thumbnail
-      if (results.length > 1) {
-        const thumb = getBestThumbnailUrl(results[1].cloudinary_public_id || null, results[1].thumbnail_url);
-        preloadImage(thumb);
-      }
-    } catch (err) {
-      console.error("[VideoFeed] Fetch error:", err);
-      setError(err instanceof Error ? err.message : "Failed to load videos");
-      setVideos([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [searchQuery, categoryFilter]);
-
-  // Fetch when auth is ready
+  // Fetch videos
   useEffect(() => {
-    if (authStatus !== "ready") {
-      console.log("[VideoFeed] Waiting for auth...", authStatus);
-      return;
-    }
-    
-    // Only fetch once on initial mount, or when filters change
-    if (!hasFetchedRef.current || searchQuery || categoryFilter) {
-      hasFetchedRef.current = true;
-      fetchVideos();
-    }
-  }, [authStatus, fetchVideos, searchQuery, categoryFilter]);
+    if (authStatus !== "ready") return;
 
-  // Update active index on scroll
+    let cancelled = false;
+    
+    const fetchVideos = async () => {
+      setLoading(true);
+      setError(null);
+      setActiveIndex(0);
+      loadedIdsRef.current.clear();
+      
+      if (containerRef.current) {
+        containerRef.current.scrollTop = 0;
+      }
+
+      try {
+        let query = supabase
+          .from("videos")
+          .select(`
+            id, title, description, video_url, optimized_video_url, stream_url, 
+            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
+            profiles(username, avatar_url)
+          `)
+          .order("created_at", { ascending: false })
+          .limit(PAGE_SIZE);
+
+        if (categoryFilter) {
+          query = query.contains('tags', [categoryFilter]);
+        }
+        if (searchQuery) {
+          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        }
+
+        const { data, error: queryError } = await query;
+        
+        if (cancelled) return;
+
+        if (queryError) throw queryError;
+
+        let results = data || [];
+        
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          results = results.filter(v =>
+            v.title?.toLowerCase().includes(q) ||
+            v.description?.toLowerCase().includes(q) ||
+            v.profiles?.username?.toLowerCase().includes(q) ||
+            v.tags?.some(t => t.toLowerCase().includes(q))
+          );
+        }
+
+        results.forEach(v => loadedIdsRef.current.add(v.id));
+        setVideos(results);
+        setHasMore(results.length === PAGE_SIZE);
+        
+        if (results.length > 1) {
+          const thumb = getBestThumbnailUrl(results[1].cloudinary_public_id || null, results[1].thumbnail_url);
+          preloadImage(thumb);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error("VideoFeed fetch error:", err);
+        setError(err instanceof Error ? err.message : "Failed to load videos");
+        setVideos([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchVideos();
+    
+    return () => { cancelled = true; };
+  }, [authStatus, searchQuery, categoryFilter]);
+
+  // Scroll handling
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -158,48 +149,45 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [activeIndex, videos.length]);
 
-  // Load more when approaching end
+  // Load more
   useEffect(() => {
     if (!hasMore || isLoadingMore || loading || videos.length === 0) return;
-    
-    if (activeIndex >= videos.length - 3) {
-      loadMore();
-    }
-  }, [activeIndex, videos.length, hasMore, isLoadingMore, loading]);
+    if (activeIndex < videos.length - 3) return;
 
-  const loadMore = async () => {
-    if (isLoadingMore) return;
-    setIsLoadingMore(true);
+    const loadMore = async () => {
+      setIsLoadingMore(true);
+      try {
+        const offset = videos.length;
+        let query = supabase
+          .from("videos")
+          .select(`
+            id, title, description, video_url, optimized_video_url, stream_url,
+            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
+            profiles(username, avatar_url)
+          `)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
 
-    try {
-      const offset = videos.length;
-      let query = supabase
-        .from("videos")
-        .select(`
-          id, title, description, video_url, optimized_video_url, stream_url,
-          cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-          profiles(username, avatar_url)
-        `)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
+        if (categoryFilter) query = query.contains('tags', [categoryFilter]);
+        if (searchQuery) query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
 
-      if (categoryFilter) query = query.contains('tags', [categoryFilter]);
-      if (searchQuery) query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        const { data, error } = await query;
+        if (error) throw error;
 
-      const { data, error } = await query;
-      if (error) throw error;
+        const newVideos = (data || []).filter(v => !loadedIdsRef.current.has(v.id));
+        newVideos.forEach(v => loadedIdsRef.current.add(v.id));
+        
+        setVideos(prev => [...prev, ...newVideos]);
+        setHasMore(newVideos.length > 0);
+      } catch (err) {
+        console.error("Load more error:", err);
+      } finally {
+        setIsLoadingMore(false);
+      }
+    };
 
-      const newVideos = (data || []).filter(v => !loadedIdsRef.current.has(v.id));
-      newVideos.forEach(v => loadedIdsRef.current.add(v.id));
-      
-      setVideos(prev => [...prev, ...newVideos]);
-      setHasMore(newVideos.length > 0);
-    } catch (err) {
-      console.error("[VideoFeed] Load more error:", err);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  };
+    loadMore();
+  }, [activeIndex, videos.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter]);
 
   const handleViewTracked = useCallback(async (videoId: string) => {
     try {
@@ -207,7 +195,14 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     } catch {}
   }, [userId]);
 
-  // Auth loading state
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    // Re-trigger by changing a dep - simple approach
+    window.location.reload();
+  };
+
+  // Loading states
   if (authStatus !== "ready") {
     return (
       <div className="flex flex-col justify-center items-center h-[100dvh] bg-black gap-4">
@@ -217,7 +212,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
   }
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex flex-col justify-center items-center h-[100dvh] bg-black gap-4">
@@ -227,13 +221,12 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
   }
 
-  // Error state
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4 px-4">
         <p className="text-red-400 text-lg text-center">{error}</p>
         <button
-          onClick={fetchVideos}
+          onClick={handleRetry}
           className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg"
         >
           <RefreshCw className="h-5 w-5" /> Try Again
@@ -242,7 +235,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
   }
 
-  // Empty state
   if (videos.length === 0) {
     return (
       <div className="flex items-center justify-center h-[100dvh] bg-black">
