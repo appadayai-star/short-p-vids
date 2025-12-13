@@ -49,7 +49,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
-  const hasFetchedRef = useRef(false);
 
   // Handle item ref registration
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
@@ -87,7 +86,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   }, [activeIndex, videos.length]);
 
   // Fetch videos - simple and direct
-  const fetchVideos = useCallback(async () => {
+  const fetchVideos = useCallback(async (currentSearchQuery: string, currentCategoryFilter: string, currentUserId: string | null) => {
     console.log(`[VideoFeed] Fetching videos...`);
     setIsLoading(true);
     setLoadError(null);
@@ -101,17 +100,19 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
 
     try {
-      const isForYouFeed = !searchQuery && !categoryFilter;
+      const isForYouFeed = !currentSearchQuery && !currentCategoryFilter;
       let fetchedVideos: Video[] = [];
 
       if (isForYouFeed) {
         // Use edge function for personalized feed
+        console.log('[VideoFeed] Using edge function for personalized feed');
         const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-          body: { userId: userId || null, page: 0, limit: PAGE_SIZE }
+          body: { userId: currentUserId, page: 0, limit: PAGE_SIZE }
         });
         
         if (error) throw new Error(error.message || "Failed to load feed");
         fetchedVideos = data?.videos || [];
+        console.log(`[VideoFeed] Edge function returned ${fetchedVideos.length} videos`);
       } else {
         // Direct query for search/category
         let query = supabase
@@ -124,11 +125,11 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           .order("created_at", { ascending: false })
           .range(0, PAGE_SIZE - 1);
 
-        if (categoryFilter) {
-          query = query.contains('tags', [categoryFilter]);
+        if (currentCategoryFilter) {
+          query = query.contains('tags', [currentCategoryFilter]);
         }
-        if (searchQuery) {
-          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        if (currentSearchQuery) {
+          query = query.or(`title.ilike.%${currentSearchQuery}%,description.ilike.%${currentSearchQuery}%`);
         }
 
         const { data, error } = await query;
@@ -136,8 +137,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         fetchedVideos = data || [];
 
         // Client-side search filtering
-        if (searchQuery) {
-          const q = searchQuery.toLowerCase();
+        if (currentSearchQuery) {
+          const q = currentSearchQuery.toLowerCase();
           fetchedVideos = fetchedVideos.filter(v =>
             v.title?.toLowerCase().includes(q) ||
             v.description?.toLowerCase().includes(q) ||
@@ -170,22 +171,12 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, categoryFilter, userId]);
+  }, []);
 
-  // Initial fetch on mount
+  // Fetch on mount and when filters change
   useEffect(() => {
-    if (!hasFetchedRef.current) {
-      hasFetchedRef.current = true;
-      fetchVideos();
-    }
-  }, [fetchVideos]);
-
-  // Re-fetch when filters change
-  useEffect(() => {
-    if (hasFetchedRef.current) {
-      fetchVideos();
-    }
-  }, [searchQuery, categoryFilter]);
+    fetchVideos(searchQuery, categoryFilter, userId);
+  }, [searchQuery, categoryFilter, fetchVideos]);
 
   // Load more videos
   const loadMoreVideos = useCallback(async (pageNum: number) => {
@@ -295,7 +286,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         <AlertTriangle className="h-12 w-12 text-yellow-500" />
         <p className="text-red-400 text-lg text-center px-4">{loadError}</p>
         <button
-          onClick={fetchVideos}
+          onClick={() => fetchVideos(searchQuery, categoryFilter, userId)}
           className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg"
         >
           <RefreshCw className="h-5 w-5" /> Try Again
