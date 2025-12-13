@@ -46,6 +46,10 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
   const page = useRef(0);
   const hasFetched = useRef(false);
   
+  // Use ref to track current index for event handlers (avoids stale closure)
+  const activeIndexRef = useRef(0);
+  activeIndexRef.current = activeIndex;
+  
   // Scroll control refs
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -257,7 +261,8 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       if (Math.abs(accumulatedDelta) >= THRESHOLD) {
         isScrollingRef.current = true;
         const direction = accumulatedDelta > 0 ? 1 : -1;
-        const newIndex = activeIndex + direction;
+        const currentIndex = activeIndexRef.current;
+        const newIndex = currentIndex + direction;
         
         if (newIndex >= 0 && newIndex < videos.length) {
           goToVideo(newIndex);
@@ -288,7 +293,8 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       if (Math.abs(deltaY) > 60) {
         isScrollingRef.current = true;
         const direction = deltaY > 0 ? 1 : -1;
-        const newIndex = activeIndex + direction;
+        const currentIndex = activeIndexRef.current;
+        const newIndex = currentIndex + direction;
         
         if (newIndex >= 0 && newIndex < videos.length) {
           goToVideo(newIndex);
@@ -311,7 +317,7 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       container.removeEventListener('touchend', handleTouchEnd);
       clearTimeout(scrollTimeoutRef.current);
     };
-  }, [activeIndex, videos.length, goToVideo]);
+  }, [videos.length, goToVideo]);
 
   // Track view
   const handleViewTracked = useCallback(async (videoId: string) => {
