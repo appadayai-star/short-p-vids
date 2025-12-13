@@ -186,28 +186,103 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
     }
   }, [loadingMore, hasMore, searchQuery, categoryFilter]);
 
-  // Scroll tracking
+  // Wheel/trackpad handler - enforce single video scroll
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
 
-    const handleScroll = () => {
-      const scrollTop = container.scrollTop;
-      const itemHeight = container.clientHeight;
-      const newIndex = Math.round(scrollTop / itemHeight);
+    let isScrolling = false;
+    let scrollTimeout: ReturnType<typeof setTimeout>;
+    let accumulatedDelta = 0;
+    const SCROLL_THRESHOLD = 50; // Minimum delta to trigger scroll
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
       
-      if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
-        setActiveIndex(newIndex);
-      }
+      if (isScrolling) return;
       
-      // Load more when near bottom
-      if (scrollTop + itemHeight * 2 >= container.scrollHeight && hasMore && !loadingMore) {
-        loadMore();
+      accumulatedDelta += e.deltaY;
+      
+      // Only trigger scroll when threshold is reached
+      if (Math.abs(accumulatedDelta) >= SCROLL_THRESHOLD) {
+        isScrolling = true;
+        const direction = accumulatedDelta > 0 ? 1 : -1;
+        const newIndex = activeIndex + direction;
+        
+        if (newIndex >= 0 && newIndex < videos.length) {
+          setActiveIndex(newIndex);
+          
+          // Load more when near bottom
+          if (newIndex >= videos.length - 3 && hasMore && !loadingMore) {
+            loadMore();
+          }
+        }
+        
+        accumulatedDelta = 0;
+        
+        // Debounce - prevent rapid scrolling
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+          isScrolling = false;
+        }, 300);
       }
     };
 
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
+    // Touch handling for mobile swipes
+    let touchStartY = 0;
+    let touchMoved = false;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0].clientY;
+      touchMoved = false;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isScrolling) {
+        e.preventDefault();
+        return;
+      }
+      touchMoved = true;
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (!touchMoved || isScrolling) return;
+      
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaY = touchStartY - touchEndY;
+      
+      if (Math.abs(deltaY) > 50) { // Minimum swipe distance
+        isScrolling = true;
+        const direction = deltaY > 0 ? 1 : -1;
+        const newIndex = activeIndex + direction;
+        
+        if (newIndex >= 0 && newIndex < videos.length) {
+          setActiveIndex(newIndex);
+          
+          if (newIndex >= videos.length - 3 && hasMore && !loadingMore) {
+            loadMore();
+          }
+        }
+        
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+          isScrolling = false;
+        }, 300);
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+    
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      clearTimeout(scrollTimeout);
+    };
   }, [activeIndex, videos.length, hasMore, loadingMore, loadMore]);
 
   // Get active container rect
@@ -291,14 +366,30 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
     <div
       ref={containerRef}
       id="video-feed-container"
-      className="w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide"
+      className="relative w-full h-[100dvh] overflow-hidden bg-black"
       style={{ 
-        paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
-        scrollSnapType: 'y mandatory',
-        scrollBehavior: 'smooth',
-        overscrollBehavior: 'contain'
+        touchAction: 'pan-y', // Allow vertical touch but we handle it
       }}
     >
+      {/* Feed items - positioned in a column, translated based on activeIndex */}
+      <div 
+        className="absolute inset-0 transition-transform duration-300 ease-out"
+        style={{ 
+          transform: `translateY(-${activeIndex * 100}%)`,
+        }}
+      >
+        {videos.map((video, index) => (
+          <FeedItem
+            key={video.id}
+            video={video}
+            index={index}
+            isActive={index === activeIndex}
+            currentUserId={userId}
+            onContainerRef={handleRef}
+          />
+        ))}
+      </div>
+      
       {/* Single shared video player */}
       <SimplePlayer
         video={activeVideo}
@@ -307,21 +398,9 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
         onViewTracked={handleViewTracked}
       />
       
-      {/* Feed items (thumbnails + UI) */}
-      {videos.map((video, index) => (
-        <FeedItem
-          key={video.id}
-          video={video}
-          index={index}
-          isActive={index === activeIndex}
-          currentUserId={userId}
-          onContainerRef={handleRef}
-        />
-      ))}
-      
       {/* Loading more indicator */}
       {loadingMore && (
-        <div className="flex justify-center py-4 bg-black">
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       )}
