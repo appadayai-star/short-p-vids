@@ -9,7 +9,6 @@ import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
-import { debugLog } from "@/lib/debugId";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
@@ -23,10 +22,7 @@ const Feed = () => {
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
 
-  debugLog("Feed", `Render`, { authStatus, userId: user?.id || null, refreshKey });
-
   const handleRefresh = () => {
-    debugLog("Feed", "Home refresh triggered");
     setRefreshKey(prev => prev + 1);
   };
 
@@ -40,7 +36,6 @@ const Feed = () => {
             : "Discover and share amazing short videos on ShortPV"
           }
         />
-        {/* Category filter indicator */}
         {categoryFilter && (
           <button
             onClick={() => navigate("/")}
@@ -51,7 +46,6 @@ const Feed = () => {
           </button>
         )}
 
-        {/* Search button */}
         <button
           onClick={() => navigate("/search")}
           className="fixed top-4 right-4 z-50 p-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors"
