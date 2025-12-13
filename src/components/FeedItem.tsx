@@ -1,17 +1,26 @@
-import { useState, useEffect, memo } from "react";
-import { Heart, Share2, Bookmark, MoreVertical, Trash2 } from "lucide-react";
+import { useState, useEffect, useRef, memo, useCallback } from "react";
+import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestThumbnailUrl } from "@/lib/cloudinary";
+import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+// Global mute state - persisted across videos
+let globalMuted = true;
+const muteListeners = new Set<(muted: boolean) => void>();
+
+const setGlobalMuted = (muted: boolean) => {
+  globalMuted = muted;
+  muteListeners.forEach(listener => listener(muted));
+};
 
 // Guest client ID for anonymous likes
 const getGuestClientId = (): string => {
@@ -61,7 +70,9 @@ interface FeedItemProps {
   video: Video;
   index: number;
   isActive: boolean;
+  hasEntered: boolean;
   currentUserId: string | null;
+  onViewTracked: (videoId: string) => void;
   onDelete?: (videoId: string) => void;
   isMobile?: boolean;
 }
@@ -70,14 +81,15 @@ export const FeedItem = memo(({
   video, 
   index,
   isActive,
+  hasEntered,
   currentUserId, 
+  onViewTracked,
   onDelete,
   isMobile = false,
 }: FeedItemProps) => {
   const navigate = useNavigate();
-  
-  // Only render content for active item on desktop to prevent ghost overlays
-  const shouldRenderContent = isMobile || isActive;
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const trackedRef = useRef(false);
   
   // UI state
   const [isLiked, setIsLiked] = useState(false);
@@ -85,7 +97,49 @@ export const FeedItem = memo(({
   const [isSaved, setIsSaved] = useState(false);
   const [savesCount, setSavesCount] = useState(0);
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [thumbnailError, setThumbnailError] = useState(false);
+  const [isMuted, setIsMuted] = useState(globalMuted);
+  const [showMuteIcon, setShowMuteIcon] = useState(false);
+
+  // Video sources
+  const videoSrc = getBestVideoSource(
+    video.cloudinary_public_id || null,
+    video.optimized_video_url || null,
+    video.stream_url || null,
+    video.video_url
+  );
+  const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.video_url);
+
+  // Sync with global mute state
+  useEffect(() => {
+    const listener = (muted: boolean) => {
+      setIsMuted(muted);
+      if (videoRef.current) {
+        videoRef.current.muted = muted;
+      }
+    };
+    muteListeners.add(listener);
+    return () => {
+      muteListeners.delete(listener);
+    };
+  }, []);
+
+  // Play/pause based on isActive
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    if (isActive && hasEntered) {
+      videoEl.currentTime = 0;
+      videoEl.play().then(() => {
+        if (!trackedRef.current) {
+          trackedRef.current = true;
+          onViewTracked(video.id);
+        }
+      }).catch(() => {});
+    } else {
+      videoEl.pause();
+    }
+  }, [isActive, hasEntered, video.id, onViewTracked]);
 
   // Check if guest has liked this video
   useEffect(() => {
@@ -113,6 +167,13 @@ export const FeedItem = memo(({
 
     fetchStates();
   }, [video.id, currentUserId]);
+
+  const toggleMute = useCallback(() => {
+    const newMuted = !isMuted;
+    setGlobalMuted(newMuted);
+    setShowMuteIcon(true);
+    setTimeout(() => setShowMuteIcon(false), 500);
+  }, [isMuted]);
 
   const toggleLike = async () => {
     const clientId = getGuestClientId();
@@ -197,118 +258,127 @@ export const FeedItem = memo(({
 
   const isOwnVideo = currentUserId === video.user_id;
 
-  // Mobile uses scroll-snap properties, desktop uses plain height
-  const itemStyle: React.CSSProperties = isMobile
-    ? {
-        height: '100dvh',
-        scrollSnapAlign: 'start',
-        scrollSnapStop: 'always',
-      }
-    : {
-        height: '100dvh',
-      };
-
-  // Get thumbnail URL - pass video_url for fallback generation
-  const thumbnailUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.video_url);
-
   return (
     <div 
-      className="relative w-full flex items-center justify-center"
+      className="relative w-full h-[100dvh] flex-shrink-0"
       style={{
-        ...itemStyle,
-        background: 'transparent',
-        margin: 0,
-        padding: 0,
-        border: 'none',
-        outline: 'none',
-        boxShadow: 'none',
-        // Hardware acceleration for smooth transitions
-        transform: 'translateZ(0)',
-        backfaceVisibility: 'hidden',
-        WebkitBackfaceVisibility: 'hidden',
+        scrollSnapAlign: isMobile ? 'start' : undefined,
+        scrollSnapStop: isMobile ? 'always' : undefined,
       }}
     >
-      {/* Only render overlays for active item to prevent ghost outlines */}
-      {shouldRenderContent && (
-        <>
-          {/* Right side actions */}
-          <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-40 pointer-events-auto">
-            <button onClick={toggleLike} className="flex flex-col items-center gap-1">
-              <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-                <Heart className={cn("h-7 w-7", isLiked ? "fill-primary text-primary" : "text-white")} />
-              </div>
-              <span className="text-white text-xs font-semibold">{likesCount}</span>
-            </button>
+      {/* Video player - embedded in item, scrolls with it */}
+      <video
+        ref={videoRef}
+        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
+        style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
+        src={videoSrc}
+        poster={posterSrc || undefined}
+        loop
+        playsInline
+        muted={isMuted}
+        preload={isActive ? "auto" : "metadata"}
+        onClick={toggleMute}
+      />
 
-            <button onClick={toggleSave} className="flex flex-col items-center gap-1">
-              <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-                <Bookmark className={cn("h-7 w-7", isSaved ? "fill-yellow-500 text-yellow-500" : "text-white")} />
-              </div>
-              <span className="text-white text-xs font-semibold">{savesCount}</span>
-            </button>
-
-            <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center gap-1">
-              <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-                <Share2 className="h-7 w-7 text-white" />
-              </div>
-            </button>
-
-            {isOwnVideo && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex flex-col items-center gap-1">
-                    <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-                      <MoreVertical className="h-7 w-7 text-white" />
-                    </div>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="bg-background border-border z-50">
-                  <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive cursor-pointer">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+      {/* Mute indicator flash */}
+      {showMuteIcon && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+          <div className="bg-black/50 rounded-full p-4 animate-scale-in">
+            {isMuted ? <VolumeX className="h-12 w-12 text-white" /> : <Volume2 className="h-12 w-12 text-white" />}
           </div>
+        </div>
+      )}
 
-          {/* Bottom info */}
-          <div className="absolute bottom-0 left-0 right-0 p-4 pb-[100px] z-40 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none pr-[80px]">
-            <div className="space-y-2 pointer-events-auto">
-              <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
-                <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
-                  {video.profiles.avatar_url ? (
-                    <img src={video.profiles.avatar_url} alt={video.profiles.username} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
-                      {video.profiles.username[0].toUpperCase()}
-                    </div>
-                  )}
+      {/* Mute indicator in corner */}
+      <div 
+        className="absolute right-4 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm pointer-events-none"
+        style={{ bottom: 'calc(180px + 64px + env(safe-area-inset-bottom, 0px))' }}
+      >
+        {isMuted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
+      </div>
+
+      {/* Right side actions */}
+      <div 
+        className="absolute right-4 flex flex-col gap-6 z-40"
+        style={{ bottom: 'calc(180px + env(safe-area-inset-bottom, 0px))' }}
+      >
+        <button onClick={toggleLike} className="flex flex-col items-center gap-1">
+          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+            <Heart className={cn("h-7 w-7", isLiked ? "fill-primary text-primary" : "text-white")} />
+          </div>
+          <span className="text-white text-xs font-semibold">{likesCount}</span>
+        </button>
+
+        <button onClick={toggleSave} className="flex flex-col items-center gap-1">
+          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+            <Bookmark className={cn("h-7 w-7", isSaved ? "fill-yellow-500 text-yellow-500" : "text-white")} />
+          </div>
+          <span className="text-white text-xs font-semibold">{savesCount}</span>
+        </button>
+
+        <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center gap-1">
+          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+            <Share2 className="h-7 w-7 text-white" />
+          </div>
+        </button>
+
+        {isOwnVideo && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex flex-col items-center gap-1">
+                <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+                  <MoreVertical className="h-7 w-7 text-white" />
                 </div>
-                <span className="text-white font-semibold">@{video.profiles.username}</span>
-              </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-background border-border z-50">
+              <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive cursor-pointer">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
 
-              {video.description && <p className="text-white/90 text-sm">{video.description}</p>}
-
-              {video.tags && video.tags.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {video.tags.map((tag, idx) => (
-                    <button
-                      key={idx}
-                      onClick={(e) => { e.stopPropagation(); handleCategoryClick(tag); }}
-                      className="text-primary text-sm font-semibold hover:underline cursor-pointer"
-                    >
-                      #{tag}
-                    </button>
-                  ))}
+      {/* Bottom info */}
+      <div 
+        className="absolute left-0 right-0 p-4 z-40 bg-gradient-to-t from-black via-black/60 to-transparent pr-[80px]"
+        style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
+      >
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
+            <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
+              {video.profiles.avatar_url ? (
+                <img src={video.profiles.avatar_url} alt={video.profiles.username} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
+                  {video.profiles.username[0].toUpperCase()}
                 </div>
               )}
             </div>
+            <span className="text-white font-semibold">@{video.profiles.username}</span>
           </div>
 
-          <ShareDrawer videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
-        </>
-      )}
+          {video.description && <p className="text-white/90 text-sm">{video.description}</p>}
+
+          {video.tags && video.tags.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {video.tags.map((tag, idx) => (
+                <button
+                  key={idx}
+                  onClick={(e) => { e.stopPropagation(); handleCategoryClick(tag); }}
+                  className="text-primary text-sm font-semibold hover:underline cursor-pointer"
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <ShareDrawer videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
     </div>
   );
 });
