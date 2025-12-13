@@ -46,12 +46,6 @@ const isDesktopPointer = () => {
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
   
-  // DEBUG: Only log on actual mount (not re-renders)
-  useEffect(() => {
-    console.log("🔴 VIDEOFEED COMPONENT MOUNTED - isDesktop:", isDesktopPointer());
-    return () => console.log("🔴 VIDEOFEED COMPONENT UNMOUNTED");
-  }, []);
-  
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -104,52 +98,31 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   // Desktop: wheel handler on window - transform-based navigation
   useEffect(() => {
     if (!isDesktop || videos.length === 0) return;
-    
-    console.log("🔵 WHEEL HANDLER REGISTERED - videos:", videos.length);
 
     const handleWheel = (e: WheelEvent) => {
-      // Prevent all native scrolling on desktop
       e.preventDefault();
       
-      // If locked, ignore
-      if (wheelLockRef.current) {
-        console.log("🔒 Wheel locked, ignoring");
-        return;
-      }
+      if (wheelLockRef.current) return;
       
-      // Accumulate delta
       wheelDeltaAccumRef.current += e.deltaY;
       
-      console.log("🎡 Wheel delta:", e.deltaY, "accumulated:", wheelDeltaAccumRef.current);
-      
-      // Only trigger when threshold reached
       if (Math.abs(wheelDeltaAccumRef.current) >= WHEEL_DELTA_THRESHOLD) {
         const direction = wheelDeltaAccumRef.current > 0 ? 1 : -1;
         const targetIndex = activeIndexRef.current + direction;
         
-        console.log("📍 Navigating:", activeIndexRef.current, "->", targetIndex);
-        
-        // Reset and lock
         wheelDeltaAccumRef.current = 0;
         wheelLockRef.current = true;
         
-        // Navigate
         goToIndex(targetIndex);
         
-        // Release lock after transition
         setTimeout(() => {
           wheelLockRef.current = false;
-          console.log("🔓 Wheel unlocked");
         }, WHEEL_LOCK_MS);
       }
     };
 
-    // Listen on window to catch all wheel events
     window.addEventListener('wheel', handleWheel, { passive: false });
-    return () => {
-      console.log("🔴 WHEEL HANDLER REMOVED");
-      window.removeEventListener('wheel', handleWheel);
-    };
+    return () => window.removeEventListener('wheel', handleWheel);
   }, [isDesktop, videos.length, goToIndex]);
 
   // Mobile only: scroll-settle detection
