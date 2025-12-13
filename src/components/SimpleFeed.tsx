@@ -38,7 +38,6 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   
@@ -47,93 +46,123 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
   const loadedIds = useRef<Set<string>>(new Set());
   const page = useRef(0);
   const hasFetched = useRef(false);
+  
+  // Use ref for activeIndex to avoid effect re-runs
+  const activeIndexRef = useRef(0);
+  const [activeIndex, setActiveIndex] = useState(0);
+  
+  // Scroll lock ref
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Simple, direct fetch - no edge functions, no complexity
-  const fetchVideos = useCallback(async (reset = true, sq = searchQuery, cf = categoryFilter) => {
-    console.log("[SimpleFeed] fetchVideos called, reset:", reset, "search:", sq, "category:", cf);
+  // Update ref when state changes
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+
+  // Fetch using the smart algorithm edge function
+  const fetchVideos = useCallback(async (reset = true) => {
+    console.log("[SimpleFeed] fetchVideos called, reset:", reset);
     
     if (reset) {
       setLoading(true);
       setError(null);
       setActiveIndex(0);
+      activeIndexRef.current = 0;
       page.current = 0;
       loadedIds.current.clear();
-      if (containerRef.current) containerRef.current.scrollTop = 0;
     }
 
     try {
-      console.log("[SimpleFeed] Starting Supabase query...");
-      // First fetch videos without join
-      let query = supabase
-        .from("videos")
-        .select(`
-          id, title, description, video_url, optimized_video_url, stream_url, 
-          cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id
-        `)
-        .order("created_at", { ascending: false })
-        .range(0, PAGE_SIZE - 1);
+      let fetchedVideos: Video[] = [];
 
-      if (cf) {
-        query = query.contains('tags', [cf]);
-      }
-      
-      if (sq) {
-        query = query.or(`title.ilike.%${sq}%,description.ilike.%${sq}%`);
-      }
+      // Use edge function for personalized feed (no filters)
+      if (!searchQuery && !categoryFilter) {
+        console.log("[SimpleFeed] Using edge function for personalized feed");
+        const { data, error: fnError } = await supabase.functions.invoke('get-for-you-feed', {
+          body: { userId, page: page.current, limit: PAGE_SIZE }
+        });
 
-      const { data, error: fetchError } = await query;
+        if (fnError) {
+          console.error("[SimpleFeed] Edge function error:", fnError);
+          throw fnError;
+        }
 
-      if (fetchError) {
-        console.error("[SimpleFeed] Query error:", fetchError);
-        throw fetchError;
-      }
-
-      const rawVideos = data || [];
-      console.log("[SimpleFeed] Fetched", rawVideos.length, "videos");
-      
-      // Fetch profiles separately using the public view
-      if (rawVideos.length > 0) {
-        const userIds = [...new Set(rawVideos.map(v => v.user_id))];
-        const { data: profilesData } = await supabase
-          .from("profiles_public")
-          .select("id, username, avatar_url")
-          .in("id", userIds);
-        
-        const profilesMap = new Map(
-          (profilesData || []).map(p => [p.id, { username: p.username || 'User', avatar_url: p.avatar_url }])
-        );
-        
-        const fetchedVideos = rawVideos.map(v => ({
-          ...v,
-          profiles: profilesMap.get(v.user_id) || { username: 'User', avatar_url: null }
-        }));
-        
-        fetchedVideos.forEach(v => loadedIds.current.add(v.id));
-        setVideos(fetchedVideos);
-        setHasMore(fetchedVideos.length === PAGE_SIZE);
+        fetchedVideos = data?.videos || [];
+        console.log("[SimpleFeed] Edge function returned", fetchedVideos.length, "videos");
       } else {
-        setVideos([]);
-        setHasMore(false);
+        // Direct query for search/category filters
+        console.log("[SimpleFeed] Using direct query for filtered feed");
+        let query = supabase
+          .from("videos")
+          .select(`
+            id, title, description, video_url, optimized_video_url, stream_url, 
+            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id
+          `)
+          .order("created_at", { ascending: false })
+          .range(0, PAGE_SIZE - 1);
+
+        if (categoryFilter) {
+          query = query.contains('tags', [categoryFilter]);
+        }
+        
+        if (searchQuery) {
+          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        }
+
+        const { data, error: fetchError } = await query;
+        if (fetchError) throw fetchError;
+
+        const rawVideos = data || [];
+        
+        // Fetch profiles separately
+        if (rawVideos.length > 0) {
+          const userIds = [...new Set(rawVideos.map(v => v.user_id))];
+          const { data: profilesData } = await supabase
+            .from("profiles_public")
+            .select("id, username, avatar_url")
+            .in("id", userIds);
+          
+          const profilesMap = new Map(
+            (profilesData || []).map(p => [p.id, { username: p.username || 'User', avatar_url: p.avatar_url }])
+          );
+          
+          fetchedVideos = rawVideos.map(v => ({
+            ...v,
+            profiles: profilesMap.get(v.user_id) || { username: 'User', avatar_url: null }
+          }));
+        }
       }
+      
+      fetchedVideos.forEach(v => loadedIds.current.add(v.id));
+      setVideos(fetchedVideos);
+      setHasMore(fetchedVideos.length === PAGE_SIZE);
     } catch (err) {
       console.error("[SimpleFeed] Fetch error:", err);
       setError(err instanceof Error ? err.message : "Failed to load videos");
     } finally {
       setLoading(false);
     }
-  }, []); // No dependencies - we pass values as arguments
+  }, [userId, searchQuery, categoryFilter]);
 
   // Initial load - ONLY ONCE
   useEffect(() => {
     if (hasFetched.current) return;
     hasFetched.current = true;
-    fetchVideos(true, searchQuery, categoryFilter);
-  }, [fetchVideos, searchQuery, categoryFilter]);
+    fetchVideos(true);
+  }, [fetchVideos]);
 
-  // Re-fetch when filters change (after initial load)
+  // Re-fetch when filters change
+  const prevFiltersRef = useRef({ searchQuery, categoryFilter });
   useEffect(() => {
-    if (!hasFetched.current) return; // Skip on mount
-    fetchVideos(true, searchQuery, categoryFilter);
+    if (
+      prevFiltersRef.current.searchQuery !== searchQuery ||
+      prevFiltersRef.current.categoryFilter !== categoryFilter
+    ) {
+      prevFiltersRef.current = { searchQuery, categoryFilter };
+      hasFetched.current = true;
+      fetchVideos(true);
+    }
   }, [searchQuery, categoryFilter, fetchVideos]);
 
   // Load more
@@ -142,150 +171,152 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
     
     setLoadingMore(true);
     page.current += 1;
-    const offset = page.current * PAGE_SIZE;
 
     try {
-      let query = supabase
-        .from("videos")
-        .select(`
-          id, title, description, video_url, optimized_video_url, stream_url, 
-          cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id
-        `)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
+      if (!searchQuery && !categoryFilter) {
+        const { data } = await supabase.functions.invoke('get-for-you-feed', {
+          body: { userId, page: page.current, limit: PAGE_SIZE }
+        });
+        
+        const newVideos = (data?.videos || []).filter((v: Video) => !loadedIds.current.has(v.id));
+        newVideos.forEach((v: Video) => loadedIds.current.add(v.id));
+        setVideos(prev => [...prev, ...newVideos]);
+        setHasMore(newVideos.length > 0);
+      } else {
+        const offset = page.current * PAGE_SIZE;
+        let query = supabase
+          .from("videos")
+          .select(`
+            id, title, description, video_url, optimized_video_url, stream_url, 
+            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id
+          `)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
 
-      if (categoryFilter) query = query.contains('tags', [categoryFilter]);
-      if (searchQuery) query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        if (categoryFilter) query = query.contains('tags', [categoryFilter]);
+        if (searchQuery) query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
 
-      const { data } = await query;
-      const rawVideos = (data || []).filter(v => !loadedIds.current.has(v.id));
-      
-      // Fetch profiles separately
-      const userIds = [...new Set(rawVideos.map(v => v.user_id))];
-      const { data: profilesData } = await supabase
-        .from("profiles_public")
-        .select("id, username, avatar_url")
-        .in("id", userIds);
-      
-      const profilesMap = new Map(
-        (profilesData || []).map(p => [p.id, { username: p.username || 'User', avatar_url: p.avatar_url }])
-      );
-      
-      const newVideos = rawVideos.map(v => ({
-        ...v,
-        profiles: profilesMap.get(v.user_id) || { username: 'User', avatar_url: null }
-      }));
-      
-      newVideos.forEach(v => loadedIds.current.add(v.id));
-      setVideos(prev => [...prev, ...newVideos]);
-      setHasMore(newVideos.length > 0);
+        const { data } = await query;
+        const rawVideos = (data || []).filter(v => !loadedIds.current.has(v.id));
+        
+        if (rawVideos.length > 0) {
+          const userIds = [...new Set(rawVideos.map(v => v.user_id))];
+          const { data: profilesData } = await supabase
+            .from("profiles_public")
+            .select("id, username, avatar_url")
+            .in("id", userIds);
+          
+          const profilesMap = new Map(
+            (profilesData || []).map(p => [p.id, { username: p.username || 'User', avatar_url: p.avatar_url }])
+          );
+          
+          const newVideos = rawVideos.map(v => ({
+            ...v,
+            profiles: profilesMap.get(v.user_id) || { username: 'User', avatar_url: null }
+          }));
+          
+          newVideos.forEach(v => loadedIds.current.add(v.id));
+          setVideos(prev => [...prev, ...newVideos]);
+          setHasMore(newVideos.length > 0);
+        } else {
+          setHasMore(false);
+        }
+      }
     } catch (err) {
       console.error("[SimpleFeed] Load more error:", err);
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, hasMore, searchQuery, categoryFilter]);
+  }, [loadingMore, hasMore, userId, searchQuery, categoryFilter]);
 
-  // Wheel/trackpad handler - enforce single video scroll
+  // Navigate to specific video index
+  const goToVideo = useCallback((newIndex: number) => {
+    const videosLength = videos.length;
+    if (newIndex < 0 || newIndex >= videosLength) return;
+    
+    setActiveIndex(newIndex);
+    activeIndexRef.current = newIndex;
+    
+    // Load more when near end
+    if (newIndex >= videosLength - 3 && hasMore && !loadingMore) {
+      loadMore();
+    }
+  }, [videos.length, hasMore, loadingMore, loadMore]);
+
+  // Wheel/trackpad handler - SINGLE VIDEO SCROLL
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || videos.length === 0) return;
+    if (!container) return;
 
-    let isScrolling = false;
-    let scrollTimeout: ReturnType<typeof setTimeout>;
     let accumulatedDelta = 0;
-    const SCROLL_THRESHOLD = 50; // Minimum delta to trigger scroll
+    const SCROLL_THRESHOLD = 30;
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       
-      if (isScrolling) return;
+      // Block if currently scrolling
+      if (isScrollingRef.current) return;
       
       accumulatedDelta += e.deltaY;
       
-      // Only trigger scroll when threshold is reached
       if (Math.abs(accumulatedDelta) >= SCROLL_THRESHOLD) {
-        isScrolling = true;
+        isScrollingRef.current = true;
         const direction = accumulatedDelta > 0 ? 1 : -1;
-        const newIndex = activeIndex + direction;
+        const currentIndex = activeIndexRef.current;
+        const newIndex = currentIndex + direction;
         
-        if (newIndex >= 0 && newIndex < videos.length) {
-          setActiveIndex(newIndex);
-          
-          // Load more when near bottom
-          if (newIndex >= videos.length - 3 && hasMore && !loadingMore) {
-            loadMore();
-          }
-        }
-        
+        goToVideo(newIndex);
         accumulatedDelta = 0;
         
-        // Debounce - prevent rapid scrolling
-        clearTimeout(scrollTimeout);
-        scrollTimeout = setTimeout(() => {
-          isScrolling = false;
-        }, 300);
+        // Lock scrolling for 350ms
+        clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = setTimeout(() => {
+          isScrollingRef.current = false;
+        }, 350);
       }
     };
 
-    // Touch handling for mobile swipes
+    // Touch handling for mobile
     let touchStartY = 0;
-    let touchMoved = false;
 
     const handleTouchStart = (e: TouchEvent) => {
       touchStartY = e.touches[0].clientY;
-      touchMoved = false;
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (isScrolling) {
-        e.preventDefault();
-        return;
-      }
-      touchMoved = true;
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
-      if (!touchMoved || isScrolling) return;
+      if (isScrollingRef.current) return;
       
       const touchEndY = e.changedTouches[0].clientY;
       const deltaY = touchStartY - touchEndY;
       
-      if (Math.abs(deltaY) > 50) { // Minimum swipe distance
-        isScrolling = true;
+      if (Math.abs(deltaY) > 50) {
+        isScrollingRef.current = true;
         const direction = deltaY > 0 ? 1 : -1;
-        const newIndex = activeIndex + direction;
+        const currentIndex = activeIndexRef.current;
+        const newIndex = currentIndex + direction;
         
-        if (newIndex >= 0 && newIndex < videos.length) {
-          setActiveIndex(newIndex);
-          
-          if (newIndex >= videos.length - 3 && hasMore && !loadingMore) {
-            loadMore();
-          }
-        }
+        goToVideo(newIndex);
         
-        clearTimeout(scrollTimeout);
-        scrollTimeout = setTimeout(() => {
-          isScrolling = false;
-        }, 300);
+        clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = setTimeout(() => {
+          isScrollingRef.current = false;
+        }, 350);
       }
     };
 
     container.addEventListener('wheel', handleWheel, { passive: false });
     container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
     container.addEventListener('touchend', handleTouchEnd, { passive: true });
     
     return () => {
       container.removeEventListener('wheel', handleWheel);
       container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
-      clearTimeout(scrollTimeout);
+      clearTimeout(scrollTimeoutRef.current);
     };
-  }, [activeIndex, videos.length, hasMore, loadingMore, loadMore]);
+  }, [goToVideo]);
 
-  // Get active container rect
+  // Get active container rect for video player positioning
   const getActiveRect = useCallback(() => {
     const activeRef = itemRefs.current.get(activeIndex);
     return activeRef?.getBoundingClientRect() || null;
@@ -299,7 +330,6 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
     
     const timer = setTimeout(updateRect, 100);
     window.addEventListener('resize', updateRect);
-    containerRef.current?.addEventListener('scroll', updateRect);
     
     return () => {
       clearTimeout(timer);
@@ -340,7 +370,7 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4 px-6">
         <p className="text-red-400 text-center">{error}</p>
         <button
-          onClick={() => fetchVideos()}
+          onClick={() => { hasFetched.current = false; fetchVideos(); }}
           className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg"
         >
           <RefreshCw className="h-5 w-5" /> Retry
@@ -367,16 +397,12 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       ref={containerRef}
       id="video-feed-container"
       className="relative w-full h-[100dvh] overflow-hidden bg-black"
-      style={{ 
-        touchAction: 'pan-y', // Allow vertical touch but we handle it
-      }}
+      style={{ touchAction: 'none' }}
     >
-      {/* Feed items - positioned in a column, translated based on activeIndex */}
+      {/* Feed items - translated based on activeIndex */}
       <div 
         className="absolute inset-0 transition-transform duration-300 ease-out"
-        style={{ 
-          transform: `translateY(-${activeIndex * 100}%)`,
-        }}
+        style={{ transform: `translateY(-${activeIndex * 100}%)` }}
       >
         {videos.map((video, index) => (
           <FeedItem
