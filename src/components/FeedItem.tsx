@@ -47,8 +47,8 @@ const setGuestLikes = (likes: string[]) => {
   localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
 };
 
-// Playback timeout constant
-const PLAYBACK_TIMEOUT_MS = 5000;
+// Debug mode for metrics
+const DEBUG_METRICS = import.meta.env.DEV;
 
 interface Video {
   id: string;
@@ -95,6 +95,8 @@ export const FeedItem = memo(({
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackedRef = useRef(false);
+  const loadStartTimeRef = useRef<number>(0);
+  const retryCountRef = useRef(0);
   
   // UI state
   const [isLiked, setIsLiked] = useState(false);
@@ -113,8 +115,15 @@ export const FeedItem = memo(({
     video.stream_url || null,
     video.video_url
   );
-  // Poster is ALWAYS defined (never undefined due to placeholder fallback)
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+
+  // Determine source type for metrics
+  const getSourceType = () => {
+    if (video.cloudinary_public_id) return 'cloudinary';
+    if (video.optimized_video_url) return 'optimized';
+    if (video.stream_url) return 'hls';
+    return 'supabase';
+  };
 
   // Sync with global mute state
   useEffect(() => {
@@ -130,52 +139,73 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive
+  // Play/pause based on isActive - with faster activation
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
+      loadStartTimeRef.current = performance.now();
       videoEl.currentTime = 0;
       
       const attemptPlay = () => {
         videoEl.play().then(() => {
-          console.log('[FeedItem] Playing successfully');
+          // Log time to first frame in debug mode
+          if (DEBUG_METRICS && loadStartTimeRef.current) {
+            const ttff = Math.round(performance.now() - loadStartTimeRef.current);
+            console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${getSourceType()} | Retries: ${retryCountRef.current}`);
+          }
+          
           if (!trackedRef.current) {
             trackedRef.current = true;
             onViewTracked(video.id);
           }
         }).catch((err) => {
-          console.log('[FeedItem] Play failed:', err.name, err.message);
-          // Only show retry for actual failures, not loading/autoplay issues
-          if (err.name === 'AbortError' || err.name === 'NotAllowedError' || err.name === 'NotSupportedError') {
-            // These are usually transient - video not ready yet or autoplay blocked
+          if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
             return;
+          }
+          if (err.name === 'NotSupportedError') {
+            retryCountRef.current++;
+            if (retryCountRef.current < 3) {
+              // Retry with reload
+              setTimeout(() => {
+                videoEl.load();
+                attemptPlay();
+              }, 500);
+              return;
+            }
           }
           setPlaybackFailed(true);
         });
       };
 
-      // Try to play immediately
+      // Try to play immediately - no delay
       attemptPlay();
       
-      // Also listen for canplay in case video wasn't ready
-      const handleCanPlay = () => {
-        console.log('[FeedItem] canplay fired, attempting play');
-        attemptPlay();
-      };
+      // Listen for canplay for videos not ready
+      const handleCanPlay = () => attemptPlay();
       videoEl.addEventListener('canplay', handleCanPlay);
+      
       return () => videoEl.removeEventListener('canplay', handleCanPlay);
     } else {
       videoEl.pause();
     }
-  }, [isActive, hasEntered, video.id, onViewTracked]);
+  }, [isActive, hasEntered, video.id, onViewTracked, index]);
+
+  // Preload next video when this one is active
+  useEffect(() => {
+    if (!isActive || !hasEntered) return;
+    
+    // The preloading is handled by shouldPreload prop on adjacent items
+    // This effect could be used for more aggressive prefetching if needed
+  }, [isActive, hasEntered]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
     
+    retryCountRef.current++;
     setPlaybackFailed(false);
     videoEl.src = videoSrc;
     videoEl.load();
@@ -318,17 +348,17 @@ export const FeedItem = memo(({
         style={{ paddingBottom: navOffset }}
       />
 
-      {/* Video player - overlays poster, ALWAYS has poster attribute */}
+      {/* Video player - overlays poster */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
-        src={videoSrc}
+        src={isActive || shouldPreload ? videoSrc : undefined}
         poster={posterSrc}
         loop
         playsInline
         muted={isMuted}
-        preload={isActive || shouldPreload ? "auto" : "none"}
+        preload={isActive ? "auto" : shouldPreload ? "metadata" : "none"}
         onClick={toggleMute}
       />
 
