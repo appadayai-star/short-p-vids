@@ -58,6 +58,25 @@ const Auth = () => {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate username - no spaces allowed
+    const username = signupData.username.trim();
+    if (username.includes(" ")) {
+      toast.error("Username cannot contain spaces");
+      return;
+    }
+    
+    // Validate username format
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      toast.error("Username can only contain letters, numbers, and underscores");
+      return;
+    }
+
+    if (username.length < 3) {
+      toast.error("Username must be at least 3 characters");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -66,7 +85,7 @@ const Auth = () => {
         password: signupData.password,
         options: {
           data: {
-            username: signupData.username,
+            username: username,
           },
           emailRedirectTo: `${window.location.origin}/feed`,
         },
