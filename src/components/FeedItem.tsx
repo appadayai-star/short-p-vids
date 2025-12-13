@@ -47,8 +47,8 @@ const setGuestLikes = (likes: string[]) => {
   localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
 };
 
-// Debug mode for metrics
-const DEBUG_METRICS = import.meta.env.DEV;
+// Playback timeout constant
+const PLAYBACK_TIMEOUT_MS = 5000;
 
 interface Video {
   id: string;
@@ -78,6 +78,7 @@ interface FeedItemProps {
   currentUserId: string | null;
   onViewTracked: (videoId: string) => void;
   onDelete?: (videoId: string) => void;
+  isMobile?: boolean;
 }
 
 export const FeedItem = memo(({ 
@@ -89,12 +90,11 @@ export const FeedItem = memo(({
   currentUserId, 
   onViewTracked,
   onDelete,
+  isMobile = false,
 }: FeedItemProps) => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackedRef = useRef(false);
-  const loadStartTimeRef = useRef<number>(0);
-  const retryCountRef = useRef(0);
   
   // UI state
   const [isLiked, setIsLiked] = useState(false);
@@ -113,15 +113,8 @@ export const FeedItem = memo(({
     video.stream_url || null,
     video.video_url
   );
+  // Poster is ALWAYS defined (never undefined due to placeholder fallback)
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
-
-  // Determine source type for metrics
-  const getSourceType = () => {
-    if (video.cloudinary_public_id) return 'cloudinary';
-    if (video.optimized_video_url) return 'optimized';
-    if (video.stream_url) return 'hls';
-    return 'supabase';
-  };
 
   // Sync with global mute state
   useEffect(() => {
@@ -137,73 +130,52 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive - with faster activation
+  // Play/pause based on isActive
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
-      loadStartTimeRef.current = performance.now();
       videoEl.currentTime = 0;
       
       const attemptPlay = () => {
         videoEl.play().then(() => {
-          // Log time to first frame in debug mode
-          if (DEBUG_METRICS && loadStartTimeRef.current) {
-            const ttff = Math.round(performance.now() - loadStartTimeRef.current);
-            console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${getSourceType()} | Retries: ${retryCountRef.current}`);
-          }
-          
+          console.log('[FeedItem] Playing successfully');
           if (!trackedRef.current) {
             trackedRef.current = true;
             onViewTracked(video.id);
           }
         }).catch((err) => {
-          if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
+          console.log('[FeedItem] Play failed:', err.name, err.message);
+          // Only show retry for actual failures, not loading/autoplay issues
+          if (err.name === 'AbortError' || err.name === 'NotAllowedError' || err.name === 'NotSupportedError') {
+            // These are usually transient - video not ready yet or autoplay blocked
             return;
-          }
-          if (err.name === 'NotSupportedError') {
-            retryCountRef.current++;
-            if (retryCountRef.current < 3) {
-              // Retry with reload
-              setTimeout(() => {
-                videoEl.load();
-                attemptPlay();
-              }, 500);
-              return;
-            }
           }
           setPlaybackFailed(true);
         });
       };
 
-      // Try to play immediately - no delay
+      // Try to play immediately
       attemptPlay();
       
-      // Listen for canplay for videos not ready
-      const handleCanPlay = () => attemptPlay();
+      // Also listen for canplay in case video wasn't ready
+      const handleCanPlay = () => {
+        console.log('[FeedItem] canplay fired, attempting play');
+        attemptPlay();
+      };
       videoEl.addEventListener('canplay', handleCanPlay);
-      
       return () => videoEl.removeEventListener('canplay', handleCanPlay);
     } else {
       videoEl.pause();
     }
-  }, [isActive, hasEntered, video.id, onViewTracked, index]);
-
-  // Preload next video when this one is active
-  useEffect(() => {
-    if (!isActive || !hasEntered) return;
-    
-    // The preloading is handled by shouldPreload prop on adjacent items
-    // This effect could be used for more aggressive prefetching if needed
-  }, [isActive, hasEntered]);
+  }, [isActive, hasEntered, video.id, onViewTracked]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
     
-    retryCountRef.current++;
     setPlaybackFailed(false);
     videoEl.src = videoSrc;
     videoEl.load();
@@ -332,36 +304,40 @@ export const FeedItem = memo(({
 
   return (
     <div 
-      className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
+      className="relative w-full h-[100dvh] flex-shrink-0 bg-black"
+      style={{
+        scrollSnapAlign: isMobile ? 'start' : undefined,
+        scrollSnapStop: isMobile ? 'always' : undefined,
+      }}
     >
       {/* Poster image as background - ALWAYS visible until video plays */}
       <img 
         src={posterSrc} 
         alt="" 
-        className="absolute inset-0 w-full h-full object-cover md:object-contain pointer-events-none"
+        className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
       />
 
-      {/* Video player - overlays poster */}
+      {/* Video player - overlays poster, ALWAYS has poster attribute */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
-        src={isActive || shouldPreload ? videoSrc : undefined}
+        src={videoSrc}
         poster={posterSrc}
         loop
         playsInline
         muted={isMuted}
-        preload={isActive ? "auto" : shouldPreload ? "metadata" : "none"}
+        preload={isActive || shouldPreload ? "auto" : "none"}
         onClick={toggleMute}
       />
 
-      {/* Playback failed - retry UI - pointer-events only on button */}
+      {/* Playback failed - retry UI */}
       {playbackFailed && (
-        <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30 pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30">
           <button 
             onClick={handleRetry}
-            className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm pointer-events-auto"
+            className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm"
           >
             <RefreshCw className="h-8 w-8 text-white" />
             <span className="text-white text-sm">Tap to retry</span>
