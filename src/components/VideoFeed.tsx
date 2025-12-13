@@ -7,6 +7,9 @@ import { useEntryGate } from "./EntryGate";
 import { getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
+const WHEEL_LOCK_MS = 450;
+const WHEEL_DELTA_THRESHOLD = 40;
+const SCROLL_SETTLE_MS = 120;
 
 interface Video {
   id: string;
@@ -49,6 +52,18 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
   const itemRefsRef = useRef<Map<number, HTMLDivElement>>(new Map());
+  
+  // Scroll control refs
+  const activeIndexRef = useRef(0);
+  const wheelLockRef = useRef(false);
+  const wheelDeltaRef = useRef(0);
+  const scrollSettleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isScrollingRef = useRef(false);
+
+  // Keep activeIndexRef in sync
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
 
   // Handle item ref registration
   const handleContainerRef = useCallback((index: number, ref: HTMLDivElement | null) => {
@@ -58,6 +73,89 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       itemRefsRef.current.delete(index);
     }
   }, []);
+
+  // Scroll to specific index
+  const scrollToIndex = useCallback((index: number) => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const clampedIndex = Math.max(0, Math.min(index, videos.length - 1));
+    if (clampedIndex === activeIndexRef.current) return;
+    
+    isScrollingRef.current = true;
+    container.scrollTo({
+      top: clampedIndex * container.clientHeight,
+      behavior: 'smooth'
+    });
+    
+    setActiveIndex(clampedIndex);
+    activeIndexRef.current = clampedIndex;
+  }, [videos.length]);
+
+  // Desktop wheel handler with lock and delta accumulation
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || videos.length === 0) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      
+      if (wheelLockRef.current) return;
+      
+      wheelDeltaRef.current += e.deltaY;
+      
+      if (Math.abs(wheelDeltaRef.current) >= WHEEL_DELTA_THRESHOLD) {
+        const direction = wheelDeltaRef.current > 0 ? 1 : -1;
+        const targetIndex = activeIndexRef.current + direction;
+        
+        wheelDeltaRef.current = 0;
+        wheelLockRef.current = true;
+        
+        scrollToIndex(targetIndex);
+        
+        setTimeout(() => {
+          wheelLockRef.current = false;
+        }, WHEEL_LOCK_MS);
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [videos.length, scrollToIndex]);
+
+  // Mobile: update activeIndex after scroll settles
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || videos.length === 0) return;
+
+    const handleScroll = () => {
+      // Clear existing timer
+      if (scrollSettleTimerRef.current) {
+        clearTimeout(scrollSettleTimerRef.current);
+      }
+      
+      // Debounce: wait for scroll to settle
+      scrollSettleTimerRef.current = setTimeout(() => {
+        const scrollTop = container.scrollTop;
+        const itemHeight = container.clientHeight;
+        const newIndex = Math.round(scrollTop / itemHeight);
+        
+        if (newIndex !== activeIndexRef.current && newIndex >= 0 && newIndex < videos.length) {
+          setActiveIndex(newIndex);
+          activeIndexRef.current = newIndex;
+        }
+        isScrollingRef.current = false;
+      }, SCROLL_SETTLE_MS);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollSettleTimerRef.current) {
+        clearTimeout(scrollSettleTimerRef.current);
+      }
+    };
+  }, [videos.length]);
 
   // Update active container rect when activeIndex or videos change
   useEffect(() => {
@@ -76,12 +174,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     
     const handleUpdate = () => requestAnimationFrame(updateRect);
     window.addEventListener('resize', handleUpdate);
-    containerRef.current?.addEventListener('scroll', handleUpdate);
     
     return () => {
       timers.forEach(clearTimeout);
       window.removeEventListener('resize', handleUpdate);
-      containerRef.current?.removeEventListener('scroll', handleUpdate);
     };
   }, [activeIndex, videos.length]);
 
@@ -91,6 +187,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     setIsLoading(true);
     setLoadError(null);
     setActiveIndex(0);
+    activeIndexRef.current = 0;
     setPage(0);
     loadedIdsRef.current.clear();
     
@@ -104,7 +201,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       let fetchedVideos: Video[] = [];
 
       if (isForYouFeed) {
-        // Use edge function for personalized feed
         console.log('[VideoFeed] Using edge function for personalized feed');
         const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
           body: { userId: currentUserId, page: 0, limit: PAGE_SIZE }
@@ -114,7 +210,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         fetchedVideos = data?.videos || [];
         console.log(`[VideoFeed] Edge function returned ${fetchedVideos.length} videos`);
       } else {
-        // Direct query for search/category
         let query = supabase
           .from("videos")
           .select(`
@@ -136,7 +231,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         if (error) throw error;
         fetchedVideos = data || [];
 
-        // Client-side search filtering
         if (currentSearchQuery) {
           const q = currentSearchQuery.toLowerCase();
           fetchedVideos = fetchedVideos.filter(v =>
@@ -153,7 +247,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       setVideos(fetchedVideos);
       setHasMore(fetchedVideos.length === PAGE_SIZE);
 
-      // Warmup first video
       if (fetchedVideos.length > 0) {
         const first = fetchedVideos[0];
         const url = getBestVideoSource(
@@ -244,24 +337,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, isLoading, page, loadMoreVideos]);
 
-  // Scroll tracking for active video
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || videos.length === 0) return;
-
-    const handleScroll = () => {
-      const scrollTop = container.scrollTop;
-      const itemHeight = container.clientHeight;
-      const newIndex = Math.round(scrollTop / itemHeight);
-      if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
-        setActiveIndex(newIndex);
-      }
-    };
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [activeIndex, videos.length]);
-
   // Track video view
   const handleViewTracked = useCallback(async (videoId: string) => {
     try {
@@ -312,8 +387,13 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     <div
       ref={containerRef}
       id="video-feed-container"
-      className="w-full h-[100dvh] snap-y snap-mandatory overflow-y-scroll overflow-x-hidden scrollbar-hide"
-      style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
+      className="w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide"
+      style={{ 
+        scrollSnapType: 'y mandatory',
+        overscrollBehaviorY: 'contain',
+        WebkitOverflowScrolling: 'touch',
+        paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))'
+      }}
     >
       <SinglePlayer
         video={activeVideo}
