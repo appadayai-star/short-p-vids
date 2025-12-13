@@ -62,6 +62,7 @@ interface FeedItemProps {
   isActive: boolean;
   currentUserId: string | null;
   onDelete?: (videoId: string) => void;
+  isMobile?: boolean;
 }
 
 export const FeedItem = memo(({ 
@@ -70,6 +71,7 @@ export const FeedItem = memo(({
   isActive,
   currentUserId, 
   onDelete,
+  isMobile = false,
 }: FeedItemProps) => {
   const navigate = useNavigate();
   
@@ -190,13 +192,22 @@ export const FeedItem = memo(({
 
   const isOwnVideo = currentUserId === video.user_id;
 
-  return (
-    <div 
-      className="relative w-full h-[100dvh] flex items-center justify-center"
-      style={{
+  // Mobile uses scroll-snap properties, desktop uses plain height
+  const itemStyle: React.CSSProperties = isMobile
+    ? {
+        height: '100dvh',
         scrollSnapAlign: 'start',
         scrollSnapStop: 'always',
-        // Visually neutral - transparent, no visual artifacts
+      }
+    : {
+        height: '100dvh',
+      };
+
+  return (
+    <div 
+      className="relative w-full flex items-center justify-center"
+      style={{
+        ...itemStyle,
         background: 'transparent',
         margin: 0,
         padding: 0,
