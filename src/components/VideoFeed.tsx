@@ -383,7 +383,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex flex-col justify-center items-center h-[100dvh] bg-black gap-4">
+      <div className="flex flex-col justify-center items-center h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 gap-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
         <p className="text-muted-foreground text-sm">Loading videos...</p>
       </div>
@@ -393,7 +393,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   // Error state
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4">
+      <div className="flex flex-col items-center justify-center h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 gap-4">
         <AlertTriangle className="h-12 w-12 text-yellow-500" />
         <p className="text-red-400 text-lg text-center px-4">{loadError}</p>
         <button
@@ -409,7 +409,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   // Empty state
   if (videos.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[100dvh] bg-black">
+      <div className="flex items-center justify-center h-[100dvh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
         <p className="text-primary text-lg">
           {searchQuery ? "No videos found" : categoryFilter ? `No videos in ${categoryFilter}` : "No videos yet"}
         </p>
