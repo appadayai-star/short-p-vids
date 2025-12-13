@@ -69,6 +69,7 @@ interface FeedItemProps {
   video: Video;
   index: number;
   isActive: boolean;
+  shouldPreload: boolean; // Adjacent videos that should preload
   currentUserId: string | null;
   hasEntered: boolean;
   onDelete?: (videoId: string) => void;
@@ -79,6 +80,7 @@ export const FeedItem = memo(({
   video, 
   index,
   isActive,
+  shouldPreload,
   currentUserId, 
   hasEntered,
   onDelete,
@@ -278,20 +280,20 @@ export const FeedItem = memo(({
       {/* Video element */}
       <video
         ref={videoRef}
-        src={isActive ? videoSrc : undefined}
+        src={isActive || shouldPreload ? videoSrc : undefined}
         poster={posterSrc}
         className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
         loop
         playsInline
         muted={muted}
-        preload={isActive ? "auto" : "none"}
+        preload={isActive ? "auto" : shouldPreload ? "metadata" : "none"}
         onCanPlay={handleCanPlay}
         onError={handleError}
         onClick={handleVideoTap}
       />
 
-      {/* Thumbnail fallback when not active */}
-      {!isActive && posterSrc && (
+      {/* Thumbnail fallback when not active and not preloading */}
+      {!isActive && !shouldPreload && posterSrc && (
         <img 
           src={posterSrc} 
           alt="" 

@@ -380,6 +380,7 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
           video={video}
           index={index}
           isActive={index === activeIndex}
+          shouldPreload={Math.abs(index - activeIndex) <= 1}
           currentUserId={userId}
           hasEntered={hasEntered}
           onViewTracked={handleViewTracked}
