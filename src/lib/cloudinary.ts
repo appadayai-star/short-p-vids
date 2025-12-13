@@ -65,21 +65,20 @@ export function getBestVideoSource(
 }
 
 // Get best thumbnail source
+// Returns undefined if no reliable thumbnail available (will fall back to video element)
 export function getBestThumbnailUrl(
   cloudinaryPublicId: string | null,
   thumbnailUrl: string | null,
-  videoUrl?: string | null
+  _videoUrl?: string | null
 ): string | undefined {
+  // Only use reliable sources - cloudinary public_id or stored thumbnail_url
   if (cloudinaryPublicId) {
     return getThumbnailUrl(cloudinaryPublicId);
   }
   if (thumbnailUrl) {
     return thumbnailUrl;
   }
-  // For videos without cloudinary processing, generate thumbnail via fetch
-  if (videoUrl) {
-    const encodedUrl = encodeURIComponent(videoUrl);
-    return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/fetch/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_0/${encodedUrl}`;
-  }
+  // Don't use Cloudinary fetch for external URLs - it often fails and causes broken images
+  // Return undefined to let the component fall back to video element
   return undefined;
 }

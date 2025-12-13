@@ -271,13 +271,17 @@ export const FeedItem = memo(({
         scrollSnapStop: isMobile ? 'always' : undefined,
       }}
     >
-      {/* Poster image as background - shows immediately */}
+      {/* Poster image as background - shows immediately, only if we have a reliable source */}
       {posterSrc && (
         <img 
           src={posterSrc} 
           alt="" 
           className="absolute inset-0 w-full h-full object-cover md:object-contain"
           style={{ paddingBottom: navOffset }}
+          onError={(e) => {
+            // Hide broken image
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
         />
       )}
 
