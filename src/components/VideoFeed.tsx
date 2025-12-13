@@ -6,6 +6,8 @@ import { useEntryGate } from "./EntryGate";
 import { getBestThumbnailUrl, preloadImage } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 interface Video {
   id: string;
@@ -46,50 +48,49 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
 
-  // Fetch videos immediately on mount - don't wait for auth
+  // Fetch videos using raw fetch to bypass Supabase client issues
   useEffect(() => {
-    // Only fetch once
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
 
     const fetchVideos = async () => {
-      console.log("[VideoFeed] Starting fetch (no auth wait)...");
+      console.log("[VideoFeed] Starting fetch with raw fetch...");
       
       try {
-        let query = supabase
-          .from("videos")
-          .select(`
-            id, title, description, video_url, optimized_video_url, stream_url, 
-            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-            profiles(username, avatar_url)
-          `)
-          .order("created_at", { ascending: false })
-          .limit(PAGE_SIZE);
-
+        // Build the query URL
+        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE}`;
+        
         if (categoryFilter) {
-          query = query.contains('tags', [categoryFilter]);
+          url += `&tags=cs.{${categoryFilter}}`;
         }
         if (searchQuery) {
-          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+          url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
         }
 
-        console.log("[VideoFeed] Executing query...");
-        const result = await query;
-        console.log("[VideoFeed] Query result:", result);
+        console.log("[VideoFeed] Fetching from:", url);
         
-        const { data, error: queryError } = result;
+        const response = await fetch(url, {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
-        if (queryError) {
-          console.error("[VideoFeed] Query error:", queryError);
-          throw queryError;
+        console.log("[VideoFeed] Response status:", response.status);
+
+        if (!response.ok) {
+          throw new Error(`HTTP error: ${response.status}`);
         }
+
+        const data = await response.json();
+        console.log("[VideoFeed] Got data:", data?.length);
 
         let results = data || [];
-        console.log("[VideoFeed] Got videos:", results.length);
         
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
-          results = results.filter(v =>
+          results = results.filter((v: Video) =>
             v.title?.toLowerCase().includes(q) ||
             v.description?.toLowerCase().includes(q) ||
             v.profiles?.username?.toLowerCase().includes(q) ||
@@ -97,7 +98,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           );
         }
 
-        results.forEach(v => loadedIdsRef.current.add(v.id));
+        results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
         setVideos(results);
         setHasMore(results.length === PAGE_SIZE);
         
@@ -111,16 +112,17 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         setVideos([]);
       } finally {
         setLoading(false);
-        console.log("[VideoFeed] Fetch complete, loading=false");
+        console.log("[VideoFeed] Fetch complete");
       }
     };
 
     fetchVideos();
-  }, []); // No dependencies - run once on mount
+  }, []);
 
-  // Re-fetch when filters change
+  // Re-fetch when filters change (using Supabase client for subsequent fetches)
   useEffect(() => {
-    if (!hasFetchedRef.current) return; // Don't run on initial mount
+    if (!hasFetchedRef.current) return;
+    if (!searchQuery && !categoryFilter) return; // Skip if no filters
     
     const refetch = async () => {
       setLoading(true);
@@ -132,30 +134,31 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       }
 
       try {
-        let query = supabase
-          .from("videos")
-          .select(`
-            id, title, description, video_url, optimized_video_url, stream_url, 
-            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-            profiles(username, avatar_url)
-          `)
-          .order("created_at", { ascending: false })
-          .limit(PAGE_SIZE);
-
+        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE}`;
+        
         if (categoryFilter) {
-          query = query.contains('tags', [categoryFilter]);
+          url += `&tags=cs.{${categoryFilter}}`;
         }
         if (searchQuery) {
-          query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+          url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
         }
 
-        const { data, error: queryError } = await query;
-        if (queryError) throw queryError;
+        const response = await fetch(url, {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
+        if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+
+        const data = await response.json();
         let results = data || [];
+        
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
-          results = results.filter(v =>
+          results = results.filter((v: Video) =>
             v.title?.toLowerCase().includes(q) ||
             v.description?.toLowerCase().includes(q) ||
             v.profiles?.username?.toLowerCase().includes(q) ||
@@ -163,7 +166,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           );
         }
 
-        results.forEach(v => loadedIdsRef.current.add(v.id));
+        results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
         setVideos(results);
         setHasMore(results.length === PAGE_SIZE);
       } catch (err) {
@@ -212,24 +215,25 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       setIsLoadingMore(true);
       try {
         const offset = videos.length;
-        let query = supabase
-          .from("videos")
-          .select(`
-            id, title, description, video_url, optimized_video_url, stream_url,
-            cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-            profiles(username, avatar_url)
-          `)
-          .order("created_at", { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1);
+        
+        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&offset=${offset}&limit=${PAGE_SIZE}`;
+        
+        if (categoryFilter) url += `&tags=cs.{${categoryFilter}}`;
+        if (searchQuery) url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
 
-        if (categoryFilter) query = query.contains('tags', [categoryFilter]);
-        if (searchQuery) query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        const response = await fetch(url, {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
-        const { data, error } = await query;
-        if (error) throw error;
+        if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
 
-        const newVideos = (data || []).filter(v => !loadedIdsRef.current.has(v.id));
-        newVideos.forEach(v => loadedIdsRef.current.add(v.id));
+        const data = await response.json();
+        const newVideos = (data || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
+        newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
         
         setVideos(prev => [...prev, ...newVideos]);
         setHasMore(newVideos.length > 0);
