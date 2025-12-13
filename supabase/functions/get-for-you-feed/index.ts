@@ -33,12 +33,16 @@ serve(async (req) => {
   }
 
   try {
-    const { userId, deviceId, page = 0, limit = 10 } = await req.json();
+    const { userId, deviceId, page = 0, limit = 10, sessionViewedIds = [] } = await req.json();
 
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? ""
     );
+
+    // Session-viewed IDs (from client) - immediate duplicate prevention
+    const sessionViewed = new Set<string>(sessionViewedIds || []);
+    console.log(`[get-for-you-feed] Session viewed: ${sessionViewed.size} videos`);
 
     // Fetch recent videos (last 30 days, up to 500)
     const thirtyDaysAgo = new Date();
@@ -70,6 +74,33 @@ serve(async (req) => {
       return shuffled;
     };
 
+    // Apply creator diversity filter (no same creator within last 4 items)
+    const applyCreatorDiversity = (videos: any[], maxGap = 4) => {
+      if (videos.length <= maxGap) return videos;
+      
+      const result: any[] = [];
+      const remaining = [...videos];
+      const recentCreators: string[] = [];
+      
+      while (remaining.length > 0 && result.length < videos.length) {
+        // Find first video not from recent creators
+        const nextIdx = remaining.findIndex(v => !recentCreators.slice(-maxGap).includes(v.user_id));
+        
+        if (nextIdx === -1) {
+          // No diverse option, just take the first one
+          const video = remaining.shift()!;
+          result.push(video);
+          recentCreators.push(video.user_id);
+        } else {
+          const video = remaining.splice(nextIdx, 1)[0];
+          result.push(video);
+          recentCreators.push(video.user_id);
+        }
+      }
+      
+      return result;
+    };
+
     // Get view history for deduplication (last 7 days)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -86,6 +117,9 @@ serve(async (req) => {
       viewedVideoIds = new Set(recentViews?.map(v => v.video_id) || []);
       console.log(`[get-for-you-feed] User ${userId} has ${viewedVideoIds.size} viewed videos in last 7 days`);
     }
+    
+    // Also exclude session-viewed videos for both logged-in and guest users
+    sessionViewed.forEach(id => viewedVideoIds.add(id));
 
     // For guests, use deviceId if available (stored on client)
     // Note: deviceId-based tracking would need separate implementation
@@ -123,24 +157,10 @@ serve(async (req) => {
         shuffledResult.push(...shuffleArray(tier));
       }
 
-      // Apply soft creator diversity (only if we have enough videos)
-      let finalResult = shuffledResult;
-      if (shuffledResult.length > 10) {
-        const diverseResult: typeof shuffledResult = [];
-        const recentCreators: string[] = [];
-        
-        for (const video of shuffledResult) {
-          // Only apply diversity filter if we have enough content
-          if (recentCreators.slice(-2).includes(video.user_id) && diverseResult.length < shuffledResult.length - 5) {
-            continue;
-          }
-          diverseResult.push(video);
-          recentCreators.push(video.user_id);
-        }
-        finalResult = diverseResult;
-      }
+      // Apply creator diversity (no same creator within last 4 items)
+      const diverseResult = applyCreatorDiversity(shuffledResult, 4);
 
-      const paginatedVideos = finalResult
+      const paginatedVideos = diverseResult
         .slice(page * limit, (page + 1) * limit)
         .map(({ score, ...video }) => video);
 
@@ -244,25 +264,13 @@ serve(async (req) => {
       shuffledResult.push(...shuffleArray(tier));
     }
 
-    // Apply soft creator diversity (only if we have enough videos)
-    let finalResult = shuffledResult;
-    if (shuffledResult.length > 10) {
-      const diverseResult: typeof shuffledResult = [];
-      const recentCreators: string[] = [];
-      
-      for (const video of shuffledResult) {
-        if (recentCreators.slice(-2).includes(video.user_id) && diverseResult.length < shuffledResult.length - 5) {
-          continue;
-        }
-        diverseResult.push(video);
-        recentCreators.push(video.user_id);
-      }
-      finalResult = diverseResult;
-    }
+    // Apply creator diversity (no same creator within last 4 items)
+    let finalResult = applyCreatorDiversity(shuffledResult, 4);
 
-    // Add viewed videos at the end as fallback
+    // Add viewed videos at the end as fallback (also with diversity)
     const shuffledViewed = shuffleArray(viewedVideos);
-    finalResult = [...finalResult, ...shuffledViewed];
+    const diverseViewed = applyCreatorDiversity(shuffledViewed, 4);
+    finalResult = [...finalResult, ...diverseViewed];
 
     // Paginate and clean up
     const paginatedVideos = finalResult
