@@ -160,13 +160,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         const sessionViewed = getSessionViewedIds();
         results = results.filter((v: Video) => !sessionViewed.has(v.id));
 
-        // Apply creator diversity - no same creator within last 3 items
+        // Apply creator diversity - no same creator within last 3 items (but don't filter if it leaves us with no videos)
         const diverseResults: Video[] = [];
         const recentCreators: string[] = [];
+        const remainingVideos: Video[] = [];
         
         for (const video of results) {
-          // Skip if this creator was in last 3 videos
+          // Skip if this creator was in last 3 videos - save for later
           if (recentCreators.slice(-3).includes(video.user_id)) {
+            remainingVideos.push(video);
             continue;
           }
           diverseResults.push(video);
@@ -174,6 +176,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           loadedIdsRef.current.add(video.id);
           
           if (diverseResults.length >= PAGE_SIZE) break;
+        }
+        
+        // If diversity filter left us with too few videos, add remaining videos
+        if (diverseResults.length < PAGE_SIZE) {
+          for (const video of remainingVideos) {
+            if (diverseResults.length >= PAGE_SIZE) break;
+            diverseResults.push(video);
+            loadedIdsRef.current.add(video.id);
+          }
         }
 
         recentCreatorsRef.current = recentCreators;
@@ -246,16 +257,29 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           );
         }
 
-        // Apply creator diversity
+        // Apply creator diversity with fallback
         const diverseResults: Video[] = [];
         const recentCreators: string[] = [];
+        const remainingVideos: Video[] = [];
         
         for (const video of results) {
-          if (recentCreators.slice(-3).includes(video.user_id)) continue;
+          if (recentCreators.slice(-3).includes(video.user_id)) {
+            remainingVideos.push(video);
+            continue;
+          }
           diverseResults.push(video);
           recentCreators.push(video.user_id);
           loadedIdsRef.current.add(video.id);
           if (diverseResults.length >= PAGE_SIZE) break;
+        }
+        
+        // Add remaining if needed
+        if (diverseResults.length < PAGE_SIZE) {
+          for (const video of remainingVideos) {
+            if (diverseResults.length >= PAGE_SIZE) break;
+            diverseResults.push(video);
+            loadedIdsRef.current.add(video.id);
+          }
         }
 
         recentCreatorsRef.current = recentCreators;
@@ -335,18 +359,33 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         const data = await response.json();
         const sessionViewed = getSessionViewedIds();
         
-        // Filter and apply diversity
+        // Filter and apply diversity with fallback
         const newVideos: Video[] = [];
+        const skippedVideos: Video[] = [];
+        
         for (const video of (data || [])) {
           if (loadedIdsRef.current.has(video.id)) continue;
           if (sessionViewed.has(video.id)) continue;
-          if (recentCreatorsRef.current.slice(-3).includes(video.user_id)) continue;
+          
+          if (recentCreatorsRef.current.slice(-3).includes(video.user_id)) {
+            skippedVideos.push(video);
+            continue;
+          }
           
           newVideos.push(video);
           loadedIdsRef.current.add(video.id);
           recentCreatorsRef.current.push(video.user_id);
           
           if (newVideos.length >= PAGE_SIZE) break;
+        }
+        
+        // Add skipped videos if needed
+        if (newVideos.length < PAGE_SIZE) {
+          for (const video of skippedVideos) {
+            if (newVideos.length >= PAGE_SIZE) break;
+            newVideos.push(video);
+            loadedIdsRef.current.add(video.id);
+          }
         }
         
         setVideos(prev => [...prev, ...newVideos]);
