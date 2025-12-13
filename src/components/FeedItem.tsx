@@ -264,11 +264,13 @@ export const FeedItem = memo(({
     const handleWaitingEvent = () => {
       logEvent('waiting');
       if (!stallTimeout && isActive && !isPlaying) {
+        // Fast fallback - 1.5s for Cloudinary (likely transform delay), 3s for Supabase
+        const timeout = sourceType === 'cloudinary' ? 1500 : 3000;
         stallTimeout = setTimeout(() => {
-          console.warn(`[Timeout] Video ${index} took too long`);
-          logEvent('timeout', '5s elapsed');
+          console.warn(`[Timeout] Video ${index} stalled for ${timeout}ms`);
+          logEvent('timeout', `${timeout}ms elapsed`);
           handleStalledEvent();
-        }, 5000);
+        }, timeout);
       }
     };
 
@@ -334,14 +336,15 @@ export const FeedItem = memo(({
       videoEl.addEventListener('waiting', handleWaitingEvent);
       videoEl.addEventListener('error', handleErrorEvent);
       
-      // Start stall timeout - only trigger if we never reach canplay
+      // Start stall timeout - fast for Cloudinary (on-the-fly transforms are slow), longer for Supabase
+      const initialTimeout = sourceType === 'cloudinary' ? 2000 : 4000;
       stallTimeout = setTimeout(() => {
         if (!isPlaying && videoEl.readyState < 3) {
-          console.warn(`[Timeout] Video ${index} initial load timeout, readyState: ${videoEl.readyState}`);
+          console.warn(`[Timeout] Video ${index} initial load timeout after ${initialTimeout}ms, readyState: ${videoEl.readyState}`);
           logEvent('initial_timeout', `readyState: ${videoEl.readyState}`);
           handleStalledEvent();
         }
-      }, 8000); // Increased to 8s for slower connections
+      }, initialTimeout);
 
       // If already ready (cached), play immediately
       if (videoEl.readyState >= 3) {
