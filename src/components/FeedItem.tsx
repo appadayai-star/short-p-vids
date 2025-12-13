@@ -78,7 +78,6 @@ interface FeedItemProps {
   currentUserId: string | null;
   onViewTracked: (videoId: string) => void;
   onDelete?: (videoId: string) => void;
-  isMobile?: boolean;
 }
 
 export const FeedItem = memo(({ 
@@ -90,7 +89,6 @@ export const FeedItem = memo(({
   currentUserId, 
   onViewTracked,
   onDelete,
-  isMobile = false,
 }: FeedItemProps) => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -334,17 +332,13 @@ export const FeedItem = memo(({
 
   return (
     <div 
-      className="relative w-full h-[100dvh] flex-shrink-0 bg-black"
-      style={{
-        scrollSnapAlign: isMobile ? 'start' : undefined,
-        scrollSnapStop: isMobile ? 'always' : undefined,
-      }}
+      className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
     >
       {/* Poster image as background - ALWAYS visible until video plays */}
       <img 
         src={posterSrc} 
         alt="" 
-        className="absolute inset-0 w-full h-full object-cover md:object-contain"
+        className="absolute inset-0 w-full h-full object-cover md:object-contain pointer-events-none"
         style={{ paddingBottom: navOffset }}
       />
 
@@ -362,12 +356,12 @@ export const FeedItem = memo(({
         onClick={toggleMute}
       />
 
-      {/* Playback failed - retry UI */}
+      {/* Playback failed - retry UI - pointer-events only on button */}
       {playbackFailed && (
-        <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30">
+        <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30 pointer-events-none">
           <button 
             onClick={handleRetry}
-            className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm"
+            className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm pointer-events-auto"
           >
             <RefreshCw className="h-8 w-8 text-white" />
             <span className="text-white text-sm">Tap to retry</span>
