@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo, useCallback } from "react";
+import { useState, useEffect, memo } from "react";
 import { Heart, Share2, Bookmark, MoreVertical, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -192,19 +192,20 @@ export const FeedItem = memo(({
 
   return (
     <div 
-      className="relative w-full flex items-center justify-center"
+      className="relative w-full h-[100dvh] flex items-center justify-center"
       style={{
-        height: '100dvh',
         scrollSnapAlign: 'start',
         scrollSnapStop: 'always',
-        // Visually neutral - no borders, outlines, shadows, transparent bg
+        // Visually neutral - transparent, no visual artifacts
         background: 'transparent',
-        outline: 'none',
+        margin: 0,
+        padding: 0,
         border: 'none',
-        boxShadow: 'none'
+        outline: 'none',
+        boxShadow: 'none',
       }}
     >
-      {/* Right side actions - pointer-events-auto for clickability */}
+      {/* Right side actions */}
       <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-40 pointer-events-auto">
         <button onClick={toggleLike} className="flex flex-col items-center gap-1">
           <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
@@ -245,7 +246,7 @@ export const FeedItem = memo(({
         )}
       </div>
 
-      {/* Bottom info - pointer-events-auto for clickability */}
+      {/* Bottom info */}
       <div className="absolute bottom-0 left-0 right-0 p-4 pb-[100px] z-40 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none pr-[80px]">
         <div className="space-y-2 pointer-events-auto">
           <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
