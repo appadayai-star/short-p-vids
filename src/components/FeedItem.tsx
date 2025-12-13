@@ -130,7 +130,7 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive - SIMPLE logic
+  // Play/pause based on isActive - wait for canplay
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -139,19 +139,32 @@ export const FeedItem = memo(({
       setPlaybackFailed(false);
       videoEl.currentTime = 0;
       
-      // Just play - no complex buffering state
-      videoEl.play().then(() => {
-        if (!trackedRef.current) {
-          trackedRef.current = true;
-          onViewTracked(video.id);
-        }
-      }).catch((err) => {
-        console.log('[FeedItem] Play failed:', err.name);
-        // Only show failed UI if it's not just autoplay block
-        if (err.name !== 'NotAllowedError') {
-          setPlaybackFailed(true);
-        }
-      });
+      const attemptPlay = () => {
+        videoEl.play().then(() => {
+          if (!trackedRef.current) {
+            trackedRef.current = true;
+            onViewTracked(video.id);
+          }
+        }).catch((err) => {
+          console.log('[FeedItem] Play failed:', err.name);
+          // Ignore autoplay blocks and not-ready errors
+          if (err.name !== 'NotAllowedError' && err.name !== 'NotSupportedError') {
+            setPlaybackFailed(true);
+          }
+        });
+      };
+
+      // If video is ready, play immediately; otherwise wait for canplay
+      if (videoEl.readyState >= 3) {
+        attemptPlay();
+      } else {
+        const handleCanPlay = () => {
+          attemptPlay();
+          videoEl.removeEventListener('canplay', handleCanPlay);
+        };
+        videoEl.addEventListener('canplay', handleCanPlay);
+        return () => videoEl.removeEventListener('canplay', handleCanPlay);
+      }
     } else {
       videoEl.pause();
     }
