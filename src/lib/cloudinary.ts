@@ -4,18 +4,23 @@
 const CLOUDINARY_CLOUD_NAME = 'domj6omwb';
 
 // Canonical transform - MUST match process-video edge function
-// This ensures the exact same URL is generated for both upload eager transform and playback
 const CANONICAL_TRANSFORM = 'f_mp4,vc_h264,ac_aac,c_limit,h_720,fps_30,br_1200k,q_auto:eco,fl_faststart';
 
-// Static placeholder for missing thumbnails - gradient placeholder
+// Static placeholder for missing thumbnails
 export const DEFAULT_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="480" height="852" viewBox="0 0 480 852"%3E%3Cdefs%3E%3ClinearGradient id="g" x1="0%25" y1="0%25" x2="0%25" y2="100%25"%3E%3Cstop offset="0%25" style="stop-color:%231a1a2e"%2F%3E%3Cstop offset="100%25" style="stop-color:%230f0f1a"%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect fill="url(%23g)" width="480" height="852"%2F%3E%3C%2Fsvg%3E';
 
+// Clean public ID - remove any file extension to prevent double extensions
+function cleanPublicId(publicId: string): string {
+  // Remove trailing extensions like .mp4, .mov, .webm, etc.
+  return publicId.replace(/\.(mp4|mov|webm|avi|mkv|m4v)$/i, '');
+}
+
 // Generate optimized video URL with canonical transform
-// This URL will be cached by Cloudinary CDN after first request
+// Uses f_mp4 in transform so we don't need to append .mp4
 export function getOptimizedVideoUrl(publicId: string): string {
-  // Clean any extension from public_id (Cloudinary public_id should not have extension)
-  const cleanId = publicId.replace(/\.(mp4|mov|webm|avi|mkv)$/i, '');
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${CANONICAL_TRANSFORM}/${cleanId}.mp4`;
+  const cleanId = cleanPublicId(publicId);
+  // f_mp4 in transform handles format - no extension needed at the end
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${CANONICAL_TRANSFORM}/${cleanId}`;
 }
 
 // HLS adaptive streaming (optional, not currently primary)

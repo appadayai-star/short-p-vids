@@ -1,9 +1,9 @@
 import { memo, useRef, useEffect, useState, useCallback } from "react";
 import { RefreshCw, Volume2, VolumeX } from "lucide-react";
-import { getBestVideoSource, getBestThumbnailUrl, checkVideoUrlStatus } from "@/lib/cloudinary";
-import { DebugOverlay, DebugEvent, DebugMetrics } from "./DebugOverlay";
+import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { DebugOverlay, DebugEvent, DebugMetrics, VideoErrorInfo } from "./DebugOverlay";
 
-// Global mute state - persisted across videos
+// Global mute state
 let globalMuted = true;
 const muteListeners = new Set<(muted: boolean) => void>();
 
@@ -36,6 +36,34 @@ interface SinglePlayerProps {
   onPlaybackStarted: () => void;
 }
 
+type FailureReason = 'none' | 'url_404' | 'url_403' | 'url_error' | 'autoplay_blocked' | 'canplay_timeout' | 'decode_error' | 'network_error' | 'unknown';
+
+// Preflight HEAD check with timeout
+async function preflightCheck(url: string, timeoutMs = 2000): Promise<{ ok: boolean; status: number | null; error: string | null }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, { 
+      method: 'HEAD', 
+      signal: controller.signal,
+      mode: 'cors',
+    });
+    clearTimeout(timeoutId);
+    return { ok: response.ok, status: response.status, error: null };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    // Try no-cors as fallback (can't read status but can detect network errors)
+    try {
+      await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(1000) });
+      return { ok: true, status: null, error: null }; // Opaque response = likely OK
+    } catch (e2) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return { ok: false, status: null, error: errorMsg };
+    }
+  }
+}
+
 export const SinglePlayer = memo(({ 
   video, 
   activeIndex,
@@ -46,17 +74,24 @@ export const SinglePlayer = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const loadStartRef = useRef<number>(0);
   const retryCountRef = useRef(0);
+  const preflightAbortRef = useRef<AbortController | null>(null);
   
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [srcAssigned, setSrcAssigned] = useState(false);
   
-  // Debug metrics
+  // Debug state
   const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
-  const [headCheckStatus, setHeadCheckStatus] = useState<number | null>(null);
+  const [preflightStatus, setPreflightStatus] = useState<'pending' | 'ok' | 'failed'>('pending');
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [preflightHttpStatus, setPreflightHttpStatus] = useState<number | null>(null);
   const [timeToMetadata, setTimeToMetadata] = useState<number | null>(null);
   const [timeToPlaying, setTimeToPlaying] = useState<number | null>(null);
+  const [videoError, setVideoError] = useState<VideoErrorInfo | null>(null);
+  const [playError, setPlayError] = useState<string | null>(null);
+  const [failureReason, setFailureReason] = useState<FailureReason>('none');
 
   // Get video sources
   const { url: videoSrc, type: sourceType } = video 
@@ -79,7 +114,7 @@ export const SinglePlayer = memo(({
       console.log(`[SinglePlayer] ${event}${detail ? `: ${detail}` : ''} (+${elapsed}ms)`);
     }
     
-    setDebugEvents(prev => [...prev.slice(-14), { time: elapsed, event, detail }]);
+    setDebugEvents(prev => [...prev.slice(-19), { time: elapsed, event, detail }]);
   }, []);
 
   // Sync with global mute state
@@ -94,40 +129,93 @@ export const SinglePlayer = memo(({
     return () => { muteListeners.delete(listener); };
   }, []);
 
-  // Main playback effect - only load when not scrolling and have a video
+  // Main playback effect - assign src IMMEDIATELY when activeIndex changes (no debounce)
   useEffect(() => {
     const videoEl = videoRef.current;
-    if (!videoEl || !video || isScrolling) {
-      // If scrolling, pause and clear
-      if (videoEl) {
-        videoEl.pause();
-      }
+    if (!videoEl || !video) {
+      setSrcAssigned(false);
       return;
     }
+
+    // Cancel any pending preflight
+    if (preflightAbortRef.current) {
+      preflightAbortRef.current.abort();
+    }
+    preflightAbortRef.current = new AbortController();
 
     // Reset state for new video
     loadStartRef.current = performance.now();
     retryCountRef.current = 0;
     setPlaybackFailed(false);
     setIsPlaying(false);
+    setSrcAssigned(false);
     setTimeToMetadata(null);
     setTimeToPlaying(null);
-    setHeadCheckStatus(null);
+    setPreflightStatus('pending');
+    setPreflightError(null);
+    setPreflightHttpStatus(null);
+    setVideoError(null);
+    setPlayError(null);
+    setFailureReason('none');
     setDebugEvents([]);
     
-    logEvent('load_start', `video=${video.id}`);
+    logEvent('video_change', `id=${video.id}, scrolling=${isScrolling}`);
     
-    // Set source and load
-    videoEl.src = videoSrc;
-    videoEl.load();
-    
-    // HEAD check for debug
-    if (isDebugMode()) {
-      checkVideoUrlStatus(videoSrc).then(result => {
-        setHeadCheckStatus(result.status || (result.accessible ? 200 : 0));
-        logEvent('head_check', `status=${result.status || 'opaque'}`);
-      });
+    // If scrolling, just show poster and wait
+    if (isScrolling) {
+      logEvent('scroll_pause', 'waiting for scroll to settle');
+      videoEl.pause();
+      videoEl.removeAttribute('src');
+      return;
     }
+
+    // Start preflight check and src assignment in parallel
+    const startPlayback = async () => {
+      logEvent('preflight_start', videoSrc.substring(0, 60));
+      
+      // Preflight HEAD check
+      const preflight = await preflightCheck(videoSrc);
+      
+      if (preflightAbortRef.current?.signal.aborted) {
+        logEvent('preflight_aborted');
+        return;
+      }
+      
+      setPreflightHttpStatus(preflight.status);
+      
+      if (!preflight.ok) {
+        setPreflightStatus('failed');
+        setPreflightError(preflight.error || `HTTP ${preflight.status}`);
+        logEvent('preflight_failed', preflight.error || `status=${preflight.status}`);
+        
+        // Determine failure reason
+        if (preflight.status === 404) {
+          setFailureReason('url_404');
+        } else if (preflight.status === 403) {
+          setFailureReason('url_403');
+        } else {
+          setFailureReason('url_error');
+        }
+        
+        setPlaybackFailed(true);
+        return;
+      }
+      
+      setPreflightStatus('ok');
+      logEvent('preflight_ok', `status=${preflight.status || 'opaque'}`);
+      
+      // Set src and load - CRITICAL: always set muted and playsInline
+      videoEl.muted = isMuted;
+      videoEl.playsInline = true;
+      videoEl.preload = 'auto';
+      videoEl.src = videoSrc;
+      setSrcAssigned(true);
+      logEvent('src_assigned', videoSrc.substring(0, 80));
+      
+      // Call load() immediately
+      videoEl.load();
+      logEvent('load_called');
+    };
 
     let stallTimeout: ReturnType<typeof setTimeout> | null = null;
     let hasPlayed = false;
@@ -144,7 +232,7 @@ export const SinglePlayer = memo(({
     const handleLoadedMetadata = () => {
       const elapsed = Math.round(performance.now() - loadStartRef.current);
       setTimeToMetadata(elapsed);
-      logEvent('loadedmetadata', `duration=${videoEl.duration?.toFixed(1)}s`);
+      logEvent('loadedmetadata', `duration=${videoEl.duration?.toFixed(1)}s, elapsed=${elapsed}ms`);
     };
 
     const handleCanPlay = () => {
@@ -152,9 +240,21 @@ export const SinglePlayer = memo(({
       logEvent('canplay', `readyState=${videoEl.readyState}`);
       
       if (!hasPlayed) {
-        videoEl.play().catch(err => {
-          logEvent('play_rejected', err.name);
-        });
+        videoEl.play()
+          .then(() => {
+            logEvent('play_promise_resolved');
+          })
+          .catch(err => {
+            const errStr = `${err.name}: ${err.message}`;
+            setPlayError(errStr);
+            logEvent('play_rejected', errStr);
+            
+            if (err.name === 'NotAllowedError') {
+              setFailureReason('autoplay_blocked');
+            } else {
+              setFailureReason('unknown');
+            }
+          });
       }
     };
 
@@ -162,6 +262,7 @@ export const SinglePlayer = memo(({
       hasPlayed = true;
       setIsPlaying(true);
       clearStallTimeout();
+      setFailureReason('none');
       
       const elapsed = Math.round(performance.now() - loadStartRef.current);
       setTimeToPlaying(elapsed);
@@ -171,45 +272,72 @@ export const SinglePlayer = memo(({
     };
 
     const handleWaiting = () => {
-      logEvent('waiting');
+      logEvent('waiting', `readyState=${videoEl.readyState}`);
       if (!hasPlayed && !stallTimeout) {
         stallTimeout = setTimeout(() => {
-          logEvent('stall_timeout', '5000ms');
+          logEvent('stall_timeout', '6000ms');
           handleStall();
-        }, 5000);
+        }, 6000);
       }
     };
 
     const handleStalled = () => {
-      logEvent('stalled');
+      logEvent('stalled', `readyState=${videoEl.readyState}, networkState=${videoEl.networkState}`);
     };
 
     const handleError = () => {
       const error = videoEl.error;
-      const msg = error ? `code=${error.code}` : 'unknown';
-      logEvent('error', msg);
+      const errorInfo: VideoErrorInfo = {
+        code: error?.code || null,
+        message: error?.message || null,
+        mediaError: error ? `MEDIA_ERR_${['', 'ABORTED', 'NETWORK', 'DECODE', 'SRC_NOT_SUPPORTED'][error.code] || 'UNKNOWN'}` : null,
+      };
+      setVideoError(errorInfo);
+      
+      logEvent('error', `code=${error?.code}, msg=${error?.message}, currentSrc=${videoEl.currentSrc}`);
+      
+      // Determine failure reason from error code
+      if (error?.code === 2) {
+        setFailureReason('network_error');
+      } else if (error?.code === 3) {
+        setFailureReason('decode_error');
+      } else if (error?.code === 4) {
+        setFailureReason('url_error');
+      } else {
+        setFailureReason('unknown');
+      }
       
       retryCountRef.current++;
-      if (retryCountRef.current >= 3) {
+      if (retryCountRef.current >= 2) {
         setPlaybackFailed(true);
       } else {
-        // Retry with same source
+        logEvent('retry', `attempt=${retryCountRef.current}`);
         videoEl.load();
-        videoEl.play().catch(() => {});
+        videoEl.play().catch(e => {
+          setPlayError(`${e.name}: ${e.message}`);
+        });
       }
     };
 
     const handleStall = () => {
       retryCountRef.current++;
-      if (retryCountRef.current >= 3) {
+      
+      if (videoEl.readyState < 1) {
+        setFailureReason('canplay_timeout');
+      }
+      
+      if (retryCountRef.current >= 2) {
         setPlaybackFailed(true);
       } else {
-        logEvent('retry', `attempt=${retryCountRef.current}`);
+        logEvent('retry_stall', `attempt=${retryCountRef.current}, readyState=${videoEl.readyState}`);
         videoEl.load();
-        videoEl.play().catch(() => {});
+        videoEl.play().catch(e => {
+          setPlayError(`${e.name}: ${e.message}`);
+        });
       }
     };
 
+    // Add event listeners
     videoEl.addEventListener('loadstart', handleLoadStart);
     videoEl.addEventListener('loadedmetadata', handleLoadedMetadata);
     videoEl.addEventListener('canplay', handleCanPlay);
@@ -218,16 +346,25 @@ export const SinglePlayer = memo(({
     videoEl.addEventListener('stalled', handleStalled);
     videoEl.addEventListener('error', handleError);
 
-    // Initial timeout - 8s for first load
+    // Initial timeout for canplay
     stallTimeout = setTimeout(() => {
       if (!hasPlayed && videoEl.readyState < 3) {
-        logEvent('initial_timeout', `readyState=${videoEl.readyState}`);
+        logEvent('initial_timeout', `readyState=${videoEl.readyState}, networkState=${videoEl.networkState}`);
+        if (videoEl.readyState < 1) {
+          setFailureReason('canplay_timeout');
+        }
         handleStall();
       }
     }, 8000);
 
+    // Start playback
+    startPlayback();
+
     return () => {
       clearStallTimeout();
+      if (preflightAbortRef.current) {
+        preflightAbortRef.current.abort();
+      }
       videoEl.removeEventListener('loadstart', handleLoadStart);
       videoEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
       videoEl.removeEventListener('canplay', handleCanPlay);
@@ -236,12 +373,11 @@ export const SinglePlayer = memo(({
       videoEl.removeEventListener('stalled', handleStalled);
       videoEl.removeEventListener('error', handleError);
       
-      // Clear source on cleanup
       videoEl.pause();
       videoEl.removeAttribute('src');
       videoEl.load();
     };
-  }, [video?.id, videoSrc, isScrolling, logEvent, onPlaybackStarted]);
+  }, [video?.id, videoSrc, isScrolling, isMuted, logEvent, onPlaybackStarted]);
 
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
@@ -256,12 +392,22 @@ export const SinglePlayer = memo(({
     
     retryCountRef.current = 0;
     setPlaybackFailed(false);
+    setFailureReason('none');
+    setVideoError(null);
+    setPlayError(null);
     loadStartRef.current = performance.now();
     logEvent('manual_retry');
     
-    videoEl.src = videoSrc;
-    videoEl.load();
-    videoEl.play().catch(() => {});
+    // Re-trigger the effect by toggling a state
+    setSrcAssigned(false);
+    setTimeout(() => {
+      videoEl.src = videoSrc;
+      setSrcAssigned(true);
+      videoEl.load();
+      videoEl.play().catch(e => {
+        setPlayError(`${e.name}: ${e.message}`);
+      });
+    }, 100);
   }, [video, videoSrc, logEvent]);
 
   const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
@@ -272,22 +418,29 @@ export const SinglePlayer = memo(({
     videoId: video?.id || '',
     sourceUrl: videoSrc,
     sourceType,
-    headCheckStatus,
+    preflightStatus,
+    preflightError,
+    preflightHttpStatus,
     timeToMetadata,
     timeToPlaying,
     abortedPrefetches,
     retries: retryCountRef.current,
     readyState: videoRef.current?.readyState || 0,
     networkState: videoRef.current?.networkState || 0,
+    currentSrc: videoRef.current?.currentSrc || '',
     events: debugEvents,
     isScrolling,
+    srcAssigned,
+    videoError,
+    playError,
+    failureReason,
   };
 
   if (!video) return null;
 
   return (
     <>
-      {/* Poster background - always visible until video plays */}
+      {/* Poster background */}
       <img 
         src={posterSrc} 
         alt="" 
@@ -295,7 +448,7 @@ export const SinglePlayer = memo(({
         style={{ paddingBottom: navOffset }}
       />
 
-      {/* Video element - THE ONLY ONE */}
+      {/* Video element */}
       <video
         ref={videoRef}
         className={`absolute inset-0 w-full h-full object-cover md:object-contain z-20 transition-opacity duration-200 ${isPlaying ? 'opacity-100' : 'opacity-0'}`}
@@ -308,14 +461,14 @@ export const SinglePlayer = memo(({
         onClick={toggleMute}
       />
 
-      {/* Loading indicator - only show if not playing and not failed */}
-      {!isPlaying && !playbackFailed && !isScrolling && (
+      {/* Loading indicator */}
+      {!isPlaying && !playbackFailed && !isScrolling && srcAssigned && (
         <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
           <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin" />
         </div>
       )}
 
-      {/* Playback failed - retry UI */}
+      {/* Playback failed - show detailed reason in debug mode */}
       {playbackFailed && (
         <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30 pointer-events-none">
           <button 
@@ -324,6 +477,9 @@ export const SinglePlayer = memo(({
           >
             <RefreshCw className="h-8 w-8 text-white" />
             <span className="text-white text-sm">Tap to retry</span>
+            {isDebugMode() && (
+              <span className="text-red-400 text-xs">{failureReason.replace(/_/g, ' ').toUpperCase()}</span>
+            )}
           </button>
         </div>
       )}
