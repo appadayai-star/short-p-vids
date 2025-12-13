@@ -44,10 +44,13 @@ const isDesktopPointer = () => {
 };
 
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
-  // DEBUG: Confirm this component is mounted
-  console.log("🔴 VIDEOFEED COMPONENT MOUNTED - isDesktop:", isDesktopPointer());
-  
   const { hasEntered } = useEntryGate();
+  
+  // DEBUG: Only log on actual mount (not re-renders)
+  useEffect(() => {
+    console.log("🔴 VIDEOFEED COMPONENT MOUNTED - isDesktop:", isDesktopPointer());
+    return () => console.log("🔴 VIDEOFEED COMPONENT UNMOUNTED");
+  }, []);
   
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
