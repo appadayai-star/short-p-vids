@@ -205,7 +205,12 @@ export const FeedItem = memo(({
   return (
     <div 
       ref={containerRef}
-      className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center"
+      className="relative w-full bg-black flex items-center justify-center"
+      style={{
+        height: '100dvh',
+        scrollSnapAlign: 'start',
+        scrollSnapStop: 'always'
+      }}
     >
       {/* Thumbnail background - always visible */}
       <img 
