@@ -136,12 +136,12 @@ export const SimplePlayer = memo(({ video, containerRect, hasEntered, onViewTrac
 
   return (
     <div 
-      className="fixed z-30 pointer-events-none"
+      className="fixed z-10 pointer-events-none"
       style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
     >
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black pointer-events-none"
+        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black pointer-events-auto"
         loop
         playsInline
         muted={muted}
@@ -149,10 +149,8 @@ export const SimplePlayer = memo(({ video, containerRect, hasEntered, onViewTrac
         poster={posterSrc}
         onCanPlay={handleCanPlay}
         onError={handleError}
+        onClick={handleTap}
       />
-      
-      {/* Tap/scroll area */}
-      <div className="absolute inset-0 z-10 pointer-events-auto" onClick={handleTap} onWheel={handleWheel} />
 
       {/* Loading */}
       {status === "loading" && (
@@ -193,7 +191,7 @@ export const SimplePlayer = memo(({ video, containerRect, hasEntered, onViewTrac
       )}
 
       {/* Mute indicator */}
-      <div className="absolute bottom-[120px] right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 pointer-events-none">
+      <div className="absolute bottom-[180px] right-[76px] z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 pointer-events-none">
         {muted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
       </div>
     </div>
