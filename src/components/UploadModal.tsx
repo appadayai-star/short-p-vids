@@ -166,16 +166,23 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
     setUploadProgress(0);
 
     try {
-      // Upload video file to storage
+      // Upload video file to storage with timeout
       const fileExt = videoFile.name.split(".").pop();
       const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
       const filePath = `${userId}/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
+      // Create upload with timeout (2 minutes for large files)
+      const uploadPromise = supabase.storage
         .from("videos")
         .upload(filePath, videoFile);
+      
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Upload timeout - please try again")), 120000)
+      );
 
-      if (uploadError) throw uploadError;
+      const uploadResult = await Promise.race([uploadPromise, timeoutPromise]) as any;
+      
+      if (uploadResult.error) throw uploadResult.error;
 
       setUploadProgress(50);
 
@@ -184,8 +191,8 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
         .from("videos")
         .getPublicUrl(filePath);
 
-      // Create video record
-      const { data: videoData, error: dbError } = await supabase.from("videos").insert({
+      // Create video record with timeout
+      const insertPromise = supabase.from("videos").insert({
         user_id: userId,
         title: `Video ${Date.now()}`,
         description: description.trim() || null,
@@ -194,27 +201,26 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
         processing_status: 'pending',
       }).select('id').single();
 
-      if (dbError) throw dbError;
+      const insertTimeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Database timeout - please try again")), 30000)
+      );
 
-      setCurrentVideoId(videoData.id);
+      const insertResult = await Promise.race([insertPromise, insertTimeout]) as any;
+
+      if (insertResult.error) throw insertResult.error;
+
+      setCurrentVideoId(insertResult.data.id);
       setUploadStage('processing');
 
-      // Trigger video processing
-      const { error: processError } = await supabase.functions.invoke('process-video', {
-        body: { videoUrl: publicUrl, videoId: videoData.id }
+      // Trigger video processing (don't await - let it run in background)
+      supabase.functions.invoke('process-video', {
+        body: { videoUrl: publicUrl, videoId: insertResult.data.id }
+      }).catch(err => {
+        console.error('Video processing error:', err);
       });
 
-      if (processError) {
-        console.error('Video processing error:', processError);
-        // Processing failed but video is uploaded - complete anyway
-        setUploadProgress(100);
-        setUploadStage('complete');
-        toast.success("Video uploaded! (Processing skipped)");
-        setTimeout(() => {
-          resetAndClose();
-          window.location.reload();
-        }, 1500);
-      }
+      // Since processing is async, we can complete after a short delay
+      // The polling will pick up the actual status
     } catch (error: any) {
       setUploadStage('error');
       toast.error(error.message || "Failed to upload video");
