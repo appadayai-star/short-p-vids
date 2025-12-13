@@ -6,8 +6,8 @@ import { useEntryGate } from "./EntryGate";
 import { getBestThumbnailUrl, preloadImage, getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
-const MAX_RENDERED_ITEMS = 15; // Virtualization threshold to prevent memory buildup
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const DEBUG_SCROLL = import.meta.env.DEV;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 interface Video {
@@ -405,12 +405,16 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
   }
 
+  // Debug scroll state
+  if (DEBUG_SCROLL) {
+    console.log('[VideoFeed] Render | videos:', videos.length, '| activeIndex:', activeIndex, '| loading:', loading);
+  }
+
   return (
     <div
       ref={containerRef}
-      className="w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide bg-black"
+      className="w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide bg-black snap-y snap-mandatory"
       style={{ 
-        scrollSnapType: 'y mandatory',
         overscrollBehavior: 'contain',
         WebkitOverflowScrolling: 'touch',
       }}
@@ -425,7 +429,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           hasEntered={hasEntered}
           currentUserId={userId}
           onViewTracked={handleViewTracked}
-          isMobile
         />
       ))}
       {isLoadingMore && (

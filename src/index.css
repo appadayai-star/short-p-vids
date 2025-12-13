@@ -100,8 +100,15 @@ All colors MUST be HSL.
     -webkit-overflow-scrolling: touch;
   }
   
+  .snap-mandatory {
+    scroll-snap-type: y mandatory;
+  }
+  
   .snap-start {
     scroll-snap-align: start;
+  }
+  
+  .snap-always {
     scroll-snap-stop: always;
   }
 
