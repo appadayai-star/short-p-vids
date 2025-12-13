@@ -47,13 +47,21 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
 
+  console.log("[VideoFeed] Render", { authStatus, loading, videosCount: videos.length });
+
   // Fetch videos
   useEffect(() => {
-    if (authStatus !== "ready") return;
+    console.log("[VideoFeed] useEffect triggered", { authStatus });
+    
+    if (authStatus !== "ready") {
+      console.log("[VideoFeed] Auth not ready, waiting...");
+      return;
+    }
 
     let cancelled = false;
     
     const fetchVideos = async () => {
+      console.log("[VideoFeed] Starting fetchVideos...");
       setLoading(true);
       setError(null);
       setActiveIndex(0);
@@ -64,6 +72,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       }
 
       try {
+        console.log("[VideoFeed] Making Supabase query...");
+        
         let query = supabase
           .from("videos")
           .select(`
@@ -81,9 +91,14 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
         }
 
+        console.log("[VideoFeed] Awaiting query...");
         const { data, error: queryError } = await query;
+        console.log("[VideoFeed] Query returned", { data: data?.length, error: queryError });
         
-        if (cancelled) return;
+        if (cancelled) {
+          console.log("[VideoFeed] Cancelled, ignoring result");
+          return;
+        }
 
         if (queryError) throw queryError;
 
@@ -102,6 +117,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         results.forEach(v => loadedIdsRef.current.add(v.id));
         setVideos(results);
         setHasMore(results.length === PAGE_SIZE);
+        console.log("[VideoFeed] Videos set", { count: results.length });
         
         if (results.length > 1) {
           const thumb = getBestThumbnailUrl(results[1].cloudinary_public_id || null, results[1].thumbnail_url);
@@ -109,17 +125,23 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         }
       } catch (err) {
         if (cancelled) return;
-        console.error("VideoFeed fetch error:", err);
+        console.error("[VideoFeed] Fetch error:", err);
         setError(err instanceof Error ? err.message : "Failed to load videos");
         setVideos([]);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          console.log("[VideoFeed] Loading set to false");
+        }
       }
     };
 
     fetchVideos();
     
-    return () => { cancelled = true; };
+    return () => { 
+      cancelled = true; 
+      console.log("[VideoFeed] Cleanup, setting cancelled");
+    };
   }, [authStatus, searchQuery, categoryFilter]);
 
   // Scroll handling
@@ -196,9 +218,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   }, [userId]);
 
   const handleRetry = () => {
-    setLoading(true);
-    setError(null);
-    // Re-trigger by changing a dep - simple approach
     window.location.reload();
   };
 
