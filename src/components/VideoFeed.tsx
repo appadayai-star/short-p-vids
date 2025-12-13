@@ -44,6 +44,9 @@ const isDesktopPointer = () => {
 };
 
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
+  // DEBUG: Confirm this component is mounted
+  console.log("🔴 VIDEOFEED COMPONENT MOUNTED - isDesktop:", isDesktopPointer());
+  
   const { hasEntered } = useEntryGate();
   
   const [videos, setVideos] = useState<Video[]>([]);
@@ -397,6 +400,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           ref={containerRef}
           id="video-feed-container"
           className="relative z-20 w-full h-[100dvh] overflow-hidden"
+          style={{ outline: '5px solid red' }}
         >
           {/* Feed track - moves via transform */}
           <div
@@ -437,6 +441,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         id="video-feed-container"
         className="relative z-20 w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide"
         style={{ 
+          outline: '5px solid blue',
           scrollSnapType: 'y mandatory',
           overscrollBehavior: 'contain',
           WebkitOverflowScrolling: 'touch',
