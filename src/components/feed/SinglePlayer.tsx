@@ -38,8 +38,8 @@ interface SinglePlayerProps {
 
 type FailureReason = 'none' | 'url_404' | 'url_403' | 'url_error' | 'autoplay_blocked' | 'canplay_timeout' | 'decode_error' | 'network_error' | 'unknown';
 
-// Preflight HEAD check with timeout
-async function preflightCheck(url: string, timeoutMs = 2000): Promise<{ ok: boolean; status: number | null; error: string | null }> {
+// Preflight HEAD check - DEBUG ONLY, never blocks playback
+async function preflightCheck(url: string, timeoutMs = 6000): Promise<{ ok: boolean; status: number | null; error: string | null }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   
@@ -55,7 +55,7 @@ async function preflightCheck(url: string, timeoutMs = 2000): Promise<{ ok: bool
     clearTimeout(timeoutId);
     // Try no-cors as fallback (can't read status but can detect network errors)
     try {
-      await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(1000) });
+      await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(2000) });
       return { ok: true, status: null, error: null }; // Opaque response = likely OK
     } catch (e2) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -129,7 +129,7 @@ export const SinglePlayer = memo(({
     return () => { muteListeners.delete(listener); };
   }, []);
 
-  // Main playback effect - assign src IMMEDIATELY when activeIndex changes (no debounce)
+  // Main playback effect - assign src IMMEDIATELY, preflight is parallel debug-only
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl || !video) {
@@ -142,6 +142,7 @@ export const SinglePlayer = memo(({
       preflightAbortRef.current.abort();
     }
     preflightAbortRef.current = new AbortController();
+    const abortSignal = preflightAbortRef.current.signal;
 
     // Reset state for new video
     loadStartRef.current = performance.now();
@@ -169,74 +170,54 @@ export const SinglePlayer = memo(({
       return;
     }
 
-    // Start preflight check and src assignment in parallel
-    const startPlayback = async () => {
-      logEvent('preflight_start', videoSrc.substring(0, 60));
-      
-      // Preflight HEAD check
-      const preflight = await preflightCheck(videoSrc);
-      
-      if (preflightAbortRef.current?.signal.aborted) {
-        logEvent('preflight_aborted');
-        return;
-      }
-      
-      setPreflightHttpStatus(preflight.status);
-      
-      if (!preflight.ok) {
-        setPreflightStatus('failed');
-        setPreflightError(preflight.error || `HTTP ${preflight.status}`);
-        logEvent('preflight_failed', preflight.error || `status=${preflight.status}`);
-        
-        // Determine failure reason
-        if (preflight.status === 404) {
-          setFailureReason('url_404');
-        } else if (preflight.status === 403) {
-          setFailureReason('url_403');
-        } else {
-          setFailureReason('url_error');
-        }
-        
-        setPlaybackFailed(true);
-        return;
-      }
-      
-      setPreflightStatus('ok');
-      logEvent('preflight_ok', `status=${preflight.status || 'opaque'}`);
-      
-      // Set src and load - CRITICAL: always set muted and playsInline
-      videoEl.muted = isMuted;
-      videoEl.playsInline = true;
-      videoEl.preload = 'auto';
-      videoEl.src = videoSrc;
-      setSrcAssigned(true);
-      logEvent('src_assigned', videoSrc.substring(0, 80));
-      
-      // Call load() immediately
-      videoEl.load();
-      logEvent('load_called');
-    };
-
     let stallTimeout: ReturnType<typeof setTimeout> | null = null;
+    let metadataTimeout: ReturnType<typeof setTimeout> | null = null;
     let hasPlayed = false;
 
-    const clearStallTimeout = () => {
-      if (stallTimeout) {
-        clearTimeout(stallTimeout);
-        stallTimeout = null;
-      }
+    const clearTimeouts = () => {
+      if (stallTimeout) { clearTimeout(stallTimeout); stallTimeout = null; }
+      if (metadataTimeout) { clearTimeout(metadataTimeout); metadataTimeout = null; }
     };
+
+    // Run preflight in PARALLEL for debug only - NEVER blocks playback
+    if (isDebugMode()) {
+      preflightCheck(videoSrc, 6000).then(preflight => {
+        if (abortSignal.aborted) return;
+        setPreflightHttpStatus(preflight.status);
+        if (preflight.ok) {
+          setPreflightStatus('ok');
+          logEvent('preflight_ok', `status=${preflight.status || 'opaque'}`);
+        } else {
+          setPreflightStatus('failed');
+          setPreflightError(preflight.error || `HTTP ${preflight.status}`);
+          logEvent('preflight_failed', preflight.error || `status=${preflight.status}`);
+        }
+      });
+    }
+
+    // IMMEDIATELY assign src and start playback - no gating on preflight
+    videoEl.muted = isMuted;
+    videoEl.playsInline = true;
+    videoEl.preload = 'auto';
+    videoEl.src = videoSrc;
+    setSrcAssigned(true);
+    logEvent('src_assigned', videoSrc.substring(0, 80));
+    
+    // Call load() immediately
+    videoEl.load();
+    logEvent('load_called');
 
     const handleLoadStart = () => logEvent('loadstart');
     
     const handleLoadedMetadata = () => {
+      if (metadataTimeout) { clearTimeout(metadataTimeout); metadataTimeout = null; }
       const elapsed = Math.round(performance.now() - loadStartRef.current);
       setTimeToMetadata(elapsed);
       logEvent('loadedmetadata', `duration=${videoEl.duration?.toFixed(1)}s, elapsed=${elapsed}ms`);
     };
 
     const handleCanPlay = () => {
-      clearStallTimeout();
+      clearTimeouts();
       logEvent('canplay', `readyState=${videoEl.readyState}`);
       
       if (!hasPlayed) {
@@ -249,9 +230,13 @@ export const SinglePlayer = memo(({
             setPlayError(errStr);
             logEvent('play_rejected', errStr);
             
+            // Only mark as failure if NOT an autoplay restriction
             if (err.name === 'NotAllowedError') {
+              // Autoplay blocked - not fatal, user can tap to play
               setFailureReason('autoplay_blocked');
-            } else {
+              logEvent('autoplay_blocked', 'user interaction required');
+            } else if (err.name !== 'AbortError') {
+              // AbortError is expected when src changes rapidly
               setFailureReason('unknown');
             }
           });
@@ -261,8 +246,9 @@ export const SinglePlayer = memo(({
     const handlePlaying = () => {
       hasPlayed = true;
       setIsPlaying(true);
-      clearStallTimeout();
+      clearTimeouts();
       setFailureReason('none');
+      setPlayError(null);
       
       const elapsed = Math.round(performance.now() - loadStartRef.current);
       setTimeToPlaying(elapsed);
@@ -273,12 +259,6 @@ export const SinglePlayer = memo(({
 
     const handleWaiting = () => {
       logEvent('waiting', `readyState=${videoEl.readyState}`);
-      if (!hasPlayed && !stallTimeout) {
-        stallTimeout = setTimeout(() => {
-          logEvent('stall_timeout', '6000ms');
-          handleStall();
-        }, 6000);
-      }
     };
 
     const handleStalled = () => {
@@ -308,32 +288,53 @@ export const SinglePlayer = memo(({
       }
       
       retryCountRef.current++;
-      if (retryCountRef.current >= 2) {
+      if (retryCountRef.current >= 3) {
         setPlaybackFailed(true);
       } else {
         logEvent('retry', `attempt=${retryCountRef.current}`);
         videoEl.load();
         videoEl.play().catch(e => {
-          setPlayError(`${e.name}: ${e.message}`);
+          if (e.name !== 'AbortError') {
+            setPlayError(`${e.name}: ${e.message}`);
+          }
         });
       }
     };
 
-    const handleStall = () => {
-      retryCountRef.current++;
-      
+    const handleMetadataTimeout = () => {
+      logEvent('metadata_timeout', `readyState=${videoEl.readyState}, networkState=${videoEl.networkState}`);
       if (videoEl.readyState < 1) {
         setFailureReason('canplay_timeout');
+        retryCountRef.current++;
+        if (retryCountRef.current >= 3) {
+          setPlaybackFailed(true);
+        } else {
+          logEvent('retry_metadata', `attempt=${retryCountRef.current}`);
+          videoEl.load();
+          videoEl.play().catch(e => {
+            if (e.name !== 'AbortError') {
+              setPlayError(`${e.name}: ${e.message}`);
+            }
+          });
+        }
       }
-      
-      if (retryCountRef.current >= 2) {
-        setPlaybackFailed(true);
-      } else {
-        logEvent('retry_stall', `attempt=${retryCountRef.current}, readyState=${videoEl.readyState}`);
-        videoEl.load();
-        videoEl.play().catch(e => {
-          setPlayError(`${e.name}: ${e.message}`);
-        });
+    };
+
+    const handleCanplayTimeout = () => {
+      logEvent('canplay_timeout', `readyState=${videoEl.readyState}, networkState=${videoEl.networkState}`);
+      if (videoEl.readyState < 3 && !hasPlayed) {
+        retryCountRef.current++;
+        if (retryCountRef.current >= 3) {
+          setPlaybackFailed(true);
+        } else {
+          logEvent('retry_canplay', `attempt=${retryCountRef.current}`);
+          videoEl.load();
+          videoEl.play().catch(e => {
+            if (e.name !== 'AbortError') {
+              setPlayError(`${e.name}: ${e.message}`);
+            }
+          });
+        }
       }
     };
 
@@ -346,22 +347,15 @@ export const SinglePlayer = memo(({
     videoEl.addEventListener('stalled', handleStalled);
     videoEl.addEventListener('error', handleError);
 
-    // Initial timeout for canplay
-    stallTimeout = setTimeout(() => {
-      if (!hasPlayed && videoEl.readyState < 3) {
-        logEvent('initial_timeout', `readyState=${videoEl.readyState}, networkState=${videoEl.networkState}`);
-        if (videoEl.readyState < 1) {
-          setFailureReason('canplay_timeout');
-        }
-        handleStall();
-      }
-    }, 8000);
+    // Timeout for loadedmetadata (8s in prod, 5s in dev)
+    const metadataTimeoutMs = isDebugMode() ? 5000 : 8000;
+    metadataTimeout = setTimeout(handleMetadataTimeout, metadataTimeoutMs);
 
-    // Start playback
-    startPlayback();
+    // Timeout for canplay after metadata (additional 4s)
+    stallTimeout = setTimeout(handleCanplayTimeout, metadataTimeoutMs + 4000);
 
     return () => {
-      clearStallTimeout();
+      clearTimeouts();
       if (preflightAbortRef.current) {
         preflightAbortRef.current.abort();
       }
