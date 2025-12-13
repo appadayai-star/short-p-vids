@@ -137,36 +137,87 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive - with faster activation
+  // Play/pause based on isActive - with stall detection
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
+
+    let stallTimeout: ReturnType<typeof setTimeout> | null = null;
+    let isPlaying = false;
+
+    const clearStallTimeout = () => {
+      if (stallTimeout) {
+        clearTimeout(stallTimeout);
+        stallTimeout = null;
+      }
+    };
+
+    const handlePlaying = () => {
+      isPlaying = true;
+      clearStallTimeout();
+      
+      // Log metrics in debug mode
+      if (DEBUG_METRICS && loadStartTimeRef.current) {
+        const ttff = Math.round(performance.now() - loadStartTimeRef.current);
+        console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${getSourceType()} | Retries: ${retryCountRef.current}`);
+      }
+      
+      if (!trackedRef.current) {
+        trackedRef.current = true;
+        onViewTracked(video.id);
+      }
+    };
+
+    const handleStalled = () => {
+      if (!isPlaying && isActive) {
+        console.warn(`[Stall] Video ${index} stalled, retrying...`);
+        retryCountRef.current++;
+        if (retryCountRef.current < 3) {
+          videoEl.load();
+          videoEl.play().catch(() => {});
+        } else {
+          setPlaybackFailed(true);
+        }
+      }
+    };
+
+    const handleWaiting = () => {
+      // Set stall timeout - if waiting too long, retry
+      if (!stallTimeout && isActive && !isPlaying) {
+        stallTimeout = setTimeout(() => {
+          console.warn(`[Timeout] Video ${index} took too long, retrying...`);
+          handleStalled();
+        }, 5000); // 5 second timeout
+      }
+    };
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
       loadStartTimeRef.current = performance.now();
       videoEl.currentTime = 0;
+      isPlaying = false;
       
+      // Add event listeners for stall detection
+      videoEl.addEventListener('playing', handlePlaying);
+      videoEl.addEventListener('stalled', handleStalled);
+      videoEl.addEventListener('waiting', handleWaiting);
+      
+      // Start stall timeout immediately
+      stallTimeout = setTimeout(() => {
+        if (!isPlaying) {
+          console.warn(`[Timeout] Video ${index} initial load timeout`);
+          handleStalled();
+        }
+      }, 5000);
+
       const attemptPlay = () => {
-        videoEl.play().then(() => {
-          // Log time to first frame in debug mode
-          if (DEBUG_METRICS && loadStartTimeRef.current) {
-            const ttff = Math.round(performance.now() - loadStartTimeRef.current);
-            console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${getSourceType()} | Retries: ${retryCountRef.current}`);
-          }
-          
-          if (!trackedRef.current) {
-            trackedRef.current = true;
-            onViewTracked(video.id);
-          }
-        }).catch((err) => {
+        videoEl.play().catch((err) => {
           if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
             return;
           }
           if (err.name === 'NotSupportedError') {
             retryCountRef.current++;
             if (retryCountRef.current < 3) {
-              // Retry with reload
               setTimeout(() => {
                 videoEl.load();
                 attemptPlay();
@@ -178,14 +229,14 @@ export const FeedItem = memo(({
         });
       };
 
-      // Try to play immediately - no delay
       attemptPlay();
-      
-      // Listen for canplay for videos not ready
-      const handleCanPlay = () => attemptPlay();
-      videoEl.addEventListener('canplay', handleCanPlay);
-      
-      return () => videoEl.removeEventListener('canplay', handleCanPlay);
+
+      return () => {
+        clearStallTimeout();
+        videoEl.removeEventListener('playing', handlePlaying);
+        videoEl.removeEventListener('stalled', handleStalled);
+        videoEl.removeEventListener('waiting', handleWaiting);
+      };
     } else {
       videoEl.pause();
     }
