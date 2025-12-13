@@ -403,7 +403,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           ref={containerRef}
           id="video-feed-container"
           className="relative z-20 w-full h-[100dvh] overflow-hidden"
-          style={{ outline: '5px solid red' }}
+          style={{ 
+            boxShadow: 'inset 0 0 0 10px red',
+            background: 'rgba(255,0,0,0.2)'
+          }}
         >
           {/* Feed track - moves via transform */}
           <div
