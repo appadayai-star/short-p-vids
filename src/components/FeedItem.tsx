@@ -375,7 +375,7 @@ export const FeedItem = memo(({
         style={{ paddingBottom: navOffset }}
       />
 
-      {/* Video player - overlays poster with aggressive preload */}
+      {/* Video player - overlays poster */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
@@ -385,7 +385,7 @@ export const FeedItem = memo(({
         loop
         playsInline
         muted={isMuted}
-        preload={isActive || shouldPreload ? "auto" : "none"}
+        preload={isActive ? "auto" : "metadata"}
         onClick={toggleMute}
       />
 
