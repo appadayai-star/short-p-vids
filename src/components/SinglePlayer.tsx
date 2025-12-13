@@ -274,18 +274,30 @@ export const SinglePlayer = memo(({
 
   return (
     <div 
-      className="fixed inset-0 z-10 pointer-events-none bg-black"
-      style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
+      className="fixed inset-0 z-10 pointer-events-none"
+      style={{ 
+        paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        backgroundColor: 'transparent'
+      }}
     >
-      {/* Video element - fixed fullscreen, never moves */}
+      {/* Thumbnail layer - always visible underneath video */}
+      {posterSrc && (
+        <img
+          src={posterSrc}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover md:object-contain pointer-events-none"
+        />
+      )}
+      
+      {/* Video element - overlays thumbnail, transparent until loaded */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black pointer-events-none"
+        className="absolute inset-0 w-full h-full object-cover md:object-contain pointer-events-none"
+        style={{ backgroundColor: 'transparent' }}
         loop
         playsInline
         muted={isMuted}
         preload="auto"
-        poster={posterSrc}
         onLoadedMetadata={handleLoadedMetadata}
         onCanPlay={handleCanPlay}
         onPlaying={handlePlaying}
