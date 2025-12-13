@@ -123,17 +123,24 @@ serve(async (req) => {
         shuffledResult.push(...shuffleArray(tier));
       }
 
-      // Apply creator diversity (no same creator within 3 items)
-      const diverseResult: typeof shuffledResult = [];
-      const recentCreators: string[] = [];
-      
-      for (const video of shuffledResult) {
-        if (recentCreators.slice(-3).includes(video.user_id)) continue;
-        diverseResult.push(video);
-        recentCreators.push(video.user_id);
+      // Apply soft creator diversity (only if we have enough videos)
+      let finalResult = shuffledResult;
+      if (shuffledResult.length > 10) {
+        const diverseResult: typeof shuffledResult = [];
+        const recentCreators: string[] = [];
+        
+        for (const video of shuffledResult) {
+          // Only apply diversity filter if we have enough content
+          if (recentCreators.slice(-2).includes(video.user_id) && diverseResult.length < shuffledResult.length - 5) {
+            continue;
+          }
+          diverseResult.push(video);
+          recentCreators.push(video.user_id);
+        }
+        finalResult = diverseResult;
       }
 
-      const paginatedVideos = diverseResult
+      const paginatedVideos = finalResult
         .slice(page * limit, (page + 1) * limit)
         .map(({ score, ...video }) => video);
 
@@ -237,26 +244,28 @@ serve(async (req) => {
       shuffledResult.push(...shuffleArray(tier));
     }
 
-    // Apply creator diversity (no same creator within 3-5 items)
-    const diverseResult: typeof shuffledResult = [];
-    const recentCreators: string[] = [];
-    
-    for (const video of shuffledResult) {
-      if (recentCreators.slice(-4).includes(video.user_id)) continue;
-      diverseResult.push(video);
-      recentCreators.push(video.user_id);
+    // Apply soft creator diversity (only if we have enough videos)
+    let finalResult = shuffledResult;
+    if (shuffledResult.length > 10) {
+      const diverseResult: typeof shuffledResult = [];
+      const recentCreators: string[] = [];
+      
+      for (const video of shuffledResult) {
+        if (recentCreators.slice(-2).includes(video.user_id) && diverseResult.length < shuffledResult.length - 5) {
+          continue;
+        }
+        diverseResult.push(video);
+        recentCreators.push(video.user_id);
+      }
+      finalResult = diverseResult;
     }
 
-    // Add viewed videos at the end as fallback (also with diversity)
+    // Add viewed videos at the end as fallback
     const shuffledViewed = shuffleArray(viewedVideos);
-    for (const video of shuffledViewed) {
-      if (recentCreators.slice(-4).includes(video.user_id)) continue;
-      diverseResult.push(video);
-      recentCreators.push(video.user_id);
-    }
+    finalResult = [...finalResult, ...shuffledViewed];
 
     // Paginate and clean up
-    const paginatedVideos = diverseResult
+    const paginatedVideos = finalResult
       .slice(page * limit, (page + 1) * limit)
       .map(({ baseScore, isViewed, ...video }) => video);
 

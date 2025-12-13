@@ -55,11 +55,6 @@ const addSessionViewedId = (videoId: string) => {
   } catch {}
 };
 
-// Scroll control constants
-const WHEEL_THRESHOLD = 50; // Accumulated deltaY before triggering scroll
-const SCROLL_COOLDOWN = 500; // ms before allowing next scroll
-const TOUCH_THRESHOLD = 50; // px swipe distance to trigger scroll
-
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
   
@@ -74,12 +69,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
   const pageRef = useRef(0);
-  
-  // Scroll control refs
-  const isScrollingRef = useRef(false);
-  const accumulatedDeltaRef = useRef(0);
-  const touchStartYRef = useRef(0);
-  const activeIndexRef = useRef(0); // Keep in sync for event handlers
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Preload next video's source
   const preloadNextVideo = useCallback((nextIndex: number) => {
@@ -252,129 +242,44 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     refetch();
   }, [searchQuery, categoryFilter]);
 
-  // Keep activeIndexRef in sync
-  useEffect(() => {
-    activeIndexRef.current = activeIndex;
-  }, [activeIndex]);
-
-  // Scroll to specific index with manual control
-  const scrollToIndex = useCallback((index: number) => {
-    const container = containerRef.current;
-    if (!container || isScrollingRef.current) return;
-    
-    const clampedIndex = Math.max(0, Math.min(videos.length - 1, index));
-    if (clampedIndex === activeIndexRef.current) return;
-    
-    isScrollingRef.current = true;
-    
-    const targetTop = clampedIndex * container.clientHeight;
-    
-    if (DEBUG_SCROLL) {
-      console.log('[Scroll] scrollToIndex:', { from: activeIndexRef.current, to: clampedIndex, targetTop });
-    }
-    
-    container.scrollTo({ top: targetTop, behavior: 'smooth' });
-    setActiveIndex(clampedIndex);
-    
-    // Preload next video
-    preloadNextVideo(clampedIndex + 1);
-    
-    // Track session view
-    if (videos[clampedIndex]) {
-      addSessionViewedId(videos[clampedIndex].id);
-    }
-    
-    // Release lock after animation completes
-    setTimeout(() => {
-      isScrollingRef.current = false;
-      accumulatedDeltaRef.current = 0;
-      if (DEBUG_SCROLL) {
-        console.log('[Scroll] Lock released, ready for next scroll');
-      }
-    }, SCROLL_COOLDOWN);
-  }, [videos, preloadNextVideo]);
-
-  // Manual wheel control - one video per scroll, no skipping
+  // Native scroll-snap based detection - simple and reliable
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault(); // Prevent native scroll-snap from interfering
-      
-      if (isScrollingRef.current) {
-        if (DEBUG_SCROLL) {
-          console.log('[Scroll] Wheel ignored - scrolling in progress');
-        }
-        return;
+    const handleScroll = () => {
+      // Debounce scroll events
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
       }
       
-      // Accumulate delta to handle trackpad "noise"
-      accumulatedDeltaRef.current += e.deltaY;
-      
-      if (DEBUG_SCROLL) {
-        console.log('[Scroll] Wheel:', {
-          deltaY: e.deltaY,
-          accumulated: accumulatedDeltaRef.current,
-          threshold: WHEEL_THRESHOLD,
-          activeIndex: activeIndexRef.current,
-          videosLength: videos.length,
-        });
-      }
-      
-      // Check if threshold reached
-      if (Math.abs(accumulatedDeltaRef.current) >= WHEEL_THRESHOLD) {
-        const direction = accumulatedDeltaRef.current > 0 ? 1 : -1;
-        const newIndex = activeIndexRef.current + direction;
+      scrollTimeoutRef.current = setTimeout(() => {
+        const scrollTop = container.scrollTop;
+        const itemHeight = container.clientHeight;
+        const newIndex = Math.round(scrollTop / itemHeight);
         
-        accumulatedDeltaRef.current = 0; // Reset accumulator
-        
-        if (newIndex >= 0 && newIndex < videos.length) {
-          scrollToIndex(newIndex);
-        } else if (DEBUG_SCROLL) {
-          console.log('[Scroll] At boundary, cannot scroll:', { newIndex, videosLength: videos.length });
+        if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
+          setActiveIndex(newIndex);
+          
+          // Track session view
+          if (videos[newIndex]) {
+            addSessionViewedId(videos[newIndex].id);
+          }
+          
+          // Preload next video
+          preloadNextVideo(newIndex + 1);
         }
-      }
+      }, 100);
     };
 
-    // Use passive: false to allow preventDefault
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheel);
-  }, [videos.length, scrollToIndex]);
-
-  // Touch control for mobile
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      touchStartYRef.current = e.touches[0].clientY;
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (isScrollingRef.current) return;
-      
-      const touchEndY = e.changedTouches[0].clientY;
-      const deltaY = touchStartYRef.current - touchEndY;
-      
-      if (Math.abs(deltaY) >= TOUCH_THRESHOLD) {
-        const direction = deltaY > 0 ? 1 : -1;
-        const newIndex = activeIndexRef.current + direction;
-        
-        if (newIndex >= 0 && newIndex < videos.length) {
-          scrollToIndex(newIndex);
-        }
-      }
-    };
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchend', handleTouchEnd, { passive: true });
-    
+    container.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
     };
-  }, [videos.length, scrollToIndex]);
+  }, [videos, activeIndex, preloadNextVideo]);
 
   // Load more - trigger earlier (within last 2 items instead of 3)
   useEffect(() => {
@@ -485,9 +390,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   return (
     <div
       ref={containerRef}
-      className="w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide bg-black"
+      className="w-full h-[100dvh] overflow-y-auto overflow-x-hidden scrollbar-hide bg-black snap-y snap-mandatory"
       style={{ 
         overscrollBehavior: 'none',
+        scrollSnapType: 'y mandatory',
       }}
     >
       {videos.map((video, index) => (
