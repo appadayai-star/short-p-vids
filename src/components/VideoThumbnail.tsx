@@ -1,51 +1,34 @@
 import { useState, useMemo } from "react";
+import { getBestThumbnailUrl, DEFAULT_PLACEHOLDER } from "@/lib/cloudinary";
 
 interface VideoThumbnailProps {
   cloudinaryPublicId: string | null;
   thumbnailUrl: string | null;
-  videoUrl: string;
+  videoUrl: string; // kept for API compatibility but NOT used
   title: string;
   videoId?: string;
   className?: string;
 }
 
-const CLOUDINARY_CLOUD_NAME = 'dsxmzxb4u';
-
-// Generate thumbnail from cloudinary public_id
-function getCloudinaryThumbnail(publicId: string): string {
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_0/${publicId}.jpg`;
-}
-
+/**
+ * VideoThumbnail - NEVER loads a video element
+ * Always renders an image with guaranteed fallback to placeholder
+ */
 export function VideoThumbnail({ 
   cloudinaryPublicId, 
   thumbnailUrl, 
-  videoUrl, 
   title,
-  videoId,
   className = "w-full h-full object-cover"
 }: VideoThumbnailProps) {
   const [imgError, setImgError] = useState(false);
 
-  // Compute best thumbnail source
+  // Always get a valid image source - never undefined
   const imgSrc = useMemo(() => {
-    if (thumbnailUrl) return thumbnailUrl;
-    if (cloudinaryPublicId) return getCloudinaryThumbnail(cloudinaryPublicId);
-    return null;
-  }, [thumbnailUrl, cloudinaryPublicId]);
-
-  // If no image source or error, use video element to show first frame
-  if (!imgSrc || imgError) {
-    return (
-      <video
-        src={videoUrl}
-        className={className}
-        muted
-        playsInline
-        preload="metadata"
-        style={{ objectFit: 'cover' }}
-      />
-    );
-  }
+    if (imgError) {
+      return DEFAULT_PLACEHOLDER;
+    }
+    return getBestThumbnailUrl(cloudinaryPublicId, thumbnailUrl);
+  }, [cloudinaryPublicId, thumbnailUrl, imgError]);
 
   return (
     <img
@@ -54,7 +37,9 @@ export function VideoThumbnail({
       className={className}
       loading="lazy"
       onError={() => {
-        setImgError(true);
+        if (!imgError) {
+          setImgError(true);
+        }
       }}
     />
   );

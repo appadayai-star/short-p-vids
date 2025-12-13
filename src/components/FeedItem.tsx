@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, memo, useCallback } from "react";
-import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX } from "lucide-react";
+import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -47,6 +47,9 @@ const setGuestLikes = (likes: string[]) => {
   localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
 };
 
+// Playback timeout constant
+const PLAYBACK_TIMEOUT_MS = 5000;
+
 interface Video {
   id: string;
   title: string;
@@ -92,6 +95,8 @@ export const FeedItem = memo(({
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackedRef = useRef(false);
+  const playbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef(0);
   
   // UI state
   const [isLiked, setIsLiked] = useState(false);
@@ -101,15 +106,18 @@ export const FeedItem = memo(({
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
+  const [playbackFailed, setPlaybackFailed] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
 
-  // Video sources
+  // Video sources - ALWAYS have a poster
   const videoSrc = getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     video.stream_url || null,
     video.video_url
   );
-  const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.video_url);
+  // Poster is ALWAYS defined (never undefined due to placeholder fallback)
+  const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
 
   // Sync with global mute state
   useEffect(() => {
@@ -125,23 +133,101 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive
+  // Clear timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackTimeoutRef.current) {
+        clearTimeout(playbackTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Play/pause based on isActive with timeout safety
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
+    // Clear any existing timeout
+    if (playbackTimeoutRef.current) {
+      clearTimeout(playbackTimeoutRef.current);
+      playbackTimeoutRef.current = null;
+    }
+
     if (isActive && hasEntered) {
+      setPlaybackFailed(false);
+      setIsBuffering(true);
       videoEl.currentTime = 0;
+      
+      // Start playback timeout
+      playbackTimeoutRef.current = setTimeout(() => {
+        // If still buffering after timeout, try retry
+        if (isBuffering && retryCountRef.current < 1) {
+          retryCountRef.current++;
+          // Retry with cache buster
+          const cacheBuster = `${videoSrc.includes('?') ? '&' : '?'}cb=${Date.now()}`;
+          videoEl.src = videoSrc + cacheBuster;
+          videoEl.load();
+          videoEl.play().catch(() => {
+            setPlaybackFailed(true);
+            setIsBuffering(false);
+          });
+        } else if (isBuffering) {
+          setPlaybackFailed(true);
+          setIsBuffering(false);
+        }
+      }, PLAYBACK_TIMEOUT_MS);
+
       videoEl.play().then(() => {
+        setIsBuffering(false);
+        if (playbackTimeoutRef.current) {
+          clearTimeout(playbackTimeoutRef.current);
+          playbackTimeoutRef.current = null;
+        }
         if (!trackedRef.current) {
           trackedRef.current = true;
           onViewTracked(video.id);
         }
-      }).catch(() => {});
+      }).catch(() => {
+        // Will be handled by timeout
+      });
     } else {
       videoEl.pause();
+      setIsBuffering(false);
+      retryCountRef.current = 0;
     }
-  }, [isActive, hasEntered, video.id, onViewTracked]);
+  }, [isActive, hasEntered, video.id, onViewTracked, videoSrc, isBuffering]);
+
+  // Handle video events
+  const handleCanPlay = useCallback(() => {
+    setIsBuffering(false);
+    if (playbackTimeoutRef.current) {
+      clearTimeout(playbackTimeoutRef.current);
+      playbackTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleWaiting = useCallback(() => {
+    setIsBuffering(true);
+  }, []);
+
+  const handlePlaying = useCallback(() => {
+    setIsBuffering(false);
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+    
+    setPlaybackFailed(false);
+    setIsBuffering(true);
+    retryCountRef.current = 0;
+    videoEl.src = videoSrc;
+    videoEl.load();
+    videoEl.play().catch(() => {
+      setPlaybackFailed(true);
+      setIsBuffering(false);
+    });
+  }, [videoSrc]);
 
   // Check if guest has liked this video
   useEffect(() => {
@@ -259,8 +345,6 @@ export const FeedItem = memo(({
   };
 
   const isOwnVideo = currentUserId === video.user_id;
-
-  // Safe bottom offset for nav bar
   const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
 
   return (
@@ -271,32 +355,43 @@ export const FeedItem = memo(({
         scrollSnapStop: isMobile ? 'always' : undefined,
       }}
     >
-      {/* Poster image as background - shows immediately, only if we have a reliable source */}
-      {posterSrc && (
-        <img 
-          src={posterSrc} 
-          alt="" 
-          className="absolute inset-0 w-full h-full object-cover md:object-contain"
-          style={{ paddingBottom: navOffset }}
-          onError={(e) => {
-            // Hide broken image
-            (e.target as HTMLImageElement).style.display = 'none';
-          }}
-        />
-      )}
+      {/* Poster image as background - ALWAYS visible until video plays */}
+      <img 
+        src={posterSrc} 
+        alt="" 
+        className="absolute inset-0 w-full h-full object-cover md:object-contain"
+        style={{ paddingBottom: navOffset }}
+      />
 
-      {/* Video player - overlays poster */}
+      {/* Video player - overlays poster, ALWAYS has poster attribute */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
         src={videoSrc}
+        poster={posterSrc}
         loop
         playsInline
         muted={isMuted}
         preload={isActive || shouldPreload ? "auto" : "none"}
         onClick={toggleMute}
+        onCanPlay={handleCanPlay}
+        onWaiting={handleWaiting}
+        onPlaying={handlePlaying}
       />
+
+      {/* Playback failed - retry UI */}
+      {playbackFailed && (
+        <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30">
+          <button 
+            onClick={handleRetry}
+            className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm"
+          >
+            <RefreshCw className="h-8 w-8 text-white" />
+            <span className="text-white text-sm">Tap to retry</span>
+          </button>
+        </div>
+      )}
 
       {/* Mute indicator flash */}
       {showMuteIcon && (
@@ -307,12 +402,11 @@ export const FeedItem = memo(({
         </div>
       )}
 
-      {/* Right side actions - vertically centered above nav */}
+      {/* Right side actions */}
       <div 
         className="absolute right-4 flex flex-col items-center gap-5 z-40"
         style={{ bottom: navOffset, paddingBottom: '140px' }}
       >
-        {/* Like */}
         <button onClick={toggleLike} className="flex flex-col items-center gap-1">
           <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
             <Heart className={cn("h-6 w-6", isLiked ? "fill-primary text-primary" : "text-white")} />
@@ -320,7 +414,6 @@ export const FeedItem = memo(({
           <span className="text-white text-xs font-semibold drop-shadow">{likesCount}</span>
         </button>
 
-        {/* Save */}
         <button onClick={toggleSave} className="flex flex-col items-center gap-1">
           <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
             <Bookmark className={cn("h-6 w-6", isSaved ? "fill-yellow-500 text-yellow-500" : "text-white")} />
@@ -328,21 +421,18 @@ export const FeedItem = memo(({
           <span className="text-white text-xs font-semibold drop-shadow">{savesCount}</span>
         </button>
 
-        {/* Share */}
         <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center">
           <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
             <Share2 className="h-6 w-6 text-white" />
           </div>
         </button>
 
-        {/* Mute button */}
         <button onClick={toggleMute} className="flex flex-col items-center">
           <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
             {isMuted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
           </div>
         </button>
 
-        {/* Delete (own videos only) */}
         {isOwnVideo && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

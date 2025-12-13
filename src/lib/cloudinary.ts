@@ -2,29 +2,23 @@
 // Generate dynamic transformation URLs from public_id
 // Optimized for instant startup and mobile streaming
 
-const CLOUDINARY_CLOUD_NAME = 'dsxmzxb4u'; // Your cloud name
+const CLOUDINARY_CLOUD_NAME = 'dsxmzxb4u';
+
+// Static placeholder for missing thumbnails - gradient placeholder
+export const DEFAULT_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="480" height="852" viewBox="0 0 480 852"%3E%3Cdefs%3E%3ClinearGradient id="g" x1="0%25" y1="0%25" x2="0%25" y2="100%25"%3E%3Cstop offset="0%25" style="stop-color:%231a1a2e"%2F%3E%3Cstop offset="100%25" style="stop-color:%230f0f1a"%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect fill="url(%23g)" width="480" height="852"%2F%3E%3C%2Fsvg%3E';
 
 export function getOptimizedVideoUrl(publicId: string): string {
-  // Progressive MP4 optimized for instant startup:
-  // - f_mp4: MP4 container
-  // - q_auto:eco: Quality auto with eco profile (smaller file)
-  // - c_limit,h_720: Max 720p height
-  // - vc_h264: H.264 codec for compatibility
-  // - fps_30: Max 30fps
-  // - br_1500k: 1.5 Mbps bitrate for mobile (was 2000k)
-  // - fl_faststart: Moves moov atom to front for instant playback
-  // - ac_aac: AAC audio codec
+  // Progressive MP4 optimized for instant startup
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_1500k,fl_faststart,ac_aac/${publicId}.mp4`;
 }
 
 export function getStreamUrl(publicId: string): string {
-  // HLS adaptive streaming with optimized profile
-  // sp_hd provides multiple quality levels for adaptive playback
+  // HLS adaptive streaming
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/sp_hd/${publicId}.m3u8`;
 }
 
 export function getThumbnailUrl(publicId: string): string {
-  // Optimized thumbnail - quick to load
+  // Optimized thumbnail from Cloudinary
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/${publicId}.jpg`;
 }
 
@@ -44,15 +38,13 @@ export function getBestVideoSource(
 ): string {
   // If we have a cloudinary public_id, generate dynamic URLs
   if (cloudinaryPublicId) {
-    // Prefer HLS on Safari/iOS for adaptive streaming
     if (supportsHlsNatively()) {
       return getStreamUrl(cloudinaryPublicId);
     }
-    // Use optimized MP4 for other browsers
     return getOptimizedVideoUrl(cloudinaryPublicId);
   }
   
-  // Fallback to stored URLs (legacy videos before this change)
+  // Fallback to stored URLs (legacy videos)
   if (supportsHlsNatively() && streamUrl) {
     return streamUrl;
   }
@@ -60,25 +52,38 @@ export function getBestVideoSource(
     return optimizedVideoUrl;
   }
   
-  // Final fallback to original
   return originalVideoUrl;
 }
 
-// Get best thumbnail source
-// Returns undefined if no reliable thumbnail available (will fall back to video element)
+// Get best thumbnail - ALWAYS returns a valid image URL, never undefined
+// Priority: 1) cloudinary_public_id, 2) thumbnail_url, 3) placeholder
 export function getBestThumbnailUrl(
   cloudinaryPublicId: string | null,
-  thumbnailUrl: string | null,
-  _videoUrl?: string | null
-): string | undefined {
-  // Only use reliable sources - cloudinary public_id or stored thumbnail_url
+  thumbnailUrl: string | null
+): string {
   if (cloudinaryPublicId) {
     return getThumbnailUrl(cloudinaryPublicId);
   }
   if (thumbnailUrl) {
     return thumbnailUrl;
   }
-  // Don't use Cloudinary fetch for external URLs - it often fails and causes broken images
-  // Return undefined to let the component fall back to video element
-  return undefined;
+  // Always return placeholder - never null/undefined
+  return DEFAULT_PLACEHOLDER;
+}
+
+// Preload an image (for warming next thumbnail)
+export function preloadImage(src: string): void {
+  if (!src || src === DEFAULT_PLACEHOLDER) return;
+  const img = new Image();
+  img.src = src;
+}
+
+// Warm video source with HEAD request (checks CDN cache)
+export async function warmVideoSource(src: string): Promise<void> {
+  if (!src) return;
+  try {
+    await fetch(src, { method: 'HEAD', mode: 'no-cors' });
+  } catch {
+    // Ignore errors - this is just warming
+  }
 }
