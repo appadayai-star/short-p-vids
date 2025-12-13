@@ -28,7 +28,7 @@ const Feed = () => {
 
   return (
     <EntryGate>
-      <div className="h-[100dvh] bg-black overflow-hidden flex flex-col relative">
+      <div className="h-[100dvh] bg-black flex flex-col relative">
         <SEO 
           title={categoryFilter ? `${categoryFilter} Videos` : undefined}
           description={categoryFilter 
