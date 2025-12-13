@@ -15,6 +15,12 @@ function getCloudinaryThumbnail(publicId: string): string {
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_0/${publicId}.jpg`;
 }
 
+// Generate thumbnail from any video URL using Cloudinary fetch
+function getCloudinaryFetchThumbnail(videoUrl: string): string {
+  const encodedUrl = encodeURIComponent(videoUrl);
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/fetch/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_0/${encodedUrl}`;
+}
+
 export function VideoThumbnail({ 
   cloudinaryPublicId, 
   thumbnailUrl, 
@@ -22,42 +28,44 @@ export function VideoThumbnail({
   title,
   className = "w-full h-full object-cover"
 }: VideoThumbnailProps) {
-  const [useFallback, setUseFallback] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
-  // Priority 1: Cloudinary generated thumbnail
-  if (cloudinaryPublicId && !useFallback) {
+  // Determine thumbnail source with priority
+  const getThumbnailSrc = (): string => {
+    // Priority 1: Cloudinary generated from public_id
+    if (cloudinaryPublicId) {
+      return getCloudinaryThumbnail(cloudinaryPublicId);
+    }
+    // Priority 2: Stored thumbnail URL
+    if (thumbnailUrl) {
+      return thumbnailUrl;
+    }
+    // Priority 3: Generate via Cloudinary fetch from video URL
+    return getCloudinaryFetchThumbnail(videoUrl);
+  };
+
+  const src = getThumbnailSrc();
+
+  // If image failed, show video first frame
+  if (imgError) {
     return (
-      <img
-        src={getCloudinaryThumbnail(cloudinaryPublicId)}
-        alt={title}
+      <video
+        src={videoUrl}
         className={className}
-        loading="lazy"
-        onError={() => setUseFallback(true)}
+        muted
+        playsInline
+        preload="metadata"
       />
     );
   }
 
-  // Priority 2: Stored thumbnail URL
-  if (thumbnailUrl && !useFallback) {
-    return (
-      <img
-        src={thumbnailUrl}
-        alt={title}
-        className={className}
-        loading="lazy"
-        onError={() => setUseFallback(true)}
-      />
-    );
-  }
-
-  // Fallback: Use video element to show first frame
   return (
-    <video
-      src={videoUrl}
+    <img
+      src={src}
+      alt={title}
       className={className}
-      muted
-      playsInline
-      preload="metadata"
+      loading="lazy"
+      onError={() => setImgError(true)}
     />
   );
 }
