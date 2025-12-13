@@ -62,12 +62,12 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
 
     try {
       console.log("[SimpleFeed] Starting Supabase query...");
+      // First fetch videos without join
       let query = supabase
         .from("videos")
         .select(`
           id, title, description, video_url, optimized_video_url, stream_url, 
-          cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-          profiles(username, avatar_url)
+          cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id
         `)
         .order("created_at", { ascending: false })
         .range(0, PAGE_SIZE - 1);
@@ -87,8 +87,25 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
         throw fetchError;
       }
 
-      const fetchedVideos = data || [];
-      console.log("[SimpleFeed] Fetched", fetchedVideos.length, "videos");
+      const rawVideos = data || [];
+      console.log("[SimpleFeed] Fetched", rawVideos.length, "videos");
+      
+      // Fetch profiles separately using the public view
+      const userIds = [...new Set(rawVideos.map(v => v.user_id))];
+      const { data: profilesData } = await supabase
+        .from("profiles_public")
+        .select("id, username, avatar_url")
+        .in("id", userIds);
+      
+      const profilesMap = new Map(
+        (profilesData || []).map(p => [p.id, { username: p.username || 'User', avatar_url: p.avatar_url }])
+      );
+      
+      const fetchedVideos = rawVideos.map(v => ({
+        ...v,
+        profiles: profilesMap.get(v.user_id) || { username: 'User', avatar_url: null }
+      }));
+      
       fetchedVideos.forEach(v => loadedIds.current.add(v.id));
       setVideos(fetchedVideos);
       setHasMore(fetchedVideos.length === PAGE_SIZE);
@@ -118,8 +135,7 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
         .from("videos")
         .select(`
           id, title, description, video_url, optimized_video_url, stream_url, 
-          cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id,
-          profiles(username, avatar_url)
+          cloudinary_public_id, thumbnail_url, views_count, likes_count, tags, user_id
         `)
         .order("created_at", { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
@@ -128,9 +144,25 @@ export function SimpleFeed({ searchQuery, categoryFilter, userId }: SimpleFeedPr
       if (searchQuery) query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
 
       const { data } = await query;
-      const newVideos = (data || []).filter(v => !loadedIds.current.has(v.id));
-      newVideos.forEach(v => loadedIds.current.add(v.id));
+      const rawVideos = (data || []).filter(v => !loadedIds.current.has(v.id));
       
+      // Fetch profiles separately
+      const userIds = [...new Set(rawVideos.map(v => v.user_id))];
+      const { data: profilesData } = await supabase
+        .from("profiles_public")
+        .select("id, username, avatar_url")
+        .in("id", userIds);
+      
+      const profilesMap = new Map(
+        (profilesData || []).map(p => [p.id, { username: p.username || 'User', avatar_url: p.avatar_url }])
+      );
+      
+      const newVideos = rawVideos.map(v => ({
+        ...v,
+        profiles: profilesMap.get(v.user_id) || { username: 'User', avatar_url: null }
+      }));
+      
+      newVideos.forEach(v => loadedIds.current.add(v.id));
       setVideos(prev => [...prev, ...newVideos]);
       setHasMore(newVideos.length > 0);
     } catch (err) {
