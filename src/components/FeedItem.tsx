@@ -75,6 +75,9 @@ export const FeedItem = memo(({
 }: FeedItemProps) => {
   const navigate = useNavigate();
   
+  // Only render content for active item on desktop to prevent ghost overlays
+  const shouldRenderContent = isMobile || isActive;
+  
   // UI state
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(video.likes_count);
@@ -220,82 +223,87 @@ export const FeedItem = memo(({
         WebkitBackfaceVisibility: 'hidden',
       }}
     >
-      {/* Right side actions */}
-      <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-40 pointer-events-auto">
-        <button onClick={toggleLike} className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-            <Heart className={cn("h-7 w-7", isLiked ? "fill-primary text-primary" : "text-white")} />
-          </div>
-          <span className="text-white text-xs font-semibold">{likesCount}</span>
-        </button>
+      {/* Only render overlays for active item to prevent ghost outlines */}
+      {shouldRenderContent && (
+        <>
+          {/* Right side actions */}
+          <div className="absolute right-4 bottom-[180px] flex flex-col gap-6 z-40 pointer-events-auto">
+            <button onClick={toggleLike} className="flex flex-col items-center gap-1">
+              <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+                <Heart className={cn("h-7 w-7", isLiked ? "fill-primary text-primary" : "text-white")} />
+              </div>
+              <span className="text-white text-xs font-semibold">{likesCount}</span>
+            </button>
 
-        <button onClick={toggleSave} className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-            <Bookmark className={cn("h-7 w-7", isSaved ? "fill-yellow-500 text-yellow-500" : "text-white")} />
-          </div>
-          <span className="text-white text-xs font-semibold">{savesCount}</span>
-        </button>
+            <button onClick={toggleSave} className="flex flex-col items-center gap-1">
+              <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+                <Bookmark className={cn("h-7 w-7", isSaved ? "fill-yellow-500 text-yellow-500" : "text-white")} />
+              </div>
+              <span className="text-white text-xs font-semibold">{savesCount}</span>
+            </button>
 
-        <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-            <Share2 className="h-7 w-7 text-white" />
-          </div>
-        </button>
+            <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center gap-1">
+              <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+                <Share2 className="h-7 w-7 text-white" />
+              </div>
+            </button>
 
-        {isOwnVideo && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="flex flex-col items-center gap-1">
-                <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-                  <MoreVertical className="h-7 w-7 text-white" />
+            {isOwnVideo && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex flex-col items-center gap-1">
+                    <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
+                      <MoreVertical className="h-7 w-7 text-white" />
+                    </div>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-background border-border z-50">
+                  <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive cursor-pointer">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+
+          {/* Bottom info */}
+          <div className="absolute bottom-0 left-0 right-0 p-4 pb-[100px] z-40 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none pr-[80px]">
+            <div className="space-y-2 pointer-events-auto">
+              <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
+                <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
+                  {video.profiles.avatar_url ? (
+                    <img src={video.profiles.avatar_url} alt={video.profiles.username} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
+                      {video.profiles.username[0].toUpperCase()}
+                    </div>
+                  )}
                 </div>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-background border-border z-50">
-              <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive cursor-pointer">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
+                <span className="text-white font-semibold">@{video.profiles.username}</span>
+              </div>
 
-      {/* Bottom info */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 pb-[100px] z-40 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none pr-[80px]">
-        <div className="space-y-2 pointer-events-auto">
-          <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
-            <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
-              {video.profiles.avatar_url ? (
-                <img src={video.profiles.avatar_url} alt={video.profiles.username} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
-                  {video.profiles.username[0].toUpperCase()}
+              {video.description && <p className="text-white/90 text-sm">{video.description}</p>}
+
+              {video.tags && video.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {video.tags.map((tag, idx) => (
+                    <button
+                      key={idx}
+                      onClick={(e) => { e.stopPropagation(); handleCategoryClick(tag); }}
+                      className="text-primary text-sm font-semibold hover:underline cursor-pointer"
+                    >
+                      #{tag}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-            <span className="text-white font-semibold">@{video.profiles.username}</span>
           </div>
 
-          {video.description && <p className="text-white/90 text-sm">{video.description}</p>}
-
-          {video.tags && video.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {video.tags.map((tag, idx) => (
-                <button
-                  key={idx}
-                  onClick={(e) => { e.stopPropagation(); handleCategoryClick(tag); }}
-                  className="text-primary text-sm font-semibold hover:underline cursor-pointer"
-                >
-                  #{tag}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <ShareDrawer videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
+          <ShareDrawer videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
+        </>
+      )}
     </div>
   );
 });
