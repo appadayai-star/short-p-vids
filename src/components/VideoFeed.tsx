@@ -7,9 +7,9 @@ import { useEntryGate } from "./EntryGate";
 import { getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
-const WHEEL_LOCK_MS = 450;
-const WHEEL_DELTA_THRESHOLD = 40;
-const SCROLL_SETTLE_MS = 120;
+const WHEEL_LOCK_MS = 550;
+const WHEEL_DELTA_THRESHOLD = 15;
+const SCROLL_SETTLE_MS = 150;
 
 interface Video {
   id: string;
@@ -36,6 +36,12 @@ interface VideoFeedProps {
   userId: string | null;
 }
 
+// Detect desktop (fine pointer) vs mobile
+const isDesktopPointer = () => {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia("(pointer: fine)").matches;
+};
+
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
   
@@ -51,14 +57,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
   
-  // Scroll control refs - use refs to avoid stale closures
+  // Scroll control refs
   const activeIndexRef = useRef(0);
   const wheelLockRef = useRef(false);
-  const wheelDeltaRef = useRef(0);
+  const wheelDeltaAccumRef = useRef(0);
   const scrollSettleTimerRef = useRef<NodeJS.Timeout | null>(null);
   const videosLengthRef = useRef(0);
+  const isDesktopRef = useRef(isDesktopPointer());
 
-  // Keep refs in sync with state
+  // Keep refs in sync
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
@@ -67,7 +74,16 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     videosLengthRef.current = videos.length;
   }, [videos.length]);
 
-  // Scroll to specific index - deterministic, no smooth behavior
+  // Update desktop detection on resize
+  useEffect(() => {
+    const updatePointer = () => {
+      isDesktopRef.current = isDesktopPointer();
+    };
+    window.addEventListener('resize', updatePointer);
+    return () => window.removeEventListener('resize', updatePointer);
+  }, []);
+
+  // Scroll to specific index with smooth animation
   const scrollToIndex = useCallback((index: number) => {
     const container = containerRef.current;
     if (!container) return;
@@ -75,13 +91,12 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     const maxIndex = videosLengthRef.current - 1;
     const clampedIndex = Math.max(0, Math.min(index, maxIndex));
     
-    // Skip if already at target or out of bounds
     if (clampedIndex === activeIndexRef.current || maxIndex < 0) return;
     
-    // Immediate scroll - no smooth animation
+    // Smooth scroll animation
     container.scrollTo({
       top: clampedIndex * container.clientHeight,
-      behavior: 'auto'
+      behavior: 'smooth'
     });
     
     // Update state immediately
@@ -89,30 +104,34 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     activeIndexRef.current = clampedIndex;
   }, []);
 
-  // Desktop wheel handler - one-step navigation with lock
+  // Desktop wheel handler - intercept and control precisely
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
 
     const handleWheel = (e: WheelEvent) => {
+      // Only intercept on desktop (fine pointer)
+      if (!isDesktopRef.current) return;
+      
+      // Prevent default to stop native momentum scrolling
       e.preventDefault();
       
-      // If locked, ignore all wheel events
+      // If locked, ignore completely
       if (wheelLockRef.current) return;
       
       // Accumulate delta
-      wheelDeltaRef.current += e.deltaY;
+      wheelDeltaAccumRef.current += e.deltaY;
       
-      // Only trigger when threshold is reached
-      if (Math.abs(wheelDeltaRef.current) >= WHEEL_DELTA_THRESHOLD) {
-        const direction = wheelDeltaRef.current > 0 ? 1 : -1;
+      // Only trigger when accumulated delta exceeds threshold
+      if (Math.abs(wheelDeltaAccumRef.current) >= WHEEL_DELTA_THRESHOLD) {
+        const direction = wheelDeltaAccumRef.current > 0 ? 1 : -1;
         const targetIndex = activeIndexRef.current + direction;
         
-        // Reset delta and set lock
-        wheelDeltaRef.current = 0;
+        // Reset accumulator and set lock
+        wheelDeltaAccumRef.current = 0;
         wheelLockRef.current = true;
         
-        // Navigate
+        // Navigate with smooth animation
         scrollToIndex(targetIndex);
         
         // Release lock after delay
@@ -122,28 +141,31 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       }
     };
 
+    // Non-passive to allow preventDefault
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
   }, [videos.length, scrollToIndex]);
 
-  // Mobile: update activeIndex only after scroll settles (debounce)
+  // Mobile only: update activeIndex after scroll settles
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
 
     const handleScroll = () => {
-      // Clear any pending timer
+      // Skip on desktop - wheel handler manages activeIndex
+      if (isDesktopRef.current) return;
+      
+      // Clear pending timer
       if (scrollSettleTimerRef.current) {
         clearTimeout(scrollSettleTimerRef.current);
       }
       
-      // Debounce: wait for scroll to settle before updating index
+      // Debounce: wait for scroll to settle
       scrollSettleTimerRef.current = setTimeout(() => {
         const scrollTop = container.scrollTop;
         const itemHeight = container.clientHeight;
         const newIndex = Math.round(scrollTop / itemHeight);
         
-        // Only update if different and valid
         if (newIndex !== activeIndexRef.current && newIndex >= 0 && newIndex < videosLengthRef.current) {
           setActiveIndex(newIndex);
           activeIndexRef.current = newIndex;
@@ -378,10 +400,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         className="relative z-20 w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide"
         style={{ 
           scrollSnapType: 'y mandatory',
-          scrollBehavior: 'auto',
-          overscrollBehaviorY: 'contain',
+          scrollBehavior: 'smooth',
+          overscrollBehavior: 'contain',
           WebkitOverflowScrolling: 'touch',
-          paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))'
+          scrollPadding: 0,
         }}
       >
         {videos.map((video, index) => (
@@ -393,7 +415,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             currentUserId={userId}
           />
         ))}
-        <div ref={sentinelRef} className="h-20 w-full" />
+        <div ref={sentinelRef} className="h-px w-full" />
         {isLoadingMore && (
           <div className="flex justify-center py-4 bg-black">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
