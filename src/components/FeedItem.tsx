@@ -258,21 +258,33 @@ export const FeedItem = memo(({
 
   const isOwnVideo = currentUserId === video.user_id;
 
+  // Safe bottom offset for nav bar
+  const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
+
   return (
     <div 
-      className="relative w-full h-[100dvh] flex-shrink-0"
+      className="relative w-full h-[100dvh] flex-shrink-0 bg-black"
       style={{
         scrollSnapAlign: isMobile ? 'start' : undefined,
         scrollSnapStop: isMobile ? 'always' : undefined,
       }}
     >
-      {/* Video player - embedded in item, scrolls with it */}
+      {/* Poster image as background - shows immediately */}
+      {posterSrc && (
+        <img 
+          src={posterSrc} 
+          alt="" 
+          className="absolute inset-0 w-full h-full object-cover md:object-contain"
+          style={{ paddingBottom: navOffset }}
+        />
+      )}
+
+      {/* Video player - overlays poster */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
-        style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
+        className="absolute inset-0 w-full h-full object-cover md:object-contain"
+        style={{ paddingBottom: navOffset }}
         src={videoSrc}
-        poster={posterSrc || undefined}
         loop
         playsInline
         muted={isMuted}
@@ -289,45 +301,48 @@ export const FeedItem = memo(({
         </div>
       )}
 
-      {/* Mute indicator in corner */}
+      {/* Right side actions - vertically centered above nav */}
       <div 
-        className="absolute right-4 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm pointer-events-none"
-        style={{ bottom: 'calc(180px + 64px + env(safe-area-inset-bottom, 0px))' }}
+        className="absolute right-4 flex flex-col items-center gap-5 z-40"
+        style={{ bottom: navOffset, paddingBottom: '140px' }}
       >
-        {isMuted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
-      </div>
+        {/* Mute button */}
+        <button onClick={toggleMute} className="flex flex-col items-center">
+          <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm">
+            {isMuted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
+          </div>
+        </button>
 
-      {/* Right side actions */}
-      <div 
-        className="absolute right-4 flex flex-col gap-6 z-40"
-        style={{ bottom: 'calc(180px + env(safe-area-inset-bottom, 0px))' }}
-      >
+        {/* Like */}
         <button onClick={toggleLike} className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-            <Heart className={cn("h-7 w-7", isLiked ? "fill-primary text-primary" : "text-white")} />
+          <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+            <Heart className={cn("h-6 w-6", isLiked ? "fill-primary text-primary" : "text-white")} />
           </div>
-          <span className="text-white text-xs font-semibold">{likesCount}</span>
+          <span className="text-white text-xs font-semibold drop-shadow">{likesCount}</span>
         </button>
 
+        {/* Save */}
         <button onClick={toggleSave} className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-            <Bookmark className={cn("h-7 w-7", isSaved ? "fill-yellow-500 text-yellow-500" : "text-white")} />
+          <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+            <Bookmark className={cn("h-6 w-6", isSaved ? "fill-yellow-500 text-yellow-500" : "text-white")} />
           </div>
-          <span className="text-white text-xs font-semibold">{savesCount}</span>
+          <span className="text-white text-xs font-semibold drop-shadow">{savesCount}</span>
         </button>
 
-        <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-            <Share2 className="h-7 w-7 text-white" />
+        {/* Share */}
+        <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center">
+          <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+            <Share2 className="h-6 w-6 text-white" />
           </div>
         </button>
 
+        {/* Delete (own videos only) */}
         {isOwnVideo && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex flex-col items-center gap-1">
-                <div className="w-12 h-12 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm hover:scale-110 transition-transform">
-                  <MoreVertical className="h-7 w-7 text-white" />
+              <button className="flex flex-col items-center">
+                <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+                  <MoreVertical className="h-6 w-6 text-white" />
                 </div>
               </button>
             </DropdownMenuTrigger>
