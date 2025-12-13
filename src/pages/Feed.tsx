@@ -1,5 +1,5 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { SimpleFeed } from "@/components/SimpleFeed";
+import { VideoFeed } from "@/components/VideoFeed";
 import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
 import { SEO } from "@/components/SEO";
@@ -8,7 +8,7 @@ import { Search, X } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState, useCallback } from "react";
+import { useState } from "react";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
@@ -22,9 +22,10 @@ const Feed = () => {
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = () => {
+    // Remount VideoFeed with new key to trigger fresh fetch
     setRefreshKey(prev => prev + 1);
-  }, []);
+  };
 
   return (
     <EntryGate>
@@ -36,7 +37,6 @@ const Feed = () => {
             : "Discover and share amazing short videos on ShortPV"
           }
         />
-        
         {/* Category filter indicator */}
         {categoryFilter && (
           <button
@@ -56,14 +56,7 @@ const Feed = () => {
           <Search className="h-6 w-6 text-white" />
         </button>
 
-        {/* Simple Feed - no auth blocking, direct DB queries */}
-        <SimpleFeed 
-          key={refreshKey} 
-          searchQuery={searchQuery} 
-          categoryFilter={categoryFilter} 
-          userId={user?.id || null} 
-        />
-        
+        <VideoFeed key={refreshKey} searchQuery={searchQuery} categoryFilter={categoryFilter} userId={user?.id || null} />
         <BottomNav
           onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
           isAuthenticated={!!user}
@@ -71,7 +64,6 @@ const Feed = () => {
           unreadCount={unreadCount}
           isAdmin={isAdmin}
         />
-        
         {user && (
           <UploadModal 
             open={isUploadOpen} 

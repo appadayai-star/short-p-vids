@@ -26,18 +26,12 @@ interface Video {
 }
 
 serve(async (req) => {
-  const requestId = crypto.randomUUID().slice(0, 8);
-  const startTime = Date.now();
-  
-  console.log(`[get-for-you-feed][${requestId}] Request received`);
-  
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
     const { userId, page = 0, limit = 10 } = await req.json();
-    console.log(`[get-for-you-feed][${requestId}] Params - userId: ${userId || 'null'}, page: ${page}, limit: ${limit}`);
 
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -156,9 +150,6 @@ serve(async (req) => {
       .slice(page * limit, (page + 1) * limit)
       .map(({ baseScore, ...video }) => video);
 
-    const elapsed = Date.now() - startTime;
-    console.log(`[get-for-you-feed][${requestId}] Success - returned ${paginatedVideos.length} videos in ${elapsed}ms`);
-
     return new Response(
       JSON.stringify({ videos: paginatedVideos }),
       {
@@ -166,8 +157,7 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    const elapsed = Date.now() - startTime;
-    console.error(`[get-for-you-feed][${requestId}] Error after ${elapsed}ms:`, error);
+    console.error("Error in get-for-you-feed:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
       {
