@@ -7,8 +7,8 @@ import { useEntryGate } from "./EntryGate";
 import { getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
-const WHEEL_LOCK_MS = 450;
-const WHEEL_DELTA_THRESHOLD = 30;
+const WHEEL_LOCK_MS = 550; // Increased lock time
+const WHEEL_DELTA_THRESHOLD = 50; // Higher threshold to prevent accidental triggers
 const SCROLL_SETTLE_MS = 150;
 const TRANSITION_DURATION = 420;
 
@@ -59,12 +59,13 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement>(null);
   
-  // Scroll control refs
+  // Scroll control refs - using refs to avoid useEffect re-registrations
   const activeIndexRef = useRef(0);
   const wheelLockRef = useRef(false);
   const wheelDeltaAccumRef = useRef(0);
   const scrollSettleTimerRef = useRef<NodeJS.Timeout | null>(null);
   const videosLengthRef = useRef(0);
+  const isDesktopRef = useRef(isDesktopPointer());
 
   // Keep refs in sync
   useEffect(() => {
@@ -78,13 +79,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   // Update desktop detection on resize/orientation change
   useEffect(() => {
     const updatePointer = () => {
-      setIsDesktop(isDesktopPointer());
+      const newIsDesktop = isDesktopPointer();
+      setIsDesktop(newIsDesktop);
+      isDesktopRef.current = newIsDesktop;
     };
     window.addEventListener('resize', updatePointer);
     return () => window.removeEventListener('resize', updatePointer);
   }, []);
 
-  // Navigate to specific index
+  // Navigate to specific index - uses refs only
   const goToIndex = useCallback((index: number) => {
     const maxIndex = videosLengthRef.current - 1;
     const clampedIndex = Math.max(0, Math.min(index, maxIndex));
@@ -95,26 +98,41 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     activeIndexRef.current = clampedIndex;
   }, []);
 
-  // Desktop: wheel handler on window - transform-based navigation
+  // Desktop: wheel handler - registered ONCE, uses refs for all values
   useEffect(() => {
-    if (!isDesktop || videos.length === 0) return;
+    // Only register on desktop - but check ref, not state to avoid re-registrations
+    if (!isDesktopRef.current) return;
 
     const handleWheel = (e: WheelEvent) => {
+      // Don't handle if no videos loaded yet
+      if (videosLengthRef.current === 0) return;
+      
       e.preventDefault();
       
+      // If locked, completely ignore all wheel events
       if (wheelLockRef.current) return;
       
+      // Accumulate delta
       wheelDeltaAccumRef.current += e.deltaY;
       
+      // Only trigger when threshold reached
       if (Math.abs(wheelDeltaAccumRef.current) >= WHEEL_DELTA_THRESHOLD) {
         const direction = wheelDeltaAccumRef.current > 0 ? 1 : -1;
-        const targetIndex = activeIndexRef.current + direction;
+        const currentIdx = activeIndexRef.current;
+        const maxIdx = videosLengthRef.current - 1;
+        const targetIndex = Math.max(0, Math.min(currentIdx + direction, maxIdx));
         
+        // Reset accumulator and lock IMMEDIATELY
         wheelDeltaAccumRef.current = 0;
         wheelLockRef.current = true;
         
-        goToIndex(targetIndex);
+        // Only navigate if actually changing
+        if (targetIndex !== currentIdx) {
+          setActiveIndex(targetIndex);
+          activeIndexRef.current = targetIndex;
+        }
         
+        // Release lock after transition completes
         setTimeout(() => {
           wheelLockRef.current = false;
         }, WHEEL_LOCK_MS);
@@ -123,7 +141,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
     window.addEventListener('wheel', handleWheel, { passive: false });
     return () => window.removeEventListener('wheel', handleWheel);
-  }, [isDesktop, videos.length, goToIndex]);
+  }, []); // Empty deps - register ONCE on mount
 
   // Mobile only: scroll-settle detection
   useEffect(() => {
