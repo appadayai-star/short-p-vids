@@ -405,15 +405,31 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     );
   }
 
-  // Debug scroll state
-  if (DEBUG_SCROLL) {
-    console.log('[VideoFeed] Render | videos:', videos.length, '| activeIndex:', activeIndex, '| loading:', loading);
-  }
+  // Debug scroll state on every render
+  useEffect(() => {
+    if (!DEBUG_SCROLL || !containerRef.current) return;
+    
+    const container = containerRef.current;
+    
+    const debugWheel = (e: WheelEvent) => {
+      console.log('[Scroll Debug] wheel event:', {
+        deltaY: e.deltaY,
+        defaultPrevented: e.defaultPrevented,
+        scrollTop: container.scrollTop,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        elementAtCenter: document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)?.tagName,
+      });
+    };
+    
+    container.addEventListener('wheel', debugWheel, { passive: true });
+    return () => container.removeEventListener('wheel', debugWheel);
+  }, []);
 
   return (
     <div
       ref={containerRef}
-      className="w-full h-[100dvh] overflow-y-scroll overflow-x-hidden scrollbar-hide bg-black snap-y snap-mandatory"
+      className="w-full h-[100dvh] overflow-y-auto bg-black snap-y snap-mandatory"
       style={{ 
         overscrollBehavior: 'contain',
         WebkitOverflowScrolling: 'touch',

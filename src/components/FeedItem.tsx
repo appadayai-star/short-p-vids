@@ -332,7 +332,7 @@ export const FeedItem = memo(({
 
   return (
     <div 
-      className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
+      className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start"
     >
       {/* Poster image as background - ALWAYS visible until video plays */}
       <img 
