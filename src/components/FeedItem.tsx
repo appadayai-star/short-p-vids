@@ -48,7 +48,7 @@ const setGuestLikes = (likes: string[]) => {
   localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
 };
 
-const STALL_TIMEOUT = 5000; // 5s before retry on stall
+const STALL_TIMEOUT = 12000; // 12s before retry on stall (don't show error too quickly)
 const MAX_RETRIES = 2;
 
 interface Video {
@@ -227,29 +227,47 @@ export const FeedItem = memo(({
       // Event handlers for stall detection
       const handleCanPlay = () => {
         clearStallTimeout();
+        setIsStalled(false);
         if (index === 0) {
-          log.info('FIRST_VIDEO_CANPLAY', { delta: Math.round(performance.now() - loadStartTimeRef.current) });
+          log.info('FIRST_VIDEO_CANPLAY', { 
+            delta: Math.round(performance.now() - loadStartTimeRef.current),
+            source: getSourceType(),
+            hasCloudinary: !!video.cloudinary_public_id
+          });
         }
         attemptPlay();
       };
       
       const handleWaiting = () => {
-        log.warn('VIDEO_WAITING', { index });
-        setIsStalled(true);
+        // Only set stalled after a brief delay to avoid flicker
         clearStallTimeout();
         stallTimeoutRef.current = window.setTimeout(() => {
-          log.warn('VIDEO_STALL_TIMEOUT', { index });
+          setIsStalled(true);
+        }, 2000); // Show spinner only after 2s of waiting
+        
+        // Retry timeout is longer
+        const retryTimeout = window.setTimeout(() => {
+          log.warn('VIDEO_STALL_TIMEOUT', { index, source: getSourceType() });
           handleVideoRetry();
         }, STALL_TIMEOUT);
+        
+        // Store retry timeout for cleanup
+        stallTimeoutRef.current = retryTimeout;
       };
       
       const handleStalled = () => {
-        log.warn('VIDEO_STALLED', { index });
-        setIsStalled(true);
+        // Similar to waiting - delay spinner
         clearStallTimeout();
         stallTimeoutRef.current = window.setTimeout(() => {
+          setIsStalled(true);
+        }, 2000);
+        
+        const retryTimeout = window.setTimeout(() => {
+          log.warn('VIDEO_STALLED_TIMEOUT', { index, source: getSourceType() });
           handleVideoRetry();
         }, STALL_TIMEOUT);
+        
+        stallTimeoutRef.current = retryTimeout;
       };
       
       const handlePlaying = () => {
@@ -435,8 +453,8 @@ export const FeedItem = memo(({
         onClick={toggleMute}
       />
 
-      {/* Stalled indicator */}
-      {isStalled && !playbackFailed && (
+      {/* Stalled indicator - only show after brief delay */}
+      {isStalled && !playbackFailed && isActive && (
         <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
           <div className="bg-black/50 rounded-full p-3">
             <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />

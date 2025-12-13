@@ -56,7 +56,7 @@ const addSessionViewedId = (videoId: string) => {
   } catch {}
 };
 
-// Warm first video with Range request
+// Warm first video with HEAD request (lightweight, just primes connection)
 const warmFirstVideo = (video: Video) => {
   const src = getBestVideoSource(
     video.cloudinary_public_id || null,
@@ -65,15 +65,18 @@ const warmFirstVideo = (video: Video) => {
     video.video_url
   );
   
-  // Fire and forget Range request for first 200KB
+  // Fire and forget HEAD request to prime DNS/TLS/connection
   fetch(src, {
-    method: 'GET',
-    headers: { 'Range': 'bytes=0-204799' },
+    method: 'HEAD',
     mode: 'cors',
     credentials: 'omit',
   }).catch(() => {});
   
-  log.info('FIRST_VIDEO_WARM', { videoId: video.id });
+  log.info('FIRST_VIDEO_WARM', { 
+    videoId: video.id, 
+    hasCloudinary: !!video.cloudinary_public_id,
+    source: video.cloudinary_public_id ? 'cloudinary' : 'supabase'
+  });
 };
 
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
@@ -139,7 +142,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
   };
 
-  // Preload next video thumbnail
+  // Preload next video - lightweight warmup
   const preloadNextVideo = useCallback((nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= videos.length) return;
     
@@ -149,7 +152,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     const thumb = getBestThumbnailUrl(nextVideo.cloudinary_public_id || null, nextVideo.thumbnail_url);
     preloadImage(thumb);
     
-    // Also warm the next video source
+    // Use HEAD request for next video (lightweight warmup, no download)
     const src = getBestVideoSource(
       nextVideo.cloudinary_public_id || null,
       nextVideo.optimized_video_url || null,
@@ -157,10 +160,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       nextVideo.video_url
     );
     
-    // Range request for next video
     fetch(src, {
-      method: 'GET',
-      headers: { 'Range': 'bytes=0-204799' },
+      method: 'HEAD',
       mode: 'cors',
       credentials: 'omit',
     }).catch(() => {});
@@ -348,7 +349,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
+            // Trigger at 30% visibility for faster playback start
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.3) {
               const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
               if (idx !== activeIndex) {
                 setActiveIndex(idx);
@@ -363,7 +365,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             }
           });
         },
-        { threshold: [0.4, 0.6, 0.8], root: container }
+        { threshold: [0.3, 0.5, 0.7], root: container }
       );
       observer.observe(item);
       observers.push(observer);
