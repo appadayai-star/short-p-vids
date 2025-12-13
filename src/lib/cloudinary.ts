@@ -2,7 +2,7 @@
 // Generate dynamic transformation URLs from public_id
 // Optimized for instant startup and mobile streaming
 
-const CLOUDINARY_CLOUD_NAME = 'dsxmzxb4u';
+const CLOUDINARY_CLOUD_NAME = 'domj6omwb';
 
 // Static placeholder for missing thumbnails - gradient placeholder
 export const DEFAULT_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="480" height="852" viewBox="0 0 480 852"%3E%3Cdefs%3E%3ClinearGradient id="g" x1="0%25" y1="0%25" x2="0%25" y2="100%25"%3E%3Cstop offset="0%25" style="stop-color:%231a1a2e"%2F%3E%3Cstop offset="100%25" style="stop-color:%230f0f1a"%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect fill="url(%23g)" width="480" height="852"%2F%3E%3C%2Fsvg%3E';
