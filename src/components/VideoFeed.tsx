@@ -349,15 +349,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           if (newVideos.length >= PAGE_SIZE) break;
         }
         
-        setVideos(prev => {
-          const combined = [...prev, ...newVideos];
-          // Virtualization: keep only videos around active index to prevent memory buildup
-          if (combined.length > MAX_RENDERED_ITEMS && activeIndex > MAX_RENDERED_ITEMS / 2) {
-            const startTrim = Math.max(0, activeIndex - Math.floor(MAX_RENDERED_ITEMS / 2));
-            return combined.slice(startTrim, startTrim + MAX_RENDERED_ITEMS);
-          }
-          return combined;
-        });
+        setVideos(prev => [...prev, ...newVideos]);
         setHasMore(newVideos.length > 0);
       } catch (err) {
         console.error("Load more error:", err);
