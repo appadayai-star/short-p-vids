@@ -9,6 +9,7 @@ import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { useAdmin } from "@/hooks/useAdmin";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
+import { debugLog } from "@/lib/debugId";
 
 const Feed = () => {
   const [searchParams] = useSearchParams();
@@ -16,14 +17,16 @@ const Feed = () => {
   const searchQuery = searchParams.get('search') || '';
   const categoryFilter = searchParams.get('category') || '';
   
-  const { user } = useAuth();
+  const { user, status: authStatus } = useAuth();
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
 
+  debugLog("Feed", `Render`, { authStatus, userId: user?.id || null, refreshKey });
+
   const handleRefresh = () => {
-    // Remount VideoFeed with new key to trigger fresh fetch
+    debugLog("Feed", "Home refresh triggered");
     setRefreshKey(prev => prev + 1);
   };
 
@@ -56,7 +59,12 @@ const Feed = () => {
           <Search className="h-6 w-6 text-white" />
         </button>
 
-        <VideoFeed key={refreshKey} searchQuery={searchQuery} categoryFilter={categoryFilter} userId={user?.id || null} />
+        <VideoFeed 
+          key={refreshKey} 
+          searchQuery={searchQuery} 
+          categoryFilter={categoryFilter} 
+          userId={user?.id || null} 
+        />
         <BottomNav
           onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
           isAuthenticated={!!user}
