@@ -67,10 +67,19 @@ export function getBestVideoSource(
 // Get best thumbnail source
 export function getBestThumbnailUrl(
   cloudinaryPublicId: string | null,
-  thumbnailUrl: string | null
+  thumbnailUrl: string | null,
+  videoUrl?: string | null
 ): string | undefined {
   if (cloudinaryPublicId) {
     return getThumbnailUrl(cloudinaryPublicId);
   }
-  return thumbnailUrl || undefined;
+  if (thumbnailUrl) {
+    return thumbnailUrl;
+  }
+  // For videos without cloudinary processing, generate thumbnail via fetch
+  if (videoUrl) {
+    const encodedUrl = encodeURIComponent(videoUrl);
+    return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/fetch/w_480,h_852,c_fill,g_auto,f_jpg,q_auto,so_0/${encodedUrl}`;
+  }
+  return undefined;
 }

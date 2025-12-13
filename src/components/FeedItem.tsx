@@ -207,8 +207,8 @@ export const FeedItem = memo(({
         height: '100dvh',
       };
 
-  // Get thumbnail URL
-  const thumbnailUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+  // Get thumbnail URL - pass video_url for fallback generation
+  const thumbnailUrl = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.video_url);
 
   return (
     <div 
