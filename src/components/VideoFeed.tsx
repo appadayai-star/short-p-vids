@@ -70,18 +70,18 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const hasFetchedRef = useRef(false);
   const pageRef = useRef(0);
 
-  // Preload next video's source
+  // Preload next video's source with aggressive Range warmup
   const preloadNextVideo = useCallback((nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= videos.length) return;
     
     const nextVideo = videos[nextIndex];
     if (!nextVideo) return;
     
-    // Preload thumbnail
+    // Preload thumbnail immediately
     const thumb = getBestThumbnailUrl(nextVideo.cloudinary_public_id || null, nextVideo.thumbnail_url);
     preloadImage(thumb);
     
-    // Warm video source by creating a hidden video element
+    // Get video source URL
     const videoSrc = getBestVideoSource(
       nextVideo.cloudinary_public_id || null,
       nextVideo.optimized_video_url || null,
@@ -89,20 +89,44 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       nextVideo.video_url
     );
     
-    // Create hidden preload video
+    // Aggressive Range request warmup - fetch first 200KB to prime cache
+    try {
+      fetch(videoSrc, {
+        method: 'GET',
+        headers: { 'Range': 'bytes=0-204799' },
+        mode: 'cors',
+        credentials: 'omit',
+      }).catch(() => {});
+    } catch {}
+    
+    // Also create hidden preload video for browser-level caching
     const preloadVideo = document.createElement('video');
-    preloadVideo.preload = 'metadata';
+    preloadVideo.preload = 'auto'; // Changed from metadata to auto for more aggressive preload
     preloadVideo.src = videoSrc;
     preloadVideo.muted = true;
+    preloadVideo.playsInline = true;
     preloadVideo.load();
     
-    // Clean up after metadata loaded or timeout
+    // Log preload timing in dev
+    if (DEBUG_SCROLL) {
+      const start = performance.now();
+      preloadVideo.oncanplay = () => {
+        console.log(`[Preload] Video ${nextIndex} ready in ${Math.round(performance.now() - start)}ms`);
+      };
+    }
+    
+    // Clean up after canplay or timeout
     const cleanup = () => {
       preloadVideo.src = '';
       preloadVideo.load();
     };
-    preloadVideo.onloadedmetadata = cleanup;
-    setTimeout(cleanup, 5000);
+    preloadVideo.oncanplay = () => {
+      if (DEBUG_SCROLL) {
+        console.log(`[Preload] Video ${nextIndex} can play`);
+      }
+      setTimeout(cleanup, 100);
+    };
+    setTimeout(cleanup, 8000);
   }, [videos]);
 
   // Fetch videos using the recommendation edge function
