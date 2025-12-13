@@ -408,12 +408,14 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           id="video-feed-container"
           className="relative z-20 w-full h-[100dvh] overflow-hidden"
         >
-          {/* Feed track - moves via transform */}
+          {/* Feed track - moves via transform with hardware acceleration */}
           <div
-            className="w-full"
+            className="w-full will-change-transform"
             style={{
-              transform: `translateY(-${activeIndex * 100}dvh)`,
-              transition: `transform ${TRANSITION_DURATION}ms ease-out`,
+              transform: `translate3d(0, -${activeIndex * 100}dvh, 0)`,
+              transition: `transform ${TRANSITION_DURATION}ms cubic-bezier(0.25, 0.1, 0.25, 1)`,
+              backfaceVisibility: 'hidden',
+              WebkitBackfaceVisibility: 'hidden',
             }}
           >
             {videos.map((video, index) => (

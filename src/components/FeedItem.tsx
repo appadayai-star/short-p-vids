@@ -214,6 +214,10 @@ export const FeedItem = memo(({
         border: 'none',
         outline: 'none',
         boxShadow: 'none',
+        // Hardware acceleration for smooth transitions
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        WebkitBackfaceVisibility: 'hidden',
       }}
     >
       {/* Right side actions */}
