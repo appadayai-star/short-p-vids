@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2, Video } from "lucide-react";
-import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { format, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -42,13 +42,25 @@ export const AdminStats = () => {
     to: new Date(),
   });
 
+  // Helper to get UTC start of day
+  const toUTCStartOfDay = (date: Date) => {
+    const d = new Date(date);
+    return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0));
+  };
+
+  // Helper to get UTC end of day
+  const toUTCEndOfDay = (date: Date) => {
+    const d = new Date(date);
+    return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999));
+  };
+
   const handlePresetChange = (preset: string) => {
     setDatePreset(preset);
     const now = new Date();
     
     switch (preset) {
       case "today":
-        setDateRange({ from: startOfDay(now), to: endOfDay(now) });
+        setDateRange({ from: now, to: now });
         break;
       case "7d":
         setDateRange({ from: subDays(now, 7), to: now });
@@ -72,8 +84,9 @@ export const AdminStats = () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("Not authenticated");
 
-        const startDate = dateRange.from.toISOString();
-        const endDate = dateRange.to.toISOString();
+        // Use UTC boundaries for consistent date handling
+        const startDate = toUTCStartOfDay(dateRange.from).toISOString();
+        const endDate = toUTCEndOfDay(dateRange.to).toISOString();
 
         const res = await fetch(
           `${SUPABASE_URL}/functions/v1/admin-stats?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
