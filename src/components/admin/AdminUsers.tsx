@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Search, Loader2, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { format } from "date-fns";
@@ -18,6 +18,7 @@ interface User {
   avatar_url: string | null;
   created_at: string;
   video_count: number;
+  likes_made: number;
   role: string;
 }
 
@@ -168,7 +169,7 @@ export const AdminUsers = () => {
               <TableHead className="hidden md:table-cell">Email</TableHead>
               <TableHead className="hidden sm:table-cell">Signup Date</TableHead>
               <TableHead className="text-center">Videos</TableHead>
-              <TableHead>Role</TableHead>
+              <TableHead className="text-center">Likes Made</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -209,11 +210,7 @@ export const AdminUsers = () => {
                     {format(new Date(user.created_at), "MMM d, yyyy")}
                   </TableCell>
                   <TableCell className="text-center">{user.video_count}</TableCell>
-                  <TableCell>
-                    <Badge variant={user.role === "admin" ? "default" : "secondary"}>
-                      {user.role}
-                    </Badge>
-                  </TableCell>
+                  <TableCell className="text-center">{user.likes_made}</TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"

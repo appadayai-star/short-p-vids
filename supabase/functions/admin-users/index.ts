@@ -60,11 +60,10 @@ Deno.serve(async (req) => {
     const page = parseInt(url.searchParams.get("page") || "1");
     const limit = parseInt(url.searchParams.get("limit") || "20");
     const roleFilter = url.searchParams.get("role");
-    const offset = (page - 1) * limit;
 
     console.log(`Fetching users: search="${search}", page=${page}, limit=${limit}, role=${roleFilter}`);
 
-    // Get users from auth.users via admin API
+    // Get all auth users (we need to handle pagination properly)
     const { data: authUsers, error: authUsersError } = await serviceClient.auth.admin.listUsers({
       page,
       perPage: limit,
@@ -75,16 +74,10 @@ Deno.serve(async (req) => {
       throw authUsersError;
     }
 
-    // Get profiles with video counts
-    let profilesQuery = serviceClient
+    // Get profiles
+    const { data: profiles, error: profilesError } = await serviceClient
       .from("profiles")
       .select("id, username, avatar_url, created_at");
-
-    if (search) {
-      profilesQuery = profilesQuery.ilike("username", `%${search}%`);
-    }
-
-    const { data: profiles, error: profilesError } = await profilesQuery;
 
     if (profilesError) {
       console.error("Error fetching profiles:", profilesError);
@@ -106,6 +99,16 @@ Deno.serve(async (req) => {
       videoCountMap.set(v.user_id, (videoCountMap.get(v.user_id) || 0) + 1);
     });
 
+    // Get likes counts per user (likes they have made)
+    const { data: likeCounts } = await serviceClient
+      .from("likes")
+      .select("user_id");
+
+    const likeCountMap = new Map<string, number>();
+    likeCounts?.forEach((l) => {
+      likeCountMap.set(l.user_id, (likeCountMap.get(l.user_id) || 0) + 1);
+    });
+
     // Create role map
     const roleMap = new Map<string, string>();
     userRoles?.forEach((r) => {
@@ -123,6 +126,7 @@ Deno.serve(async (req) => {
         avatar_url: profile?.avatar_url,
         created_at: authUser.created_at,
         video_count: videoCountMap.get(authUser.id) || 0,
+        likes_made: likeCountMap.get(authUser.id) || 0,
         role,
       };
     });
@@ -142,12 +146,12 @@ Deno.serve(async (req) => {
       users = users.filter((u) => u.role === roleFilter);
     }
 
-    console.log(`Returning ${users.length} users`);
+    console.log(`Returning ${users.length} users, total from auth: ${authUsers.total || authUsers.users.length}`);
 
     return new Response(
       JSON.stringify({
         users,
-        total: authUsers.users.length,
+        total: authUsers.total || authUsers.users.length,
         page,
         limit,
       }),
