@@ -9,6 +9,16 @@ import { Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2, Video } from "lu
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+
+interface DailyStats {
+  date: string;
+  views: number;
+  signups: number;
+  likes: number;
+  saves: number;
+  uploads: number;
+}
 
 interface Stats {
   views: number;
@@ -16,6 +26,7 @@ interface Stats {
   likes: number;
   saves: number;
   uploads: number;
+  daily: DailyStats[];
 }
 
 const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
@@ -100,6 +111,11 @@ export const AdminStats = () => {
     { title: "Uploaded Videos", value: stats?.uploads ?? 0, icon: Video, color: "text-orange-500", bgColor: "bg-orange-500/10" },
   ];
 
+  const chartData = stats?.daily?.map(d => ({
+    ...d,
+    date: format(new Date(d.date), "MMM d"),
+  })) || [];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
@@ -155,6 +171,46 @@ export const AdminStats = () => {
           </Card>
         ))}
       </div>
+
+      {/* Trend Chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Daily Trends</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center h-[300px]">
+              <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+          ) : chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="date" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'hsl(var(--card))', 
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: '8px',
+                  }}
+                  labelStyle={{ color: 'hsl(var(--foreground))' }}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="views" stroke="#3b82f6" strokeWidth={2} dot={false} name="Views" />
+                <Line type="monotone" dataKey="signups" stroke="#22c55e" strokeWidth={2} dot={false} name="Signups" />
+                <Line type="monotone" dataKey="likes" stroke="#ef4444" strokeWidth={2} dot={false} name="Likes" />
+                <Line type="monotone" dataKey="saves" stroke="#a855f7" strokeWidth={2} dot={false} name="Saves" />
+                <Line type="monotone" dataKey="uploads" stroke="#f97316" strokeWidth={2} dot={false} name="Uploads" />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+              No data available for the selected period
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
