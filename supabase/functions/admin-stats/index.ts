@@ -85,10 +85,12 @@ Deno.serve(async (req) => {
         .gte("created_at", startDate)
         .lte("created_at", endDate),
       
-      // Total likes - sum likes_count from videos table (includes guest likes)
+      // Total likes within date range
       serviceClient
-        .from("videos")
-        .select("likes_count"),
+        .from("likes")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", startDate)
+        .lte("created_at", endDate),
       
       // Total saves
       serviceClient
@@ -98,13 +100,10 @@ Deno.serve(async (req) => {
         .lte("created_at", endDate),
     ]);
 
-    // Calculate total likes from all videos
-    const totalLikes = (likesResult.data || []).reduce((sum: number, v: { likes_count: number }) => sum + (v.likes_count || 0), 0);
-
     const stats = {
       views: viewsResult.count || 0,
       signups: signupsResult.count || 0,
-      likes: totalLikes,
+      likes: likesResult.count || 0,
       saves: savesResult.count || 0,
     };
 
