@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2 } from "lucide-react";
+import { Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2, Video } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
@@ -15,6 +15,7 @@ interface Stats {
   signups: number;
   likes: number;
   saves: number;
+  uploads: number;
 }
 
 const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
@@ -96,6 +97,7 @@ export const AdminStats = () => {
     { title: "New Signups", value: stats?.signups ?? 0, icon: UserPlus, color: "text-green-500", bgColor: "bg-green-500/10" },
     { title: "Total Likes", value: stats?.likes ?? 0, icon: Heart, color: "text-red-500", bgColor: "bg-red-500/10" },
     { title: "Total Saves", value: stats?.saves ?? 0, icon: Bookmark, color: "text-purple-500", bgColor: "bg-purple-500/10" },
+    { title: "Uploaded Videos", value: stats?.uploads ?? 0, icon: Video, color: "text-orange-500", bgColor: "bg-orange-500/10" },
   ];
 
   return (
