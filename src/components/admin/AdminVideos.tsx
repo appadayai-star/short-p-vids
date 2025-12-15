@@ -3,9 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, MessageCircle } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,8 +16,7 @@ interface Video {
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
-  comments_count: number;
-  processing_status: string | null;
+  saved_count: number;
   created_at: string;
   user_id: string;
   uploader_email: string;
@@ -127,17 +125,10 @@ export const AdminVideos = () => {
     }
   };
 
-  const getStatusBadge = (status: string | null) => {
-    switch (status) {
-      case "completed":
-        return <Badge variant="default" className="bg-green-500">Processed</Badge>;
-      case "processing":
-        return <Badge variant="secondary">Processing</Badge>;
-      case "failed":
-        return <Badge variant="destructive">Failed</Badge>;
-      default:
-        return <Badge variant="outline">Pending</Badge>;
-    }
+  const getViewLikeRatio = (views: number, likes: number) => {
+    if (views === 0) return "0%";
+    const ratio = (likes / views) * 100;
+    return `${ratio.toFixed(1)}%`;
   };
 
   const totalPages = Math.ceil(total / limit);
@@ -172,8 +163,8 @@ export const AdminVideos = () => {
               <TableHead className="hidden md:table-cell">Date</TableHead>
               <TableHead className="text-center"><Eye className="h-4 w-4 mx-auto" /></TableHead>
               <TableHead className="text-center"><Heart className="h-4 w-4 mx-auto" /></TableHead>
-              <TableHead className="text-center"><MessageCircle className="h-4 w-4 mx-auto" /></TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead className="text-center"><Bookmark className="h-4 w-4 mx-auto" /></TableHead>
+              <TableHead className="text-center"><Percent className="h-4 w-4 mx-auto" /></TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -215,8 +206,8 @@ export const AdminVideos = () => {
                   </TableCell>
                   <TableCell className="text-center">{video.views_count}</TableCell>
                   <TableCell className="text-center">{video.likes_count}</TableCell>
-                  <TableCell className="text-center">{video.comments_count}</TableCell>
-                  <TableCell>{getStatusBadge(video.processing_status)}</TableCell>
+                  <TableCell className="text-center">{video.saved_count}</TableCell>
+                  <TableCell className="text-center">{getViewLikeRatio(video.views_count, video.likes_count)}</TableCell>
                   <TableCell>
                     <Button
                       variant="ghost"
