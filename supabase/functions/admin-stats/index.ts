@@ -69,37 +69,28 @@ Deno.serve(async (req) => {
 
     console.log(`Fetching stats from ${startDate} to ${endDate}`);
 
-    // Get stats using service client for full access
+    // Get totals using service client for full access
     const [viewsResult, signupsResult, likesResult, savesResult, uploadsResult] = await Promise.all([
-      // Total video views
       serviceClient
         .from("video_views")
         .select("id", { count: "exact", head: true })
         .gte("viewed_at", startDate)
         .lte("viewed_at", endDate),
-      
-      // New signups (from profiles table since auth.users is not accessible)
       serviceClient
         .from("profiles")
         .select("id", { count: "exact", head: true })
         .gte("created_at", startDate)
         .lte("created_at", endDate),
-      
-      // Total likes within date range
       serviceClient
         .from("likes")
         .select("id", { count: "exact", head: true })
         .gte("created_at", startDate)
         .lte("created_at", endDate),
-      
-      // Total saves
       serviceClient
         .from("saved_videos")
         .select("id", { count: "exact", head: true })
         .gte("created_at", startDate)
         .lte("created_at", endDate),
-      
-      // Uploaded videos
       serviceClient
         .from("videos")
         .select("id", { count: "exact", head: true })
@@ -107,15 +98,82 @@ Deno.serve(async (req) => {
         .lte("created_at", endDate),
     ]);
 
+    // Fetch daily breakdown data
+    const [viewsDaily, signupsDaily, likesDaily, savesDaily, uploadsDaily] = await Promise.all([
+      serviceClient
+        .from("video_views")
+        .select("viewed_at")
+        .gte("viewed_at", startDate)
+        .lte("viewed_at", endDate),
+      serviceClient
+        .from("profiles")
+        .select("created_at")
+        .gte("created_at", startDate)
+        .lte("created_at", endDate),
+      serviceClient
+        .from("likes")
+        .select("created_at")
+        .gte("created_at", startDate)
+        .lte("created_at", endDate),
+      serviceClient
+        .from("saved_videos")
+        .select("created_at")
+        .gte("created_at", startDate)
+        .lte("created_at", endDate),
+      serviceClient
+        .from("videos")
+        .select("created_at")
+        .gte("created_at", startDate)
+        .lte("created_at", endDate),
+    ]);
+
+    // Group by date helper
+    const groupByDate = (items: { created_at?: string; viewed_at?: string }[] | null, dateField: string) => {
+      const counts: Record<string, number> = {};
+      if (!items) return counts;
+      for (const item of items) {
+        const dateStr = (item as Record<string, string>)[dateField];
+        if (dateStr) {
+          const date = dateStr.split("T")[0];
+          counts[date] = (counts[date] || 0) + 1;
+        }
+      }
+      return counts;
+    };
+
+    const viewsByDate = groupByDate(viewsDaily.data, "viewed_at");
+    const signupsByDate = groupByDate(signupsDaily.data, "created_at");
+    const likesByDate = groupByDate(likesDaily.data, "created_at");
+    const savesByDate = groupByDate(savesDaily.data, "created_at");
+    const uploadsByDate = groupByDate(uploadsDaily.data, "created_at");
+
+    // Build daily array
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const daily: { date: string; views: number; signups: number; likes: number; saves: number; uploads: number }[] = [];
+    
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split("T")[0];
+      daily.push({
+        date: dateStr,
+        views: viewsByDate[dateStr] || 0,
+        signups: signupsByDate[dateStr] || 0,
+        likes: likesByDate[dateStr] || 0,
+        saves: savesByDate[dateStr] || 0,
+        uploads: uploadsByDate[dateStr] || 0,
+      });
+    }
+
     const stats = {
       views: viewsResult.count || 0,
       signups: signupsResult.count || 0,
       likes: likesResult.count || 0,
       saves: savesResult.count || 0,
       uploads: uploadsResult.count || 0,
+      daily,
     };
 
-    console.log("Stats:", stats);
+    console.log("Stats:", { ...stats, daily: `${daily.length} days` });
 
     return new Response(JSON.stringify(stats), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
