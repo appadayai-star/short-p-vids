@@ -76,8 +76,6 @@ Deno.serve(async (req) => {
         thumbnail_url,
         views_count,
         likes_count,
-        comments_count,
-        processing_status,
         created_at,
         user_id,
         profiles!videos_user_id_fkey (
@@ -108,8 +106,18 @@ Deno.serve(async (req) => {
       throw error;
     }
 
+    // Get saved counts for all videos
+    const videoIds = videos?.map((v) => v.id) || [];
+    const { data: savedData } = await serviceClient
+      .from("saved_videos")
+      .select("video_id");
+
+    const savedCountMap = new Map<string, number>();
+    savedData?.forEach((s) => {
+      savedCountMap.set(s.video_id, (savedCountMap.get(s.video_id) || 0) + 1);
+    });
+
     // Get uploader emails from auth
-    const userIds = [...new Set(videos?.map((v) => v.user_id) || [])];
     const { data: authUsers } = await serviceClient.auth.admin.listUsers();
     
     const emailMap = new Map<string, string>();
@@ -122,6 +130,7 @@ Deno.serve(async (req) => {
       const profile = profileData as { id: string; username: string } | null;
       return {
         ...v,
+        saved_count: savedCountMap.get(v.id) || 0,
         uploader_email: emailMap.get(v.user_id) || "",
         uploader_username: profile?.username || `user_${v.user_id.slice(0, 8)}`,
       };
