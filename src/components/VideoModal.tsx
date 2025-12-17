@@ -373,6 +373,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         <ShareDrawer 
           isOpen={isShareOpen} 
           onClose={() => setIsShareOpen(false)} 
+          videoId={activeVideo.id}
           videoTitle={activeVideo.title}
           username={activeVideo.profiles?.username || 'unknown'}
         />
