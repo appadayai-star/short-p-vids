@@ -4,6 +4,13 @@ import { supabase } from '@/integrations/supabase/client';
 // Session expiry: 30 minutes of inactivity
 const SESSION_EXPIRY_MS = 30 * 60 * 1000;
 
+// Check if tracking test mode is enabled (?tracktest=1)
+const isTrackTestMode = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('tracktest') === '1';
+};
+
 // Get or create PERSISTENT anonymous ID (never expires)
 // This identifies the unique visitor across all sessions
 const getOrCreateAnonymousId = (): string => {
@@ -65,7 +72,7 @@ interface WatchMetrics {
   videoId: string;
   viewerId: string; // auth.user.id OR anonymous_id (ALWAYS filled)
   sessionId: string; // ALWAYS filled
-  authUserId: string | null; // Only filled for logged-in users
+  authUserId: string | null; // Only filled for logged-in users (FK to profiles)
   watchDurationSeconds: number;
   videoDurationSeconds: number | null;
   watchCompletionPercent: number | null;
@@ -103,9 +110,6 @@ export const useWatchMetrics = ({
   // View recording
   const hasRecordedViewRef = useRef(false);
   const lastVideoIdRef = useRef<string>(videoId);
-  
-  // Store metrics for pagehide event
-  const pendingMetricsRef = useRef<WatchMetrics | null>(null);
 
   // Reset when video changes
   useEffect(() => {
@@ -118,7 +122,6 @@ export const useWatchMetrics = ({
       lastTimeUpdateRef.current = 0;
       lastVideoTimeRef.current = 0;
       lastVideoIdRef.current = videoId;
-      pendingMetricsRef.current = null;
     }
   }, [videoId]);
 
@@ -146,7 +149,7 @@ export const useWatchMetrics = ({
         ttffRef.current = Math.round(performance.now() - loadStartTimeRef.current);
         ttffRecordedRef.current = true;
         
-        if (import.meta.env.DEV) {
+        if (import.meta.env.DEV || isTrackTestMode()) {
           console.log(`[Metrics] TTFF recorded: ${ttffRef.current}ms for video ${videoId}`);
         }
       }
@@ -222,10 +225,11 @@ export const useWatchMetrics = ({
     const videoEl = videoRef.current;
     const watchedSeconds = totalWatchTimeRef.current;
     
-    // Get identifiers - these are ALWAYS filled
+    // Get identifiers
     const anonymousId = getOrCreateAnonymousId();
     const sessionId = getOrCreateSessionId();
-    const viewerId = userId || anonymousId; // Prefer auth user, fall back to anonymous
+    // viewer_id = auth user OR anonymous (always filled)
+    const viewerId = userId || anonymousId;
 
     const videoDuration = videoEl?.duration && !isNaN(videoEl.duration) && isFinite(videoEl.duration) 
       ? videoEl.duration 
@@ -241,7 +245,7 @@ export const useWatchMetrics = ({
       videoId,
       viewerId,
       sessionId,
-      authUserId: userId,
+      authUserId: userId, // null for anonymous users
       watchDurationSeconds: Math.round(watchedSeconds),
       videoDurationSeconds: videoDuration ? Math.round(videoDuration) : null,
       watchCompletionPercent: completionPercent,
@@ -261,22 +265,42 @@ export const useWatchMetrics = ({
     }
 
     hasRecordedViewRef.current = true;
-    pendingMetricsRef.current = null;
     
     incrementSessionVideoCount();
 
-    try {
-      // Store viewer_id in user_id column (works for both auth and anonymous)
-      // Store session_id ALWAYS
-      await supabase.from('video_views').insert({
-        video_id: metrics.videoId,
-        user_id: metrics.viewerId, // Always filled: auth.user.id OR anonymous_id
-        session_id: metrics.sessionId, // Always filled
+    const insertData = {
+      video_id: metrics.videoId,
+      user_id: metrics.authUserId, // null for anonymous (FK to profiles)
+      viewer_id: metrics.viewerId, // always filled (auth OR anonymous)
+      session_id: metrics.sessionId, // always filled
+      watch_duration_seconds: metrics.watchDurationSeconds,
+      video_duration_seconds: metrics.videoDurationSeconds,
+      watch_completion_percent: metrics.watchCompletionPercent,
+      time_to_first_frame_ms: metrics.timeToFirstFrameMs,
+    };
+
+    // Track test mode logging
+    if (isTrackTestMode()) {
+      console.log('[TrackTest] Sending metrics:', {
+        viewer_id: metrics.viewerId,
+        session_id: metrics.sessionId,
         watch_duration_seconds: metrics.watchDurationSeconds,
-        video_duration_seconds: metrics.videoDurationSeconds,
-        watch_completion_percent: metrics.watchCompletionPercent,
-        time_to_first_frame_ms: metrics.timeToFirstFrameMs,
+        user_id: metrics.authUserId,
       });
+    }
+
+    try {
+      const { error, status } = await supabase.from('video_views').insert(insertData);
+
+      if (isTrackTestMode()) {
+        console.log('[TrackTest] Insert response:', { status, error: error?.message || 'none' });
+      }
+
+      if (error) {
+        console.error('[Metrics] Failed to record view:', error);
+        hasRecordedViewRef.current = false;
+        return;
+      }
 
       onViewRecorded?.();
       
@@ -307,10 +331,10 @@ export const useWatchMetrics = ({
     
     hasRecordedViewRef.current = true;
 
-    // Use sendBeacon for reliability during page unload
     const payload = JSON.stringify({
       video_id: metrics.videoId,
-      user_id: metrics.viewerId,
+      user_id: metrics.authUserId,
+      viewer_id: metrics.viewerId,
       session_id: metrics.sessionId,
       watch_duration_seconds: metrics.watchDurationSeconds,
       video_duration_seconds: metrics.videoDurationSeconds,
@@ -318,7 +342,14 @@ export const useWatchMetrics = ({
       time_to_first_frame_ms: metrics.timeToFirstFrameMs,
     });
 
-    // Try sendBeacon first (most reliable for unload)
+    if (isTrackTestMode()) {
+      console.log('[TrackTest] Sending beacon:', {
+        viewer_id: metrics.viewerId,
+        session_id: metrics.sessionId,
+        watch_duration_seconds: metrics.watchDurationSeconds,
+      });
+    }
+
     const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/video_views`;
     const headers = {
       'Content-Type': 'application/json',
@@ -327,31 +358,17 @@ export const useWatchMetrics = ({
       'Prefer': 'return=minimal',
     };
 
-    // Create a Blob for sendBeacon
-    const blob = new Blob([payload], { type: 'application/json' });
+    // Use fetch with keepalive for reliability during unload
+    fetch(url, {
+      method: 'POST',
+      headers,
+      body: payload,
+      keepalive: true,
+    }).catch(() => {
+      // Silent fail - best effort
+    });
     
-    // Try navigator.sendBeacon (works during unload)
-    if (navigator.sendBeacon) {
-      // sendBeacon doesn't support custom headers, so use fetch with keepalive
-      fetch(url, {
-        method: 'POST',
-        headers,
-        body: payload,
-        keepalive: true,
-      }).catch(() => {
-        // Silent fail - best effort
-      });
-    } else {
-      // Fallback to fetch with keepalive
-      fetch(url, {
-        method: 'POST',
-        headers,
-        body: payload,
-        keepalive: true,
-      }).catch(() => {});
-    }
-    
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV || isTrackTestMode()) {
       console.log('[Metrics] Beacon sent on pagehide:', metrics.videoId);
     }
   }, [getMetrics]);
@@ -410,16 +427,30 @@ export const useWatchMetrics = ({
         if (Math.round(watchedSeconds) > 0 || ttffRef.current !== null) {
           incrementSessionVideoCount();
           
-          // Fire and forget on unmount
-          supabase.from('video_views').insert({
+          const insertData = {
             video_id: videoId,
-            user_id: viewerId,
+            user_id: userId,
+            viewer_id: viewerId,
             session_id: sessionId,
             watch_duration_seconds: Math.round(watchedSeconds),
             video_duration_seconds: videoDuration ? Math.round(videoDuration) : null,
             watch_completion_percent: completionPercent,
             time_to_first_frame_ms: ttffRef.current,
-          }).then(() => {
+          };
+
+          if (isTrackTestMode()) {
+            console.log('[TrackTest] Sending on unmount:', {
+              viewer_id: viewerId,
+              session_id: sessionId,
+              watch_duration_seconds: Math.round(watchedSeconds),
+            });
+          }
+          
+          // Fire and forget on unmount
+          supabase.from('video_views').insert(insertData).then(({ error, status }) => {
+            if (isTrackTestMode()) {
+              console.log('[TrackTest] Unmount insert response:', { status, error: error?.message || 'none' });
+            }
             if (import.meta.env.DEV) {
               console.log('[Metrics] View recorded on unmount');
             }

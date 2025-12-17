@@ -112,16 +112,23 @@ interface Stats {
   // DEBUG: Data quality counters
   dataQuality?: {
     totalRows: number;
-    withViewerId: number;
-    withoutViewerId: number;
-    viewerIdMissingPct: number;
-    withSessionId: number;
-    withoutSessionId: number;
+    reliableRows: number;
+    reliableTrackingSince: string;
+    // Missing session_id = tracking failed
+    rowsMissingSessionId: number;
     sessionIdMissingPct: number;
-    withWatchDuration: number;
-    withZeroWatchDuration: number;
-    withNullWatchDuration: number;
-    watchDurationMissingPct: number;
+    // Missing viewer_id = older tracking
+    rowsMissingViewerId: number;
+    viewerIdMissingPct: number;
+    // Watch duration NULL = tracking failed to send
+    rowsWatchDurationNull: number;
+    watchDurationNullPct: number;
+    // Watch duration 0 = real bounce
+    rowsWatchDurationZero: number;
+    watchDurationZeroPct: number;
+    // With watch duration > 0 = actual watched
+    rowsWithWatchDuration: number;
+    watchDurationPresentPct: number;
   };
   
   // Trends
@@ -720,6 +727,10 @@ export const AdminStats = () => {
 
       {/* DEBUG: Data Quality Counters */}
       <MetricSection title="🔍 Debug: Data Quality">
+        <div className="col-span-full text-xs text-muted-foreground mb-2">
+          Reliable tracking since: {stats?.dataQuality?.reliableTrackingSince ?? 'N/A'} • 
+          Using {stats?.dataQuality?.reliableRows ?? 0} of {stats?.dataQuality?.totalRows ?? 0} rows for metrics
+        </div>
         <StatCard
           title="Total Sessions"
           value={stats?.totalSessions ?? 0}
@@ -730,48 +741,48 @@ export const AdminStats = () => {
           loading={loading}
         />
         <StatCard
-          title="Rows Analyzed"
-          value={stats?.dataQuality?.totalRows ?? 0}
-          subtitle="from query (max 100k)"
-          icon={Eye}
-          color="text-gray-500"
-          bgColor="bg-gray-500/10"
-          loading={loading}
-        />
-        <StatCard
-          title="Missing viewer_id"
-          value={stats?.dataQuality?.withoutViewerId ?? 0}
-          subtitle={`${stats?.dataQuality?.viewerIdMissingPct ?? 0}% of rows`}
-          icon={Bug}
-          color={stats?.dataQuality?.viewerIdMissingPct && stats.dataQuality.viewerIdMissingPct > 5 ? "text-red-500" : "text-green-500"}
-          bgColor={stats?.dataQuality?.viewerIdMissingPct && stats.dataQuality.viewerIdMissingPct > 5 ? "bg-red-500/10" : "bg-green-500/10"}
-          loading={loading}
-        />
-        <StatCard
           title="Missing session_id"
-          value={stats?.dataQuality?.withoutSessionId ?? 0}
-          subtitle={`${stats?.dataQuality?.sessionIdMissingPct ?? 0}% of rows`}
+          value={stats?.dataQuality?.rowsMissingSessionId ?? 0}
+          subtitle={`${stats?.dataQuality?.sessionIdMissingPct ?? 0}% - tracking failed`}
           icon={Bug}
           color={stats?.dataQuality?.sessionIdMissingPct && stats.dataQuality.sessionIdMissingPct > 5 ? "text-red-500" : "text-green-500"}
           bgColor={stats?.dataQuality?.sessionIdMissingPct && stats.dataQuality.sessionIdMissingPct > 5 ? "bg-red-500/10" : "bg-green-500/10"}
           loading={loading}
         />
         <StatCard
-          title="With Watch Duration"
-          value={stats?.dataQuality?.withWatchDuration ?? 0}
-          subtitle={`${100 - (stats?.dataQuality?.watchDurationMissingPct ?? 0)}% of rows`}
-          icon={Clock}
-          color="text-blue-500"
-          bgColor="bg-blue-500/10"
+          title="Missing viewer_id"
+          value={stats?.dataQuality?.rowsMissingViewerId ?? 0}
+          subtitle={`${stats?.dataQuality?.viewerIdMissingPct ?? 0}% - legacy rows`}
+          icon={Bug}
+          color={stats?.dataQuality?.viewerIdMissingPct && stats.dataQuality.viewerIdMissingPct > 5 ? "text-amber-500" : "text-green-500"}
+          bgColor={stats?.dataQuality?.viewerIdMissingPct && stats.dataQuality.viewerIdMissingPct > 5 ? "bg-amber-500/10" : "bg-green-500/10"}
           loading={loading}
         />
         <StatCard
-          title="Missing Watch Duration"
-          value={(stats?.dataQuality?.withZeroWatchDuration ?? 0) + (stats?.dataQuality?.withNullWatchDuration ?? 0)}
-          subtitle={`${stats?.dataQuality?.watchDurationMissingPct ?? 0}% (0 or null)`}
+          title="Watch Duration NULL"
+          value={stats?.dataQuality?.rowsWatchDurationNull ?? 0}
+          subtitle={`${stats?.dataQuality?.watchDurationNullPct ?? 0}% - tracking failed`}
           icon={Bug}
-          color={stats?.dataQuality?.watchDurationMissingPct && stats.dataQuality.watchDurationMissingPct > 50 ? "text-amber-500" : "text-green-500"}
-          bgColor={stats?.dataQuality?.watchDurationMissingPct && stats.dataQuality.watchDurationMissingPct > 50 ? "bg-amber-500/10" : "bg-green-500/10"}
+          color={stats?.dataQuality?.watchDurationNullPct && stats.dataQuality.watchDurationNullPct > 20 ? "text-red-500" : "text-green-500"}
+          bgColor={stats?.dataQuality?.watchDurationNullPct && stats.dataQuality.watchDurationNullPct > 20 ? "bg-red-500/10" : "bg-green-500/10"}
+          loading={loading}
+        />
+        <StatCard
+          title="Watch Duration = 0"
+          value={stats?.dataQuality?.rowsWatchDurationZero ?? 0}
+          subtitle={`${stats?.dataQuality?.watchDurationZeroPct ?? 0}% - real bounce`}
+          icon={Clock}
+          color="text-amber-500"
+          bgColor="bg-amber-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="With Watch Duration"
+          value={stats?.dataQuality?.rowsWithWatchDuration ?? 0}
+          subtitle={`${stats?.dataQuality?.watchDurationPresentPct ?? 0}% - actual views`}
+          icon={Clock}
+          color="text-green-500"
+          bgColor="bg-green-500/10"
           loading={loading}
         />
       </MetricSection>
