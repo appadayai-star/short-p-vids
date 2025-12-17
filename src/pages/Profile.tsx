@@ -48,6 +48,35 @@ const Profile = () => {
     loadProfile();
   }, [userId, authStatus, currentUser?.id]);
 
+  // Track profile views (only for other users' profiles)
+  useEffect(() => {
+    if (authStatus !== "ready") return;
+    if (!userId || userId === currentUser?.id) return;
+    
+    const trackProfileView = async () => {
+      try {
+        // Get or create session ID
+        const sessionKey = 'video_session_v1';
+        let sessionId = localStorage.getItem(sessionKey);
+        if (!sessionId) {
+          sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+          localStorage.setItem(sessionKey, sessionId);
+        }
+
+        await supabase.from('profile_views').insert({
+          profile_id: userId,
+          viewer_id: currentUser?.id || null,
+          session_id: sessionId,
+        });
+      } catch (error) {
+        // Silent fail - analytics shouldn't break the page
+        console.error('Failed to track profile view:', error);
+      }
+    };
+
+    trackProfileView();
+  }, [userId, authStatus, currentUser?.id]);
+
   const loadProfile = async () => {
     try {
       const profileId = userId || currentUser?.id;

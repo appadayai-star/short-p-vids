@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
 import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,9 +47,6 @@ const getGuestLikes = (): string[] => {
 const setGuestLikes = (likes: string[]) => {
   localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
 };
-
-// Debug mode for metrics
-const DEBUG_METRICS = import.meta.env.DEV;
 
 interface Video {
   id: string;
@@ -92,9 +90,22 @@ export const FeedItem = memo(({
 }: FeedItemProps) => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const trackedRef = useRef(false);
-  const loadStartTimeRef = useRef<number>(0);
   const retryCountRef = useRef(0);
+
+  // Watch metrics tracking
+  const {
+    markLoadStart,
+    markFirstFrame,
+    startWatching,
+    pauseWatching,
+    sendMetrics,
+  } = useWatchMetrics({
+    videoId: video.id,
+    userId: currentUserId,
+    isActive,
+    videoRef,
+    onViewRecorded: () => onViewTracked(video.id),
+  });
   
   // UI state
   const [isLiked, setIsLiked] = useState(false);
@@ -115,13 +126,6 @@ export const FeedItem = memo(({
   );
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
 
-  // Determine source type for metrics
-  const getSourceType = () => {
-    if (video.cloudinary_public_id) return 'cloudinary';
-    if (video.optimized_video_url) return 'optimized';
-    if (video.stream_url) return 'hls';
-    return 'supabase';
-  };
 
   // Sync with global mute state
   useEffect(() => {
@@ -137,28 +141,20 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive - with faster activation
+  // Play/pause based on isActive - with metrics tracking
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
-      loadStartTimeRef.current = performance.now();
+      markLoadStart();
       videoEl.currentTime = 0;
       
       const attemptPlay = () => {
         videoEl.play().then(() => {
-          // Log time to first frame in debug mode
-          if (DEBUG_METRICS && loadStartTimeRef.current) {
-            const ttff = Math.round(performance.now() - loadStartTimeRef.current);
-            console.log(`[Metrics] Video ${index} | TTFF: ${ttff}ms | Source: ${getSourceType()} | Retries: ${retryCountRef.current}`);
-          }
-          
-          if (!trackedRef.current) {
-            trackedRef.current = true;
-            onViewTracked(video.id);
-          }
+          markFirstFrame();
+          startWatching();
         }).catch((err) => {
           if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
             return;
@@ -166,7 +162,6 @@ export const FeedItem = memo(({
           if (err.name === 'NotSupportedError') {
             retryCountRef.current++;
             if (retryCountRef.current < 3) {
-              // Retry with reload
               setTimeout(() => {
                 videoEl.load();
                 attemptPlay();
@@ -178,18 +173,20 @@ export const FeedItem = memo(({
         });
       };
 
-      // Try to play immediately - no delay
       attemptPlay();
       
-      // Listen for canplay for videos not ready
       const handleCanPlay = () => attemptPlay();
       videoEl.addEventListener('canplay', handleCanPlay);
       
-      return () => videoEl.removeEventListener('canplay', handleCanPlay);
+      return () => {
+        videoEl.removeEventListener('canplay', handleCanPlay);
+      };
     } else {
+      // Pause watching when scrolling away
+      pauseWatching();
       videoEl.pause();
     }
-  }, [isActive, hasEntered, video.id, onViewTracked, index]);
+  }, [isActive, hasEntered, markLoadStart, markFirstFrame, startWatching, pauseWatching]);
 
   // Preload next video when this one is active
   useEffect(() => {
