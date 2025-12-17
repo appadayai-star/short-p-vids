@@ -29,17 +29,11 @@ interface Stats {
   // Core usage
   views: number;
   uniqueViewers: number;
-  avgVideosPerSession: number;
   avgSessionDuration: string;
   avgSessionDurationMs: number;
   
   // Session behavior
   videosPerSession?: {
-    avg: number;
-    median: number;
-    p90: number;
-  };
-  scrollDepth?: {
     avg: number;
     median: number;
     p90: number;
@@ -83,17 +77,17 @@ interface Stats {
   returnRate24h: number;
   returnRate7d: number;
   
-  // Repeat Exposure
-  repeatExposure?: {
+  // Repeat Views (not impressions - see docs)
+  repeatViews?: {
     rate7d: number;
     perSessionRate: number;
-    totalImpressions: number;
-    repeatImpressions: number;
-    perSessionRepeats: number;
+    totalViews: number;
+    repeatCount: number;
+    perSessionRepeatCount: number;
   };
   
   // Growth
-  signups: number;
+  profilesCreated: number;
   dau: number;
   mau: number;
   dauMauRatio: number;
@@ -107,7 +101,7 @@ interface Stats {
     views: number;
     likes: number;
     saves: number;
-    signups: number;
+    profilesCreated: number;
     uploads: number;
     shares: number;
   } | null;
@@ -340,7 +334,7 @@ export const AdminStats = () => {
         />
         <StatCard
           title="Videos / Session"
-          value={stats?.avgVideosPerSession ?? 0}
+          value={stats?.videosPerSession?.avg ?? 0}
           icon={Play}
           color="text-purple-500"
           bgColor="bg-purple-500/10"
@@ -463,24 +457,6 @@ export const AdminStats = () => {
           icon={Play}
           color="text-violet-500"
           bgColor="bg-violet-500/10"
-          loading={loading}
-        />
-        <StatCard
-          title="Scroll Depth (Median)"
-          value={stats?.scrollDepth?.median ?? 0}
-          subtitle="videos reached per session"
-          icon={ArrowRight}
-          color="text-cyan-500"
-          bgColor="bg-cyan-500/10"
-          loading={loading}
-        />
-        <StatCard
-          title="Scroll Depth (P90)"
-          value={stats?.scrollDepth?.p90 ?? 0}
-          subtitle="90th percentile"
-          icon={ArrowRight}
-          color="text-teal-500"
-          bgColor="bg-teal-500/10"
           loading={loading}
         />
         <StatCard
@@ -638,12 +614,12 @@ export const AdminStats = () => {
         />
       </MetricSection>
 
-      {/* Repeat Exposure (Feed Quality) */}
-      <MetricSection title="Repeat Exposure (Feed Quality)">
+      {/* Repeat Views (Feed Quality) */}
+      <MetricSection title="Repeat Views (Feed Quality)">
         <StatCard
           title="7-Day Repeat Rate"
-          value={`${stats?.repeatExposure?.rate7d ?? 0}%`}
-          subtitle="% impressions of already-seen videos (7d)"
+          value={`${stats?.repeatViews?.rate7d ?? 0}%`}
+          subtitle="% views of already-seen videos (7d)"
           icon={RefreshCw}
           color="text-amber-500"
           bgColor="bg-amber-500/10"
@@ -651,29 +627,20 @@ export const AdminStats = () => {
         />
         <StatCard
           title="Per-Session Repeat Rate"
-          value={`${stats?.repeatExposure?.perSessionRate ?? 0}%`}
-          subtitle="% impressions repeated in same session"
+          value={`${stats?.repeatViews?.perSessionRate ?? 0}%`}
+          subtitle="% views repeated in same session"
           icon={RefreshCw}
           color="text-orange-500"
           bgColor="bg-orange-500/10"
           loading={loading}
         />
         <StatCard
-          title="Repeat Impressions"
-          value={stats?.repeatExposure?.repeatImpressions ?? 0}
-          subtitle={`of ${stats?.repeatExposure?.totalImpressions ?? 0} total`}
+          title="Repeat Views"
+          value={stats?.repeatViews?.repeatCount ?? 0}
+          subtitle={`of ${stats?.repeatViews?.totalViews ?? 0} total`}
           icon={Eye}
           color="text-red-500"
           bgColor="bg-red-500/10"
-          loading={loading}
-        />
-        <StatCard
-          title="Per-Session Repeats"
-          value={stats?.repeatExposure?.perSessionRepeats ?? 0}
-          subtitle="same video shown twice in session"
-          icon={Eye}
-          color="text-rose-500"
-          bgColor="bg-rose-500/10"
           loading={loading}
         />
       </MetricSection>
@@ -681,12 +648,12 @@ export const AdminStats = () => {
       {/* Growth Metrics */}
       <MetricSection title="Growth">
         <StatCard
-          title="New Signups"
-          value={stats?.signups ?? 0}
+          title="Profiles Created"
+          value={stats?.profilesCreated ?? 0}
           icon={UserPlus}
           color="text-green-500"
           bgColor="bg-green-500/10"
-          trend={stats?.trends?.signups}
+          trend={stats?.trends?.profilesCreated}
           loading={loading}
         />
       </MetricSection>

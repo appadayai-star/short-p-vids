@@ -63,16 +63,17 @@ Deno.serve(async (req) => {
 
     console.log(`Fetching stats ${isLifetime ? "lifetime" : `from ${startDate} to ${endDate}`}`);
 
-    // Build date filters
+    // Build date filters - EXCLUSIVE end for consistency (>= start AND < end)
+    // This ensures adjacent date ranges don't double-count events
     const dateFilter = (query: any, dateCol: string) => {
       if (isLifetime) return query;
-      return query.gte(dateCol, startDate).lte(dateCol, endDate);
+      return query.gte(dateCol, startDate).lt(dateCol, endDate);
     };
 
     // Get all-time totals for lifetime stats
     const [
       viewsResult,
-      signupsResult,
+      profilesResult, // Renamed from signupsResult - we count profiles, not auth.users
       likesResult,
       savesResult,
       uploadsResult,
@@ -89,8 +90,8 @@ Deno.serve(async (req) => {
       dateFilter(serviceClient.from("videos").select("id", { count: "exact", head: true }), "created_at"),
       // Unique viewers (distinct user_id + session_id combinations)
       dateFilter(serviceClient.from("video_views").select("user_id, session_id"), "viewed_at"),
-      // All views for session and watch time calculations
-      dateFilter(serviceClient.from("video_views").select("user_id, session_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at"),
+      // All views for session, watch time, and repeat views calculations (includes video_id)
+      dateFilter(serviceClient.from("video_views").select("user_id, session_id, video_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at"),
       // Shares
       dateFilter(serviceClient.from("shares").select("id", { count: "exact", head: true }), "created_at"),
       // Profile views
@@ -197,19 +198,19 @@ Deno.serve(async (req) => {
       ? videosPerSessionArray[Math.floor(videosPerSessionArray.length * 0.90)] 
       : 0;
     
-    // Scroll depth (max video index reached per session) - using views as proxy
-    // Each session's views count represents scroll depth (how many videos they scrolled through)
-    const scrollDepthArray = videosPerSessionArray; // Same as videos per session
-    const avgScrollDepth = avgVideosPerSession;
-    const medianScrollDepth = medianVideosPerSession;
-    const p90ScrollDepth = p90VideosPerSession;
+    // Note: "Scroll Depth" was removed as it's redundant with "Videos per Session"
+    // If true scroll depth tracking is needed, add a video_impressions event
 
-    // Average session duration (last - first timestamp per session)
+    // Average Session Duration calculation method:
+    // HYBRID APPROACH: (last_view_timestamp - first_view_timestamp) + avg_watch_duration_of_last_video
+    // - For multi-view sessions: timestamp span + estimated time for last video
+    // - For single-view sessions: just the watch_duration_seconds of that view
+    // This provides a more accurate estimate than pure timestamps (which would undercount)
+    // or pure watch time sum (which would miss navigation/scroll time between videos)
     let totalSessionDuration = 0;
     sessionsArray.forEach((session) => {
       if (session.timestamps.length > 1) {
         const duration = Math.max(...session.timestamps) - Math.min(...session.timestamps);
-        // Add estimated watch time for last video (avg of their watch durations)
         const avgDuration = session.durations.reduce((a, b) => a + b, 0) / session.durations.length;
         totalSessionDuration += duration + (avgDuration * 1000);
       } else if (session.durations[0]) {
@@ -296,40 +297,40 @@ Deno.serve(async (req) => {
 
     const dauMauRatio = mau > 0 ? (dau / mau) * 100 : 0;
 
-    // Repeat Exposure Rate
-    // Definition: % of feed impressions that are videos the user already saw in last 7 days
-    // Plus per-session repeats (same video viewed multiple times in one session)
+    // REPEAT VIEWS (renamed from "Repeat Exposure" for accuracy)
+    // IMPORTANT: This measures VIEWS (scroll-away/unmount events), NOT impressions (when video becomes visible)
+    // Definition:
+    // - 7-Day Repeat Rate: % of views where user already viewed that video in last 7 days
+    // - Per-Session Repeat Rate: % of views where same video was viewed multiple times in same session
+    // To measure true "impressions", add a video_impressions table with events fired on video becoming active
     
-    // Group views by user to calculate repeat exposure
-    const userVideoViews = new Map<string, Map<string, { count: number; firstSeen: number }>>();
-    let totalImpressions = 0;
-    let repeatImpressions = 0;
-    let perSessionRepeats = 0;
+    const userVideoViewsMap = new Map<string, Map<string, { count: number; firstSeen: number }>>();
+    let repeatViewsTotal = 0;
+    let repeatViewsCount = 0;
+    let perSessionRepeatCount = 0;
     
-    // Track per-session repeats
-    const sessionVideoViews = new Map<string, Set<string>>();
+    const sessionVideoViewsMap = new Map<string, Set<string>>();
     
     sortedViews.forEach((v: any) => {
-      const userId = v.user_id || v.session_id || 'anonymous';
+      const odId = v.user_id || v.session_id || 'anonymous';
       const videoId = v.video_id;
       const timestamp = new Date(v.viewed_at).getTime();
-      const sessionKey = userLastSession.get(userId)?.sessionKey || userId;
+      const sessionKey = userLastSession.get(odId)?.sessionKey || odId;
       
       if (!videoId) return;
       
-      totalImpressions++;
+      repeatViewsTotal++;
       
-      // Check for 7-day repeat
-      if (!userVideoViews.has(userId)) {
-        userVideoViews.set(userId, new Map());
+      // Check for 7-day repeat view
+      if (!userVideoViewsMap.has(odId)) {
+        userVideoViewsMap.set(odId, new Map());
       }
-      const userVideos = userVideoViews.get(userId)!;
+      const userVideos = userVideoViewsMap.get(odId)!;
       
       if (userVideos.has(videoId)) {
         const firstSeen = userVideos.get(videoId)!.firstSeen;
-        // If seen within last 7 days, it's a repeat
         if (timestamp - firstSeen < 7 * 24 * 60 * 60 * 1000) {
-          repeatImpressions++;
+          repeatViewsCount++;
         }
         userVideos.get(videoId)!.count++;
       } else {
@@ -337,23 +338,19 @@ Deno.serve(async (req) => {
       }
       
       // Check for per-session repeat
-      if (!sessionVideoViews.has(sessionKey)) {
-        sessionVideoViews.set(sessionKey, new Set());
+      if (!sessionVideoViewsMap.has(sessionKey)) {
+        sessionVideoViewsMap.set(sessionKey, new Set());
       }
-      const sessionVideos = sessionVideoViews.get(sessionKey)!;
+      const sessionVideos = sessionVideoViewsMap.get(sessionKey)!;
       if (sessionVideos.has(videoId)) {
-        perSessionRepeats++;
+        perSessionRepeatCount++;
       } else {
         sessionVideos.add(videoId);
       }
     });
     
-    const repeatExposureRate7d = totalImpressions > 0 
-      ? (repeatImpressions / totalImpressions) * 100 
-      : 0;
-    const perSessionRepeatRate = totalImpressions > 0 
-      ? (perSessionRepeats / totalImpressions) * 100 
-      : 0;
+    const repeatViewRate7d = repeatViewsTotal > 0 ? (repeatViewsCount / repeatViewsTotal) * 100 : 0;
+    const perSessionRepeatRate = repeatViewsTotal > 0 ? (perSessionRepeatCount / repeatViewsTotal) * 100 : 0;
 
     // Active creators (uploaded in last 7 days)
     const { count: activeCreators } = await serviceClient
@@ -394,14 +391,14 @@ Deno.serve(async (req) => {
         views: calcTrend(viewsResult.count || 0, prevViews.count || 0),
         likes: calcTrend(likesResult.count || 0, prevLikes.count || 0),
         saves: calcTrend(savesResult.count || 0, prevSaves.count || 0),
-        signups: calcTrend(signupsResult.count || 0, prevSignups.count || 0),
+        profilesCreated: calcTrend(profilesResult.count || 0, prevSignups.count || 0),
         uploads: calcTrend(uploadsResult.count || 0, prevUploads.count || 0),
         shares: calcTrend(sharesResult.count || 0, prevShares.count || 0),
       };
     }
 
     // Build daily array (skip for lifetime)
-    const daily: { date: string; views: number; signups: number; likes: number; saves: number; uploads: number; shares: number }[] = [];
+    const daily: { date: string; views: number; profilesCreated: number; likes: number; saves: number; uploads: number; shares: number }[] = [];
     
     if (!isLifetime && startDate && endDate) {
       const start = new Date(startDate);
@@ -413,27 +410,30 @@ Deno.serve(async (req) => {
 
       const dailyPromises = days.map(async (dateStr) => {
         const dayStart = `${dateStr}T00:00:00.000Z`;
-        const dayEnd = `${dateStr}T23:59:59.999Z`;
+        // Use exclusive end: next day at 00:00:00
+        const nextDay = new Date(dateStr);
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+        const dayEnd = nextDay.toISOString();
 
-        const [views, signups, likes, saves, uploads, shares] = await Promise.all([
+        const [views, profiles, likes, saves, uploads, shares] = await Promise.all([
           serviceClient.from("video_views").select("id", { count: "exact", head: true })
-            .gte("viewed_at", dayStart).lte("viewed_at", dayEnd),
+            .gte("viewed_at", dayStart).lt("viewed_at", dayEnd),
           serviceClient.from("profiles").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lte("created_at", dayEnd),
+            .gte("created_at", dayStart).lt("created_at", dayEnd),
           serviceClient.from("likes").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lte("created_at", dayEnd),
+            .gte("created_at", dayStart).lt("created_at", dayEnd),
           serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lte("created_at", dayEnd),
+            .gte("created_at", dayStart).lt("created_at", dayEnd),
           serviceClient.from("videos").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lte("created_at", dayEnd),
+            .gte("created_at", dayStart).lt("created_at", dayEnd),
           serviceClient.from("shares").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lte("created_at", dayEnd),
+            .gte("created_at", dayStart).lt("created_at", dayEnd),
         ]);
 
         return {
           date: dateStr,
           views: views.count || 0,
-          signups: signups.count || 0,
+          profilesCreated: profiles.count || 0,
           likes: likes.count || 0,
           saves: saves.count || 0,
           uploads: uploads.count || 0,
@@ -463,18 +463,13 @@ Deno.serve(async (req) => {
       // Core usage
       views: viewsResult.count || 0,
       uniqueViewers,
-      // Session behavior (NEW)
+      // Session behavior
       videosPerSession: {
         avg: Math.round(avgVideosPerSession * 10) / 10,
         median: medianVideosPerSession,
         p90: p90VideosPerSession,
       },
-      scrollDepth: {
-        avg: Math.round(avgScrollDepth * 10) / 10,
-        median: medianScrollDepth,
-        p90: p90ScrollDepth,
-      },
-      avgVideosPerSession: Math.round(avgVideosPerSession * 10) / 10, // Keep for backward compat
+      // Note: scrollDepth removed - use videosPerSession instead (same metric)
       avgSessionDuration: `${avgSessionDurationMinutes}m ${avgSessionDurationSeconds}s`,
       avgSessionDurationMs,
       
@@ -516,17 +511,17 @@ Deno.serve(async (req) => {
       returnRate24h: Math.round(returnRate24h * 100) / 100,
       returnRate7d: Math.round(returnRate7d * 100) / 100,
       
-      // Repeat Exposure
-      repeatExposure: {
-        rate7d: Math.round(repeatExposureRate7d * 100) / 100,
+      // Repeat Views (measures views, not impressions - see comment in code)
+      repeatViews: {
+        rate7d: Math.round(repeatViewRate7d * 100) / 100,
         perSessionRate: Math.round(perSessionRepeatRate * 100) / 100,
-        totalImpressions,
-        repeatImpressions,
-        perSessionRepeats,
+        totalViews: repeatViewsTotal,
+        repeatCount: repeatViewsCount,
+        perSessionRepeatCount,
       },
       
       // Growth
-      signups: signupsResult.count || 0,
+      profilesCreated: profilesResult.count || 0,
       dau,
       mau,
       dauMauRatio: Math.round(dauMauRatio * 100) / 100,
