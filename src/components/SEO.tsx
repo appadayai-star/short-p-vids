@@ -25,10 +25,10 @@ interface SEOProps {
 
 const defaults = {
   siteName: "ShortPornVids",
-  title: "Short Porn Vids – Endless Short-Form Porn Videos XXX",
-  description: "Watch Free Short Porn Vids Hot Porn Vids Videos",
-  keywords: "short videos, video platform, content creators, video feed, mobile videos, trending videos",
-  image: "https://shortpornvids.com/og-image.png",
+  title: "ShortPornVids – Free Short Porn Videos XXX",
+  description: "Watch free short porn videos on ShortPornVids. Discover endless hot clips, trending XXX content, and personalized recommendations.",
+  keywords: "short porn videos, free porn, xxx videos, adult videos, porn clips, mobile porn, trending porn",
+  image: "https://shortpornvids.com/og-image.jpg",
   url: "https://shortpornvids.com",
 };
 

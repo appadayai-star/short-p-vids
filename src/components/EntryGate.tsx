@@ -1,5 +1,12 @@
-import { useState, useCallback, createContext, useContext } from "react";
+import { useState, useCallback, createContext, useContext, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
+
+// Bot detection - bypass entry gate for search engine crawlers
+const isBot = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const botPattern = /googlebot|bingbot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest|slackbot|vkShare|W3C_Validator|whatsapp|duckduckbot|ia_archiver|msnbot|teoma|sogou/i;
+  return botPattern.test(navigator.userAgent);
+};
 
 // Context to share entry state
 interface EntryGateContextType {
@@ -19,8 +26,9 @@ interface EntryGateProps {
 }
 
 export const EntryGate = ({ children }: EntryGateProps) => {
-  // Persist entry state in localStorage
+  // Bots bypass the gate entirely, persist entry state in localStorage for humans
   const [hasEntered, setHasEntered] = useState<boolean>(() => {
+    if (isBot()) return true; // Bots always bypass
     return localStorage.getItem('has_entered_v1') === 'true';
   });
   const [isExiting, setIsExiting] = useState(false);

@@ -32,8 +32,8 @@ const Feed = () => {
         <SEO 
           title={categoryFilter ? `${categoryFilter} Videos` : undefined}
           description={categoryFilter 
-            ? `Watch the best ${categoryFilter} videos on ShortPV` 
-            : "Discover and share amazing short videos on ShortPV"
+            ? `Watch the best ${categoryFilter} porn videos on ShortPornVids. Free XXX clips updated daily.` 
+            : "Watch free short porn videos on ShortPornVids. Discover endless hot clips, trending XXX content, and personalized recommendations."
           }
         />
         {categoryFilter && (

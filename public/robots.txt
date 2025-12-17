@@ -1,6 +1,7 @@
-# Robots.txt for ShortVids Platform
-# Allow all major search engine crawlers
+# Robots.txt for ShortPornVids
+# https://shortpornvids.com
 
+# Allow all major search engine crawlers
 User-agent: Googlebot
 Allow: /
 Crawl-delay: 1
@@ -30,5 +31,10 @@ User-agent: *
 Allow: /
 Crawl-delay: 3
 
-# Sitemap location
-Sitemap: https://shortpornvids.com/sitemap.xml
+# Disallow admin and private areas
+Disallow: /admin
+Disallow: /inbox
+
+# Sitemap location (edge function endpoint)
+# Note: Submit this URL directly to Google Search Console
+Sitemap: https://mbuajcicosojebakdtsn.supabase.co/functions/v1/sitemap
