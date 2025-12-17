@@ -1,52 +1,55 @@
-import { X, Link2, Facebook, Twitter, MessageCircle, Share2 } from "lucide-react";
+import { X, Link2, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ShareDrawerProps {
   videoTitle: string;
+  videoId: string;
   username: string;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const ShareDrawer = ({ videoTitle, username, isOpen, onClose }: ShareDrawerProps) => {
+// Get or create session ID for anonymous tracking
+const getSessionId = (): string => {
+  const key = 'share_session_id';
+  let sessionId = sessionStorage.getItem(key);
+  if (!sessionId) {
+    sessionId = `share_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    sessionStorage.setItem(key, sessionId);
+  }
+  return sessionId;
+};
+
+export const ShareDrawer = ({ videoTitle, videoId, username, isOpen, onClose }: ShareDrawerProps) => {
+  const { user } = useAuth();
   const shareUrl = window.location.href;
   const shareText = `Check out this video by @${username}`;
 
-  const handleCopyLink = () => {
+  const trackShare = async (shareType: string) => {
+    try {
+      await supabase.from("shares").insert({
+        video_id: videoId,
+        user_id: user?.id || null,
+        session_id: user?.id ? null : getSessionId(),
+        share_type: shareType,
+      });
+    } catch (error) {
+      console.error("Error tracking share:", error);
+    }
+  };
+
+  const handleCopyLink = async () => {
     navigator.clipboard.writeText(shareUrl);
+    await trackShare("copy_link");
     toast.success("Link copied to clipboard!");
     onClose();
   };
 
-  const handleNativeShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: videoTitle,
-          text: shareText,
-          url: shareUrl,
-        });
-        onClose();
-      } catch (error) {
-        console.log("Share cancelled");
-      }
-    }
-  };
-
-  const handleShareToTwitter = () => {
-    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`;
-    window.open(url, "_blank");
-    onClose();
-  };
-
-  const handleShareToFacebook = () => {
-    const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
-    window.open(url, "_blank");
-    onClose();
-  };
-
-  const handleShareToWhatsApp = () => {
+  const handleShareToWhatsApp = async () => {
+    await trackShare("whatsapp");
     const url = `https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`;
     window.open(url, "_blank");
     onClose();

@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { 
   Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2, Video, 
   Users, Play, Clock, TrendingUp, TrendingDown, Percent, 
-  RefreshCw, ArrowRight, Upload
+  RefreshCw, ArrowRight, Upload, Share2, UserCheck, Zap, Timer
 } from "lucide-react";
 import { format, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ interface DailyStats {
   likes: number;
   saves: number;
   uploads: number;
+  shares: number;
 }
 
 interface Stats {
@@ -32,12 +33,38 @@ interface Stats {
   avgSessionDuration: string;
   avgSessionDurationMs: number;
   
+  // Watch time
+  totalWatchTimeSeconds: number;
+  totalWatchTimeFormatted: string;
+  avgWatchTimeSeconds: number;
+  avgWatchTimeFormatted: string;
+  watchCompletion: {
+    views25: number;
+    views50: number;
+    views75: number;
+    views95: number;
+    rate25: number;
+    rate50: number;
+    rate75: number;
+    rate95: number;
+  };
+  
+  // Playback performance
+  ttff: {
+    median: number;
+    p95: number;
+    sampleSize: number;
+  };
+  
   // Engagement
   engagementRate: number;
   likeRate: number;
   saveRate: number;
   likes: number;
   saves: number;
+  shares: number;
+  profileViews: number;
+  follows: number;
   
   // Retention
   scrollContinuationRate: number;
@@ -61,6 +88,7 @@ interface Stats {
     saves: number;
     signups: number;
     uploads: number;
+    shares: number;
   } | null;
   
   daily: DailyStats[];
@@ -281,9 +309,10 @@ export const AdminStats = () => {
           loading={loading}
         />
         <StatCard
-          title="Avg Session Length"
-          value={stats?.avgSessionDuration ?? "0m 0s"}
-          icon={Clock}
+          title="Avg Watch Time"
+          value={stats?.avgWatchTimeFormatted ?? "0s"}
+          subtitle="per view"
+          icon={Timer}
           color="text-emerald-500"
           bgColor="bg-emerald-500/10"
           loading={loading}
@@ -307,14 +336,111 @@ export const AdminStats = () => {
         />
       </div>
 
+      {/* Watch Time Metrics */}
+      <MetricSection title="Watch Time (Feed Quality Signal)">
+        <StatCard
+          title="Total Watch Time"
+          value={stats?.totalWatchTimeFormatted ?? "0s"}
+          icon={Clock}
+          color="text-blue-500"
+          bgColor="bg-blue-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Avg Watch Time"
+          value={stats?.avgWatchTimeFormatted ?? "0s"}
+          subtitle="per view"
+          icon={Timer}
+          color="text-cyan-500"
+          bgColor="bg-cyan-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="≥25% Completion"
+          value={`${stats?.watchCompletion?.rate25 ?? 0}%`}
+          subtitle={`${stats?.watchCompletion?.views25 ?? 0} views`}
+          icon={Play}
+          color="text-yellow-500"
+          bgColor="bg-yellow-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="≥50% Completion"
+          value={`${stats?.watchCompletion?.rate50 ?? 0}%`}
+          subtitle={`${stats?.watchCompletion?.views50 ?? 0} views`}
+          icon={Play}
+          color="text-amber-500"
+          bgColor="bg-amber-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="≥75% Completion"
+          value={`${stats?.watchCompletion?.rate75 ?? 0}%`}
+          subtitle={`${stats?.watchCompletion?.views75 ?? 0} views`}
+          icon={Play}
+          color="text-orange-500"
+          bgColor="bg-orange-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="≥95% Completion"
+          value={`${stats?.watchCompletion?.rate95 ?? 0}%`}
+          subtitle={`${stats?.watchCompletion?.views95 ?? 0} views`}
+          icon={Play}
+          color="text-green-500"
+          bgColor="bg-green-500/10"
+          loading={loading}
+        />
+      </MetricSection>
+
+      {/* Playback Performance */}
+      <MetricSection title="Playback Performance (TTFF)">
+        <StatCard
+          title="Median TTFF"
+          value={`${stats?.ttff?.median ?? 0}ms`}
+          subtitle="Time to First Frame"
+          icon={Zap}
+          color="text-yellow-500"
+          bgColor="bg-yellow-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="P95 TTFF"
+          value={`${stats?.ttff?.p95 ?? 0}ms`}
+          subtitle="95th percentile"
+          icon={Zap}
+          color="text-orange-500"
+          bgColor="bg-orange-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Sample Size"
+          value={stats?.ttff?.sampleSize ?? 0}
+          subtitle="videos with TTFF data"
+          icon={Video}
+          color="text-gray-500"
+          bgColor="bg-gray-500/10"
+          loading={loading}
+        />
+      </MetricSection>
+
       {/* Core Usage Metrics */}
       <MetricSection title="Core Usage">
         <StatCard
           title="Unique Viewers"
           value={stats?.uniqueViewers ?? 0}
+          subtitle="anon + logged-in"
           icon={Users}
           color="text-cyan-500"
           bgColor="bg-cyan-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Avg Session Length"
+          value={stats?.avgSessionDuration ?? "0m 0s"}
+          icon={Clock}
+          color="text-emerald-500"
+          bgColor="bg-emerald-500/10"
           loading={loading}
         />
         <StatCard
@@ -364,6 +490,31 @@ export const AdminStats = () => {
           color="text-purple-500"
           bgColor="bg-purple-500/10"
           trend={stats?.trends?.saves}
+          loading={loading}
+        />
+        <StatCard
+          title="Total Shares"
+          value={stats?.shares ?? 0}
+          icon={Share2}
+          color="text-blue-500"
+          bgColor="bg-blue-500/10"
+          trend={stats?.trends?.shares}
+          loading={loading}
+        />
+        <StatCard
+          title="Profile Views"
+          value={stats?.profileViews ?? 0}
+          icon={UserCheck}
+          color="text-teal-500"
+          bgColor="bg-teal-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Follows"
+          value={stats?.follows ?? 0}
+          icon={UserPlus}
+          color="text-green-500"
+          bgColor="bg-green-500/10"
           loading={loading}
         />
         <StatCard
@@ -482,6 +633,7 @@ export const AdminStats = () => {
                   <Line type="monotone" dataKey="signups" stroke="#22c55e" strokeWidth={2} dot={false} name="Signups" />
                   <Line type="monotone" dataKey="likes" stroke="#ef4444" strokeWidth={2} dot={false} name="Likes" />
                   <Line type="monotone" dataKey="saves" stroke="#a855f7" strokeWidth={2} dot={false} name="Saves" />
+                  <Line type="monotone" dataKey="shares" stroke="#06b6d4" strokeWidth={2} dot={false} name="Shares" />
                   <Line type="monotone" dataKey="uploads" stroke="#f97316" strokeWidth={2} dot={false} name="Uploads" />
                 </LineChart>
               </ResponsiveContainer>

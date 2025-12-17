@@ -78,6 +78,9 @@ Deno.serve(async (req) => {
       uploadsResult,
       uniqueViewersResult,
       allViewsForSession,
+      sharesResult,
+      profileViewsResult,
+      followsResult,
     ] = await Promise.all([
       dateFilter(serviceClient.from("video_views").select("id", { count: "exact", head: true }), "viewed_at"),
       dateFilter(serviceClient.from("profiles").select("id", { count: "exact", head: true }), "created_at"),
@@ -86,8 +89,14 @@ Deno.serve(async (req) => {
       dateFilter(serviceClient.from("videos").select("id", { count: "exact", head: true }), "created_at"),
       // Unique viewers (distinct user_id + session_id combinations)
       dateFilter(serviceClient.from("video_views").select("user_id, session_id"), "viewed_at"),
-      // All views for session calculations
-      dateFilter(serviceClient.from("video_views").select("user_id, session_id, viewed_at, watch_duration_seconds"), "viewed_at"),
+      // All views for session and watch time calculations
+      dateFilter(serviceClient.from("video_views").select("user_id, session_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at"),
+      // Shares
+      dateFilter(serviceClient.from("shares").select("id", { count: "exact", head: true }), "created_at"),
+      // Profile views
+      dateFilter(serviceClient.from("profile_views").select("id", { count: "exact", head: true }), "created_at"),
+      // Follows
+      dateFilter(serviceClient.from("follows").select("id", { count: "exact", head: true }), "created_at"),
     ]);
 
     // Calculate unique viewers (user_id or session_id)
@@ -108,10 +117,34 @@ Deno.serve(async (req) => {
     let sessionCounter = 0;
     const userLastSession = new Map<string, { sessionKey: string; lastTimestamp: number }>();
     
+    // Watch time metrics
+    let totalWatchTimeSeconds = 0;
+    let viewsWithWatchTime = 0;
+    let completion25 = 0, completion50 = 0, completion75 = 0, completion95 = 0;
+    const ttffValues: number[] = [];
+    
     sortedViews.forEach((v: any) => {
       const userId = v.user_id || v.session_id || 'anon_' + sessionCounter++;
       const timestamp = new Date(v.viewed_at).getTime();
       const duration = v.watch_duration_seconds || 0;
+      
+      // Track watch time
+      if (duration > 0) {
+        totalWatchTimeSeconds += duration;
+        viewsWithWatchTime++;
+      }
+      
+      // Track completion buckets
+      const completionPercent = v.watch_completion_percent || 0;
+      if (completionPercent >= 25) completion25++;
+      if (completionPercent >= 50) completion50++;
+      if (completionPercent >= 75) completion75++;
+      if (completionPercent >= 95) completion95++;
+      
+      // Track TTFF
+      if (v.time_to_first_frame_ms && v.time_to_first_frame_ms > 0) {
+        ttffValues.push(v.time_to_first_frame_ms);
+      }
       
       // Check if this is a new session (30-min gap)
       const lastInfo = userLastSession.get(userId);
@@ -136,6 +169,15 @@ Deno.serve(async (req) => {
       session.durations.push(duration);
     });
 
+    // Calculate TTFF metrics (median and p95)
+    ttffValues.sort((a, b) => a - b);
+    const medianTTFF = ttffValues.length > 0 
+      ? ttffValues[Math.floor(ttffValues.length / 2)] 
+      : 0;
+    const p95TTFF = ttffValues.length > 0 
+      ? ttffValues[Math.floor(ttffValues.length * 0.95)] 
+      : 0;
+
     // Calculate averages
     const sessionCount = viewsBySession.size || 1;
     const totalVideosWatched = Array.from(viewsBySession.values()).reduce((sum, s) => sum + s.views, 0);
@@ -157,8 +199,13 @@ Deno.serve(async (req) => {
     const avgSessionDurationMinutes = Math.floor(avgSessionDurationMs / 60000);
     const avgSessionDurationSeconds = Math.floor((avgSessionDurationMs % 60000) / 1000);
 
-    // Engagement metrics
+    // Watch time metrics
+    const avgWatchTimeSeconds = viewsWithWatchTime > 0 
+      ? Math.round(totalWatchTimeSeconds / viewsWithWatchTime) 
+      : 0;
     const totalViews = viewsResult.count || 1;
+
+    // Engagement metrics
     const totalLikes = likesResult.count || 0;
     const totalSaves = savesResult.count || 0;
     const engagementRate = ((totalLikes + totalSaves) / totalViews) * 100;
@@ -243,7 +290,7 @@ Deno.serve(async (req) => {
       const prevStartDate = new Date(startMs - periodMs).toISOString();
       const prevEndDate = new Date(startMs).toISOString();
 
-      const [prevViews, prevLikes, prevSaves, prevSignups, prevUploads] = await Promise.all([
+      const [prevViews, prevLikes, prevSaves, prevSignups, prevUploads, prevShares] = await Promise.all([
         serviceClient.from("video_views").select("id", { count: "exact", head: true })
           .gte("viewed_at", prevStartDate).lt("viewed_at", prevEndDate),
         serviceClient.from("likes").select("id", { count: "exact", head: true })
@@ -253,6 +300,8 @@ Deno.serve(async (req) => {
         serviceClient.from("profiles").select("id", { count: "exact", head: true })
           .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
         serviceClient.from("videos").select("id", { count: "exact", head: true })
+          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+        serviceClient.from("shares").select("id", { count: "exact", head: true })
           .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
       ]);
 
@@ -267,11 +316,12 @@ Deno.serve(async (req) => {
         saves: calcTrend(savesResult.count || 0, prevSaves.count || 0),
         signups: calcTrend(signupsResult.count || 0, prevSignups.count || 0),
         uploads: calcTrend(uploadsResult.count || 0, prevUploads.count || 0),
+        shares: calcTrend(sharesResult.count || 0, prevShares.count || 0),
       };
     }
 
     // Build daily array (skip for lifetime)
-    const daily: { date: string; views: number; signups: number; likes: number; saves: number; uploads: number }[] = [];
+    const daily: { date: string; views: number; signups: number; likes: number; saves: number; uploads: number; shares: number }[] = [];
     
     if (!isLifetime && startDate && endDate) {
       const start = new Date(startDate);
@@ -285,7 +335,7 @@ Deno.serve(async (req) => {
         const dayStart = `${dateStr}T00:00:00.000Z`;
         const dayEnd = `${dateStr}T23:59:59.999Z`;
 
-        const [views, signups, likes, saves, uploads] = await Promise.all([
+        const [views, signups, likes, saves, uploads, shares] = await Promise.all([
           serviceClient.from("video_views").select("id", { count: "exact", head: true })
             .gte("viewed_at", dayStart).lte("viewed_at", dayEnd),
           serviceClient.from("profiles").select("id", { count: "exact", head: true })
@@ -296,6 +346,8 @@ Deno.serve(async (req) => {
             .gte("created_at", dayStart).lte("created_at", dayEnd),
           serviceClient.from("videos").select("id", { count: "exact", head: true })
             .gte("created_at", dayStart).lte("created_at", dayEnd),
+          serviceClient.from("shares").select("id", { count: "exact", head: true })
+            .gte("created_at", dayStart).lte("created_at", dayEnd),
         ]);
 
         return {
@@ -305,12 +357,27 @@ Deno.serve(async (req) => {
           likes: likes.count || 0,
           saves: saves.count || 0,
           uploads: uploads.count || 0,
+          shares: shares.count || 0,
         };
       });
 
       const dailyResults = await Promise.all(dailyPromises);
       daily.push(...dailyResults);
     }
+
+    // Format watch time
+    const formatWatchTime = (seconds: number) => {
+      if (seconds >= 3600) {
+        const hours = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        return `${hours}h ${mins}m`;
+      } else if (seconds >= 60) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}m ${secs}s`;
+      }
+      return `${seconds}s`;
+    };
 
     const stats = {
       // Core usage
@@ -320,12 +387,38 @@ Deno.serve(async (req) => {
       avgSessionDuration: `${avgSessionDurationMinutes}m ${avgSessionDurationSeconds}s`,
       avgSessionDurationMs,
       
+      // Watch time metrics (NEW)
+      totalWatchTimeSeconds,
+      totalWatchTimeFormatted: formatWatchTime(totalWatchTimeSeconds),
+      avgWatchTimeSeconds,
+      avgWatchTimeFormatted: formatWatchTime(avgWatchTimeSeconds),
+      watchCompletion: {
+        views25: completion25,
+        views50: completion50,
+        views75: completion75,
+        views95: completion95,
+        rate25: totalViews > 0 ? Math.round((completion25 / totalViews) * 10000) / 100 : 0,
+        rate50: totalViews > 0 ? Math.round((completion50 / totalViews) * 10000) / 100 : 0,
+        rate75: totalViews > 0 ? Math.round((completion75 / totalViews) * 10000) / 100 : 0,
+        rate95: totalViews > 0 ? Math.round((completion95 / totalViews) * 10000) / 100 : 0,
+      },
+      
+      // Playback performance (NEW)
+      ttff: {
+        median: medianTTFF,
+        p95: p95TTFF,
+        sampleSize: ttffValues.length,
+      },
+      
       // Engagement
       engagementRate: Math.round(engagementRate * 100) / 100,
       likeRate: Math.round(likeRate * 100) / 100,
       saveRate: Math.round(saveRate * 100) / 100,
       likes: likesResult.count || 0,
       saves: savesResult.count || 0,
+      shares: sharesResult.count || 0,
+      profileViews: profileViewsResult.count || 0,
+      follows: followsResult.count || 0,
       
       // Retention
       scrollContinuationRate: Math.round(scrollContinuationRate * 100) / 100,

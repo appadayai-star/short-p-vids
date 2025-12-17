@@ -655,7 +655,7 @@ export const VideoCard = memo(({
         </div>
       </div>
 
-      <ShareDrawer videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
+      <ShareDrawer videoId={video.id} videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
     </div>
   );
 });

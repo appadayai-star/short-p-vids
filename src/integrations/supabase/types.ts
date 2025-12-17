@@ -288,6 +288,59 @@ export type Database = {
           },
         ]
       }
+      profile_views: {
+        Row: {
+          created_at: string
+          id: string
+          profile_id: string
+          session_id: string | null
+          viewer_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          profile_id: string
+          session_id?: string | null
+          viewer_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          profile_id?: string
+          session_id?: string | null
+          viewer_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_views_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_views_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_views_viewer_id_fkey"
+            columns: ["viewer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_views_viewer_id_fkey"
+            columns: ["viewer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -364,6 +417,55 @@ export type Database = {
           },
         ]
       }
+      shares: {
+        Row: {
+          created_at: string
+          id: string
+          session_id: string | null
+          share_type: string
+          user_id: string | null
+          video_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          session_id?: string | null
+          share_type?: string
+          user_id?: string | null
+          video_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          session_id?: string | null
+          share_type?: string
+          user_id?: string | null
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shares_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shares_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shares_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_category_preferences: {
         Row: {
           category: string
@@ -431,25 +533,34 @@ export type Database = {
         Row: {
           id: string
           session_id: string | null
+          time_to_first_frame_ms: number | null
           user_id: string | null
+          video_duration_seconds: number | null
           video_id: string
           viewed_at: string
+          watch_completion_percent: number | null
           watch_duration_seconds: number | null
         }
         Insert: {
           id?: string
           session_id?: string | null
+          time_to_first_frame_ms?: number | null
           user_id?: string | null
+          video_duration_seconds?: number | null
           video_id: string
           viewed_at?: string
+          watch_completion_percent?: number | null
           watch_duration_seconds?: number | null
         }
         Update: {
           id?: string
           session_id?: string | null
+          time_to_first_frame_ms?: number | null
           user_id?: string | null
+          video_duration_seconds?: number | null
           video_id?: string
           viewed_at?: string
+          watch_completion_percent?: number | null
           watch_duration_seconds?: number | null
         }
         Relationships: [
