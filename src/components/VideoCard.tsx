@@ -124,7 +124,7 @@ export const VideoCard = memo(({
   const [savesCount, setSavesCount] = useState(0);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [hasTrackedView, setHasTrackedView] = useState(false);
+  
   const [isMuted, setIsMuted] = useState(globalMuted);
 
   // Compute truly active - only one video can be active at a time
@@ -282,11 +282,7 @@ export const VideoCard = memo(({
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            // Track view once
-            if (!hasTrackedView) {
-              trackView();
-              setHasTrackedView(true);
-            }
+            // View tracking is now handled by useWatchMetrics hook
           })
           .catch((error) => {
             console.log(`[VideoCard ${index}] play() rejected:`, error.name);
@@ -299,7 +295,7 @@ export const VideoCard = memo(({
     } else {
       videoEl.pause();
     }
-  }, [isTrulyActive, status, hasEntered, hasTrackedView, index]);
+  }, [isTrulyActive, status, hasEntered, index]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -327,16 +323,7 @@ export const VideoCard = memo(({
     fetchStates();
   }, [video.id, currentUserId, isVisible]);
 
-  const trackView = async () => {
-    try {
-      await supabase.from("video_views").insert({
-        video_id: video.id,
-        user_id: currentUserId,
-      });
-    } catch (error) {
-      // Silent fail for view tracking
-    }
-  };
+  // View tracking is now handled by useWatchMetrics hook in FeedItem
 
   // Video event handlers
   const handleCanPlay = useCallback(() => {
