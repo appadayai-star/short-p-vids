@@ -5,6 +5,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Reliable tracking started after this date (when viewer_id + session_id became mandatory)
+const RELIABLE_TRACKING_DATE = "2024-12-17";
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -87,7 +90,7 @@ Deno.serve(async (req) => {
       dateFilter(serviceClient.from("saved_videos").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("videos").select("id", { count: "exact", head: true }), "created_at"),
       // All views for detailed analysis - high limit to get all data
-      dateFilter(serviceClient.from("video_views").select("user_id, session_id, video_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at").limit(100000),
+      dateFilter(serviceClient.from("video_views").select("user_id, viewer_id, session_id, video_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at").limit(100000),
       dateFilter(serviceClient.from("shares").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("profile_views").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("follows").select("id", { count: "exact", head: true }), "created_at"),
@@ -96,35 +99,55 @@ Deno.serve(async (req) => {
     const allViews = allViewsForAnalysis.data || [];
     console.log(`Fetched ${allViews.length} views for analysis`);
 
-    // === CORE METRICS ===
-    // Unique Viewers = COUNT(DISTINCT user_id) - now always filled with auth.user.id OR anonymous_id
-    const uniqueViewerSet = new Set<string>();
+    // === DEBUG COUNTERS (all rows) ===
+    let rowsMissingSessionId = 0;
+    let rowsMissingViewerId = 0;
+    let rowsWatchDurationNull = 0;
+    let rowsWatchDurationZero = 0;
+    let rowsWithWatchDuration = 0;
+    
     allViews.forEach((v: any) => {
-      if (v.user_id) uniqueViewerSet.add(v.user_id);
+      if (!v.session_id) rowsMissingSessionId++;
+      if (!v.viewer_id) rowsMissingViewerId++;
+      
+      const duration = v.watch_duration_seconds;
+      if (duration === null || duration === undefined) {
+        rowsWatchDurationNull++;
+      } else if (duration === 0) {
+        rowsWatchDurationZero++;
+      } else if (duration > 0) {
+        rowsWithWatchDuration++;
+      }
+    });
+
+    // === FILTER TO RELIABLE ROWS ONLY ===
+    // Only use rows with session_id for metrics (reliable tracking)
+    const reliableViews = allViews.filter((v: any) => v.session_id);
+    console.log(`Reliable views (with session_id): ${reliableViews.length} of ${allViews.length}`);
+
+    // === CORE METRICS (using reliable rows only) ===
+    // Unique Viewers = COUNT(DISTINCT viewer_id) from reliable rows
+    const uniqueViewerSet = new Set<string>();
+    reliableViews.forEach((v: any) => {
+      if (v.viewer_id) uniqueViewerSet.add(v.viewer_id);
     });
     const uniqueViewers = uniqueViewerSet.size;
 
-    // Sessions = COUNT(DISTINCT session_id) - now always filled
+    // Sessions = COUNT(DISTINCT session_id)
     const uniqueSessionSet = new Set<string>();
-    allViews.forEach((v: any) => {
+    reliableViews.forEach((v: any) => {
       if (v.session_id) uniqueSessionSet.add(v.session_id);
     });
     const totalSessions = uniqueSessionSet.size;
 
     // Sort views by timestamp for session analysis
-    const sortedViews = [...allViews].sort((a: any, b: any) => 
+    const sortedViews = [...reliableViews].sort((a: any, b: any) => 
       new Date(a.viewed_at).getTime() - new Date(b.viewed_at).getTime()
     );
 
-    // === WATCH TIME METRICS ===
+    // === WATCH TIME METRICS (reliable rows only) ===
     let totalWatchTimeSeconds = 0;
     let viewsWithWatchDuration = 0;
-    let viewsWithZeroWatchDuration = 0;
-    let viewsWithNullWatchDuration = 0;
-    let viewsWithViewerId = 0;
-    let viewsWithoutViewerId = 0;
-    let viewsWithSessionId = 0;
-    let viewsWithoutSessionId = 0;
     
     // Completion buckets
     let completion25 = 0, completion50 = 0, completion75 = 0, completion95 = 0;
@@ -134,34 +157,20 @@ Deno.serve(async (req) => {
     const viewsBySession = new Map<string, { views: number; durations: number[] }>();
 
     sortedViews.forEach((v: any) => {
-      const duration = v.watch_duration_seconds;
+      const duration = v.watch_duration_seconds || 0;
       
-      // Track data quality
-      if (v.user_id) {
-        viewsWithViewerId++;
-      } else {
-        viewsWithoutViewerId++;
-      }
-      
+      // Group by session
       if (v.session_id) {
-        viewsWithSessionId++;
-        // Group by session
         if (!viewsBySession.has(v.session_id)) {
           viewsBySession.set(v.session_id, { views: 0, durations: [] });
         }
         const session = viewsBySession.get(v.session_id)!;
         session.views++;
-        session.durations.push(duration || 0);
-      } else {
-        viewsWithoutSessionId++;
+        session.durations.push(duration);
       }
       
       // Watch duration tracking
-      if (duration === null || duration === undefined) {
-        viewsWithNullWatchDuration++;
-      } else if (duration === 0) {
-        viewsWithZeroWatchDuration++;
-      } else if (duration > 0) {
+      if (duration > 0) {
         totalWatchTimeSeconds += duration;
         viewsWithWatchDuration++;
       }
@@ -181,6 +190,7 @@ Deno.serve(async (req) => {
 
     // === CALCULATED METRICS ===
     const totalViews = viewsResult.count || 1;
+    const reliableViewCount = reliableViews.length || 1;
     
     // Avg watch time per view (only views with duration > 0)
     const avgWatchTimePerView = viewsWithWatchDuration > 0 
@@ -230,58 +240,64 @@ Deno.serve(async (req) => {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    // 24h return rate
+    // 24h return rate (use viewer_id for reliable tracking)
     const { data: returningUsers24h } = await serviceClient
       .from("video_views")
-      .select("user_id, session_id")
+      .select("viewer_id")
+      .not("viewer_id", "is", null)
       .gte("viewed_at", oneDayAgo.toISOString());
 
     const { data: previousUsers24h } = await serviceClient
       .from("video_views")
-      .select("user_id, session_id")
+      .select("viewer_id")
+      .not("viewer_id", "is", null)
       .lt("viewed_at", oneDayAgo.toISOString())
       .gte("viewed_at", new Date(oneDayAgo.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
 
-    const previousUserSet24h = new Set((previousUsers24h || []).map((u: any) => u.user_id).filter(Boolean));
-    const returningUserSet24h = new Set((returningUsers24h || []).map((u: any) => u.user_id).filter(Boolean));
+    const previousUserSet24h = new Set((previousUsers24h || []).map((u: any) => u.viewer_id).filter(Boolean));
+    const returningUserSet24h = new Set((returningUsers24h || []).map((u: any) => u.viewer_id).filter(Boolean));
     const returnedCount24h = Array.from(returningUserSet24h).filter(u => previousUserSet24h.has(u)).length;
     const returnRate24h = previousUserSet24h.size > 0 ? (returnedCount24h / previousUserSet24h.size) * 100 : 0;
 
     // 7-day return rate
     const { data: returningUsers7d } = await serviceClient
       .from("video_views")
-      .select("user_id, session_id")
+      .select("viewer_id")
+      .not("viewer_id", "is", null)
       .gte("viewed_at", sevenDaysAgo.toISOString());
 
     const { data: previousUsers7d } = await serviceClient
       .from("video_views")
-      .select("user_id, session_id")
+      .select("viewer_id")
+      .not("viewer_id", "is", null)
       .lt("viewed_at", sevenDaysAgo.toISOString())
       .gte("viewed_at", thirtyDaysAgo.toISOString());
 
-    const previousUserSet7d = new Set((previousUsers7d || []).map((u: any) => u.user_id).filter(Boolean));
-    const returningUserSet7d = new Set((returningUsers7d || []).map((u: any) => u.user_id).filter(Boolean));
+    const previousUserSet7d = new Set((previousUsers7d || []).map((u: any) => u.viewer_id).filter(Boolean));
+    const returningUserSet7d = new Set((returningUsers7d || []).map((u: any) => u.viewer_id).filter(Boolean));
     const returnedCount7d = Array.from(returningUserSet7d).filter(u => previousUserSet7d.has(u)).length;
     const returnRate7d = previousUserSet7d.size > 0 ? (returnedCount7d / previousUserSet7d.size) * 100 : 0;
 
-    // DAU / MAU
+    // DAU / MAU (use viewer_id)
     const { data: dauData } = await serviceClient
       .from("video_views")
-      .select("user_id")
+      .select("viewer_id")
+      .not("viewer_id", "is", null)
       .gte("viewed_at", oneDayAgo.toISOString());
-    const dauSet = new Set((dauData || []).map((u: any) => u.user_id).filter(Boolean));
+    const dauSet = new Set((dauData || []).map((u: any) => u.viewer_id).filter(Boolean));
     const dau = dauSet.size;
 
     const { data: mauData } = await serviceClient
       .from("video_views")
-      .select("user_id")
+      .select("viewer_id")
+      .not("viewer_id", "is", null)
       .gte("viewed_at", thirtyDaysAgo.toISOString());
-    const mauSet = new Set((mauData || []).map((u: any) => u.user_id).filter(Boolean));
+    const mauSet = new Set((mauData || []).map((u: any) => u.viewer_id).filter(Boolean));
     const mau = mauSet.size;
 
     const dauMauRatio = mau > 0 ? (dau / mau) * 100 : 0;
 
-    // Repeat views
+    // Repeat views (using reliable rows only)
     const userVideoViewsMap = new Map<string, Map<string, { count: number; firstSeen: number }>>();
     let repeatViewsTotal = 0;
     let repeatViewsCount = 0;
@@ -289,7 +305,7 @@ Deno.serve(async (req) => {
     const sessionVideoViewsMap = new Map<string, Set<string>>();
 
     sortedViews.forEach((v: any) => {
-      const odId = v.user_id || 'anonymous';
+      const odId = v.viewer_id || 'anonymous';
       const videoId = v.video_id;
       const timestamp = new Date(v.viewed_at).getTime();
       const sessionKey = v.session_id || odId;
@@ -454,8 +470,8 @@ Deno.serve(async (req) => {
     const stats = {
       // Core usage
       views: viewsResult.count || 0,
-      uniqueViewers, // COUNT(DISTINCT user_id) - now always filled
-      totalSessions, // COUNT(DISTINCT session_id) - now always filled
+      uniqueViewers, // COUNT(DISTINCT viewer_id) from reliable rows
+      totalSessions, // COUNT(DISTINCT session_id)
       
       // Session behavior
       videosPerSession: {
@@ -472,7 +488,7 @@ Deno.serve(async (req) => {
       avgWatchTimePerSession, // SUM(watch_duration) / COUNT(DISTINCT session_id)
       avgWatchTimePerSessionFormatted: formatWatchTime(avgWatchTimePerSession),
       
-      // Legacy compatibility (keep old field names)
+      // Legacy compatibility
       avgWatchTimeSeconds: avgWatchTimePerView,
       avgWatchTimeFormatted: formatWatchTime(avgWatchTimePerView),
       avgSessionWatchTime: formatWatchTime(avgWatchTimePerSession),
@@ -484,10 +500,10 @@ Deno.serve(async (req) => {
         views50: completion50,
         views75: completion75,
         views95: completion95,
-        rate25: totalViews > 0 ? Math.round((completion25 / totalViews) * 10000) / 100 : 0,
-        rate50: totalViews > 0 ? Math.round((completion50 / totalViews) * 10000) / 100 : 0,
-        rate75: totalViews > 0 ? Math.round((completion75 / totalViews) * 10000) / 100 : 0,
-        rate95: totalViews > 0 ? Math.round((completion95 / totalViews) * 10000) / 100 : 0,
+        rate25: reliableViewCount > 0 ? Math.round((completion25 / reliableViewCount) * 10000) / 100 : 0,
+        rate50: reliableViewCount > 0 ? Math.round((completion50 / reliableViewCount) * 10000) / 100 : 0,
+        rate75: reliableViewCount > 0 ? Math.round((completion75 / reliableViewCount) * 10000) / 100 : 0,
+        rate95: reliableViewCount > 0 ? Math.round((completion95 / reliableViewCount) * 10000) / 100 : 0,
       },
       
       // Playback performance
@@ -540,22 +556,26 @@ Deno.serve(async (req) => {
       uploads: uploadsResult.count || 0,
       activeCreators: activeCreators || 0,
       
-      // DEBUG: Data quality counters
+      // DEBUG: Data quality counters (split as requested)
       dataQuality: {
         totalRows: allViews.length,
-        // Viewer ID (user_id column) - should be 100% filled now
-        withViewerId: viewsWithViewerId,
-        withoutViewerId: viewsWithoutViewerId,
-        viewerIdMissingPct: allViews.length > 0 ? Math.round((viewsWithoutViewerId / allViews.length) * 100) : 0,
-        // Session ID - should be 100% filled now
-        withSessionId: viewsWithSessionId,
-        withoutSessionId: viewsWithoutSessionId,
-        sessionIdMissingPct: allViews.length > 0 ? Math.round((viewsWithoutSessionId / allViews.length) * 100) : 0,
-        // Watch duration
-        withWatchDuration: viewsWithWatchDuration,
-        withZeroWatchDuration: viewsWithZeroWatchDuration,
-        withNullWatchDuration: viewsWithNullWatchDuration,
-        watchDurationMissingPct: allViews.length > 0 ? Math.round(((viewsWithZeroWatchDuration + viewsWithNullWatchDuration) / allViews.length) * 100) : 0,
+        reliableRows: reliableViews.length,
+        reliableTrackingSince: RELIABLE_TRACKING_DATE,
+        // Missing session_id = tracking failed to fire
+        rowsMissingSessionId,
+        sessionIdMissingPct: allViews.length > 0 ? Math.round((rowsMissingSessionId / allViews.length) * 100) : 0,
+        // Missing viewer_id = older tracking before viewer_id column
+        rowsMissingViewerId,
+        viewerIdMissingPct: allViews.length > 0 ? Math.round((rowsMissingViewerId / allViews.length) * 100) : 0,
+        // Watch duration NULL = tracking failed to send metrics
+        rowsWatchDurationNull,
+        watchDurationNullPct: allViews.length > 0 ? Math.round((rowsWatchDurationNull / allViews.length) * 100) : 0,
+        // Watch duration 0 = real bounce (user scrolled away before 1s)
+        rowsWatchDurationZero,
+        watchDurationZeroPct: allViews.length > 0 ? Math.round((rowsWatchDurationZero / allViews.length) * 100) : 0,
+        // With watch duration > 0 = actual watched content
+        rowsWithWatchDuration,
+        watchDurationPresentPct: allViews.length > 0 ? Math.round((rowsWithWatchDuration / allViews.length) * 100) : 0,
       },
       
       // Trends
