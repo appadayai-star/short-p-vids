@@ -33,6 +33,18 @@ interface Stats {
   avgSessionDuration: string;
   avgSessionDurationMs: number;
   
+  // Session behavior
+  videosPerSession?: {
+    avg: number;
+    median: number;
+    p90: number;
+  };
+  scrollDepth?: {
+    avg: number;
+    median: number;
+    p90: number;
+  };
+  
   // Watch time
   totalWatchTimeSeconds: number;
   totalWatchTimeFormatted: string;
@@ -420,6 +432,55 @@ export const AdminStats = () => {
           icon={Video}
           color="text-gray-500"
           bgColor="bg-gray-500/10"
+          loading={loading}
+        />
+      </MetricSection>
+
+      {/* Session Behavior */}
+      <MetricSection title="Session Behavior">
+        <StatCard
+          title="Videos / Session (Median)"
+          value={stats?.videosPerSession?.median ?? 0}
+          subtitle="50th percentile"
+          icon={Play}
+          color="text-purple-500"
+          bgColor="bg-purple-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Videos / Session (P90)"
+          value={stats?.videosPerSession?.p90 ?? 0}
+          subtitle="90th percentile"
+          icon={Play}
+          color="text-violet-500"
+          bgColor="bg-violet-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Scroll Depth (Median)"
+          value={stats?.scrollDepth?.median ?? 0}
+          subtitle="videos reached per session"
+          icon={ArrowRight}
+          color="text-cyan-500"
+          bgColor="bg-cyan-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Scroll Depth (P90)"
+          value={stats?.scrollDepth?.p90 ?? 0}
+          subtitle="90th percentile"
+          icon={ArrowRight}
+          color="text-teal-500"
+          bgColor="bg-teal-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Scroll Continuation"
+          value={`${stats?.scrollContinuationRate ?? 0}%`}
+          subtitle="users watching 2+ videos"
+          icon={RefreshCw}
+          color="text-green-500"
+          bgColor="bg-green-500/10"
           loading={loading}
         />
       </MetricSection>

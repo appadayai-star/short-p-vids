@@ -92,18 +92,16 @@ export const FeedItem = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const retryCountRef = useRef(0);
 
-  // Watch metrics tracking
+  // Watch metrics tracking - hook handles TTFF and watch time via event listeners
   const {
     markLoadStart,
-    markFirstFrame,
-    startWatching,
-    pauseWatching,
-    sendMetrics,
+    stopWatching,
   } = useWatchMetrics({
     videoId: video.id,
     userId: currentUserId,
     isActive,
     videoRef,
+    videoIndex: index,
     onViewRecorded: () => onViewTracked(video.id),
   });
   
@@ -141,21 +139,18 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive - with metrics tracking
+  // Play/pause based on isActive - metrics tracked via event listeners in hook
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
-      markLoadStart();
+      markLoadStart(); // Start TTFF timer
       videoEl.currentTime = 0;
       
       const attemptPlay = () => {
-        videoEl.play().then(() => {
-          markFirstFrame();
-          startWatching();
-        }).catch((err) => {
+        videoEl.play().catch((err) => {
           if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
             return;
           }
@@ -182,11 +177,11 @@ export const FeedItem = memo(({
         videoEl.removeEventListener('canplay', handleCanPlay);
       };
     } else {
-      // Pause watching when scrolling away
-      pauseWatching();
+      // Stop watching when scrolling away
+      stopWatching();
       videoEl.pause();
     }
-  }, [isActive, hasEntered, markLoadStart, markFirstFrame, startWatching, pauseWatching]);
+  }, [isActive, hasEntered, markLoadStart, stopWatching]);
 
   // Preload next video when this one is active
   useEffect(() => {
