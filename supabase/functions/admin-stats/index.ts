@@ -201,25 +201,17 @@ Deno.serve(async (req) => {
     // Note: "Scroll Depth" was removed as it's redundant with "Videos per Session"
     // If true scroll depth tracking is needed, add a video_impressions event
 
-    // Average Session Duration calculation method:
-    // HYBRID APPROACH: (last_view_timestamp - first_view_timestamp) + avg_watch_duration_of_last_video
-    // - For multi-view sessions: timestamp span + estimated time for last video
-    // - For single-view sessions: just the watch_duration_seconds of that view
-    // This provides a more accurate estimate than pure timestamps (which would undercount)
-    // or pure watch time sum (which would miss navigation/scroll time between videos)
-    let totalSessionDuration = 0;
+    // Average Session Watch Time = SUM(watch_duration_seconds) per session
+    // This measures actual video watching time per session (excludes scroll/navigation time)
+    // Simple, accurate, and directly comparable across sessions
+    let totalSessionWatchTime = 0;
     sessionsArray.forEach((session) => {
-      if (session.timestamps.length > 1) {
-        const duration = Math.max(...session.timestamps) - Math.min(...session.timestamps);
-        const avgDuration = session.durations.reduce((a, b) => a + b, 0) / session.durations.length;
-        totalSessionDuration += duration + (avgDuration * 1000);
-      } else if (session.durations[0]) {
-        totalSessionDuration += session.durations[0] * 1000;
-      }
+      const sessionWatchTime = session.durations.reduce((a, b) => a + b, 0);
+      totalSessionWatchTime += sessionWatchTime;
     });
-    const avgSessionDurationMs = sessionCount > 0 ? totalSessionDuration / sessionCount : 0;
-    const avgSessionDurationMinutes = Math.floor(avgSessionDurationMs / 60000);
-    const avgSessionDurationSeconds = Math.floor((avgSessionDurationMs % 60000) / 1000);
+    const avgSessionWatchTimeSeconds = sessionCount > 0 ? Math.round(totalSessionWatchTime / sessionCount) : 0;
+    const avgSessionWatchTimeMinutes = Math.floor(avgSessionWatchTimeSeconds / 60);
+    const avgSessionWatchTimeSecondsRemainder = avgSessionWatchTimeSeconds % 60;
 
     // Watch time metrics
     const avgWatchTimeSeconds = viewsWithWatchTime > 0 
@@ -358,6 +350,27 @@ Deno.serve(async (req) => {
       .select("user_id", { count: "exact", head: true })
       .gte("created_at", sevenDaysAgo.toISOString());
 
+    // SIGNUP HEALTH CHECK
+    // Compare auth.users vs profiles in last 7 days to detect RLS issues or trigger failures
+    // Delta should be 0 - if not, some signups aren't creating profiles
+    const { count: profiles7d } = await serviceClient
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", sevenDaysAgo.toISOString());
+
+    // Get auth.users count via admin API
+    const { data: authUsersData, error: authUsersError } = await serviceClient.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000, // Get enough to count
+    });
+    
+    // Filter to last 7 days
+    const authUsers7d = authUsersError ? 0 : (authUsersData?.users || []).filter((u: any) => 
+      new Date(u.created_at).getTime() >= sevenDaysAgo.getTime()
+    ).length;
+    
+    const signupHealthDelta = authUsers7d - (profiles7d || 0);
+
     // Get comparison period stats for trends
     let trendData = null;
     if (!isLifetime && startDate && endDate) {
@@ -470,8 +483,9 @@ Deno.serve(async (req) => {
         p90: p90VideosPerSession,
       },
       // Note: scrollDepth removed - use videosPerSession instead (same metric)
-      avgSessionDuration: `${avgSessionDurationMinutes}m ${avgSessionDurationSeconds}s`,
-      avgSessionDurationMs,
+      // Avg Session Watch Time = SUM(watch_duration_seconds) per session
+      avgSessionWatchTime: `${avgSessionWatchTimeMinutes}m ${avgSessionWatchTimeSecondsRemainder}s`,
+      avgSessionWatchTimeSeconds,
       
       // Watch time metrics (NEW)
       totalWatchTimeSeconds,
@@ -522,6 +536,16 @@ Deno.serve(async (req) => {
       
       // Growth
       profilesCreated: profilesResult.count || 0,
+      
+      // Signup Health Check (admin-only diagnostic)
+      // Compare auth.users vs profiles in last 7 days - delta should be 0
+      signupHealth: {
+        authUsers7d,
+        profiles7d: profiles7d || 0,
+        delta: signupHealthDelta,
+        healthy: signupHealthDelta === 0,
+      },
+      
       dau,
       mau,
       dauMauRatio: Math.round(dauMauRatio * 100) / 100,

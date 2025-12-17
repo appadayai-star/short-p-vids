@@ -18,7 +18,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 interface DailyStats {
   date: string;
   views: number;
-  signups: number;
+  profilesCreated: number;
   likes: number;
   saves: number;
   uploads: number;
@@ -29,8 +29,8 @@ interface Stats {
   // Core usage
   views: number;
   uniqueViewers: number;
-  avgSessionDuration: string;
-  avgSessionDurationMs: number;
+  avgSessionWatchTime: string;  // SUM(watch_duration_seconds) per session
+  avgSessionWatchTimeSeconds: number;
   
   // Session behavior
   videosPerSession?: {
@@ -88,6 +88,15 @@ interface Stats {
   
   // Growth
   profilesCreated: number;
+  
+  // Signup Health Check (admin diagnostic)
+  signupHealth?: {
+    authUsers7d: number;
+    profiles7d: number;
+    delta: number;
+    healthy: boolean;
+  };
+  
   dau: number;
   mau: number;
   dauMauRatio: number;
@@ -482,8 +491,9 @@ export const AdminStats = () => {
           loading={loading}
         />
         <StatCard
-          title="Avg Session Length"
-          value={stats?.avgSessionDuration ?? "0m 0s"}
+          title="Avg Session Watch Time"
+          value={stats?.avgSessionWatchTime ?? "0m 0s"}
+          subtitle="SUM(watch_duration) per session"
           icon={Clock}
           color="text-emerald-500"
           bgColor="bg-emerald-500/10"
@@ -656,6 +666,15 @@ export const AdminStats = () => {
           trend={stats?.trends?.profilesCreated}
           loading={loading}
         />
+        <StatCard
+          title="Signup Health (7d)"
+          value={stats?.signupHealth?.healthy ? "✓ Healthy" : `⚠ Delta: ${stats?.signupHealth?.delta ?? 0}`}
+          subtitle={`Auth: ${stats?.signupHealth?.authUsers7d ?? 0} | Profiles: ${stats?.signupHealth?.profiles7d ?? 0}`}
+          icon={UserCheck}
+          color={stats?.signupHealth?.healthy ? "text-green-500" : "text-amber-500"}
+          bgColor={stats?.signupHealth?.healthy ? "bg-green-500/10" : "bg-amber-500/10"}
+          loading={loading}
+        />
       </MetricSection>
 
       {/* Creator Supply */}
@@ -707,7 +726,7 @@ export const AdminStats = () => {
                   />
                   <Legend />
                   <Line type="monotone" dataKey="views" stroke="#3b82f6" strokeWidth={2} dot={false} name="Views" />
-                  <Line type="monotone" dataKey="signups" stroke="#22c55e" strokeWidth={2} dot={false} name="Signups" />
+                  <Line type="monotone" dataKey="profilesCreated" stroke="#22c55e" strokeWidth={2} dot={false} name="Profiles Created" />
                   <Line type="monotone" dataKey="likes" stroke="#ef4444" strokeWidth={2} dot={false} name="Likes" />
                   <Line type="monotone" dataKey="saves" stroke="#a855f7" strokeWidth={2} dot={false} name="Saves" />
                   <Line type="monotone" dataKey="shares" stroke="#06b6d4" strokeWidth={2} dot={false} name="Shares" />
