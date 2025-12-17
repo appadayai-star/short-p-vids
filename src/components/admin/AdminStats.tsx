@@ -83,6 +83,15 @@ interface Stats {
   returnRate24h: number;
   returnRate7d: number;
   
+  // Repeat Exposure
+  repeatExposure?: {
+    rate7d: number;
+    perSessionRate: number;
+    totalImpressions: number;
+    repeatImpressions: number;
+    perSessionRepeats: number;
+  };
+  
   // Growth
   signups: number;
   dau: number;
@@ -625,6 +634,46 @@ export const AdminStats = () => {
           icon={RefreshCw}
           color="text-lime-500"
           bgColor="bg-lime-500/10"
+          loading={loading}
+        />
+      </MetricSection>
+
+      {/* Repeat Exposure (Feed Quality) */}
+      <MetricSection title="Repeat Exposure (Feed Quality)">
+        <StatCard
+          title="7-Day Repeat Rate"
+          value={`${stats?.repeatExposure?.rate7d ?? 0}%`}
+          subtitle="% impressions of already-seen videos (7d)"
+          icon={RefreshCw}
+          color="text-amber-500"
+          bgColor="bg-amber-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Per-Session Repeat Rate"
+          value={`${stats?.repeatExposure?.perSessionRate ?? 0}%`}
+          subtitle="% impressions repeated in same session"
+          icon={RefreshCw}
+          color="text-orange-500"
+          bgColor="bg-orange-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Repeat Impressions"
+          value={stats?.repeatExposure?.repeatImpressions ?? 0}
+          subtitle={`of ${stats?.repeatExposure?.totalImpressions ?? 0} total`}
+          icon={Eye}
+          color="text-red-500"
+          bgColor="bg-red-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Per-Session Repeats"
+          value={stats?.repeatExposure?.perSessionRepeats ?? 0}
+          subtitle="same video shown twice in session"
+          icon={Eye}
+          color="text-rose-500"
+          bgColor="bg-rose-500/10"
           loading={loading}
         />
       </MetricSection>
