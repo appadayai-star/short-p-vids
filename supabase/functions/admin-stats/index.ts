@@ -88,10 +88,11 @@ Deno.serve(async (req) => {
       dateFilter(serviceClient.from("likes").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("saved_videos").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("videos").select("id", { count: "exact", head: true }), "created_at"),
-      // Unique viewers (distinct user_id + session_id combinations)
-      dateFilter(serviceClient.from("video_views").select("user_id, session_id"), "viewed_at"),
+      // Unique viewers (distinct user_id + session_id combinations) - need high limit to get all
+      dateFilter(serviceClient.from("video_views").select("user_id, session_id"), "viewed_at").limit(100000),
       // All views for session, watch time, and repeat views calculations (includes video_id)
-      dateFilter(serviceClient.from("video_views").select("user_id, session_id, video_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at"),
+      // CRITICAL: Must set high limit to override Supabase's default 1000 row limit
+      dateFilter(serviceClient.from("video_views").select("user_id, session_id, video_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at").limit(100000),
       // Shares
       dateFilter(serviceClient.from("shares").select("id", { count: "exact", head: true }), "created_at"),
       // Profile views
@@ -99,6 +100,9 @@ Deno.serve(async (req) => {
       // Follows
       dateFilter(serviceClient.from("follows").select("id", { count: "exact", head: true }), "created_at"),
     ]);
+    
+    // DEBUG: Log row counts to verify we're getting all data
+    console.log(`Fetched ${(allViewsForSession.data || []).length} views for session analysis`);
 
     // Calculate unique viewers (user_id or session_id)
     const uniqueViewerSet = new Set<string>();
@@ -121,6 +125,8 @@ Deno.serve(async (req) => {
     // Watch time metrics
     let totalWatchTimeSeconds = 0;
     let viewsWithWatchTime = 0;
+    let viewsWithSession = 0; // Real users (have session_id)
+    let viewsWithoutSession = 0; // Likely bots (no session_id)
     let completion25 = 0, completion50 = 0, completion75 = 0, completion95 = 0;
     const ttffValues: number[] = [];
     
@@ -128,6 +134,13 @@ Deno.serve(async (req) => {
       const userId = v.user_id || v.session_id || 'anon_' + sessionCounter++;
       const timestamp = new Date(v.viewed_at).getTime();
       const duration = v.watch_duration_seconds || 0;
+      
+      // Track bot vs real user views
+      if (v.session_id) {
+        viewsWithSession++;
+      } else {
+        viewsWithoutSession++;
+      }
       
       // Track watch time
       if (duration > 0) {
@@ -554,6 +567,15 @@ Deno.serve(async (req) => {
       // Creator supply
       uploads: uploadsResult.count || 0,
       activeCreators: activeCreators || 0,
+      
+      // DEBUG: View quality breakdown (temporary diagnostic)
+      viewQuality: {
+        totalProcessed: sortedViews.length,
+        withSession: viewsWithSession,  // Real users
+        withoutSession: viewsWithoutSession,  // Likely bots
+        withWatchDuration: viewsWithWatchTime,  // Actively watched
+        botPercentage: sortedViews.length > 0 ? Math.round((viewsWithoutSession / sortedViews.length) * 100) : 0,
+      },
       
       // Trends
       trends: trendData,

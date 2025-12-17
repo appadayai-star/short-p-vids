@@ -8,7 +8,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { 
   Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2, Video, 
   Users, Play, Clock, TrendingUp, TrendingDown, Percent, 
-  RefreshCw, ArrowRight, Upload, Share2, UserCheck, Zap, Timer
+  RefreshCw, ArrowRight, Upload, Share2, UserCheck, Zap, Timer,
+  Bug
 } from "lucide-react";
 import { format, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -104,6 +105,15 @@ interface Stats {
   // Creator supply
   uploads: number;
   activeCreators: number;
+  
+  // DEBUG: View quality breakdown
+  viewQuality?: {
+    totalProcessed: number;
+    withSession: number;
+    withoutSession: number;
+    withWatchDuration: number;
+    botPercentage: number;
+  };
   
   // Trends
   trends: {
@@ -695,6 +705,46 @@ export const AdminStats = () => {
           icon={Video}
           color="text-amber-500"
           bgColor="bg-amber-500/10"
+          loading={loading}
+        />
+      </MetricSection>
+
+      {/* DEBUG: View Quality (temporary diagnostic) */}
+      <MetricSection title="🔍 Debug: View Quality">
+        <StatCard
+          title="Views Processed"
+          value={stats?.viewQuality?.totalProcessed ?? 0}
+          subtitle="from query (max 100k)"
+          icon={Eye}
+          color="text-gray-500"
+          bgColor="bg-gray-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Real User Views"
+          value={stats?.viewQuality?.withSession ?? 0}
+          subtitle="with session_id"
+          icon={Users}
+          color="text-green-500"
+          bgColor="bg-green-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Bot/Crawler Views"
+          value={stats?.viewQuality?.withoutSession ?? 0}
+          subtitle={`${stats?.viewQuality?.botPercentage ?? 0}% of total`}
+          icon={Bug}
+          color="text-red-500"
+          bgColor="bg-red-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Views with Watch Duration"
+          value={stats?.viewQuality?.withWatchDuration ?? 0}
+          subtitle="watch_duration > 0"
+          icon={Clock}
+          color="text-blue-500"
+          bgColor="bg-blue-500/10"
           loading={loading}
         />
       </MetricSection>
