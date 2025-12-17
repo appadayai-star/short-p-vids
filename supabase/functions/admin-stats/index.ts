@@ -344,11 +344,12 @@ Deno.serve(async (req) => {
     const repeatViewRate7d = repeatViewsTotal > 0 ? (repeatViewsCount / repeatViewsTotal) * 100 : 0;
     const perSessionRepeatRate = repeatViewsTotal > 0 ? (perSessionRepeatCount / repeatViewsTotal) * 100 : 0;
 
-    // Active creators (uploaded in last 7 days)
-    const { count: activeCreators } = await serviceClient
+    // Active creators (unique users who uploaded in last 7 days)
+    const { data: creatorData } = await serviceClient
       .from("videos")
-      .select("user_id", { count: "exact", head: true })
+      .select("user_id")
       .gte("created_at", sevenDaysAgo.toISOString());
+    const activeCreators = new Set((creatorData || []).map((v: any) => v.user_id)).size;
 
     // SIGNUP HEALTH CHECK
     // Compare auth.users vs profiles in last 7 days to detect RLS issues or trigger failures
