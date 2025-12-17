@@ -106,13 +106,22 @@ interface Stats {
   uploads: number;
   activeCreators: number;
   
-  // DEBUG: View quality breakdown
-  viewQuality?: {
-    totalProcessed: number;
-    withSession: number;
-    withoutSession: number;
+  // Sessions
+  totalSessions?: number;
+  
+  // DEBUG: Data quality counters
+  dataQuality?: {
+    totalRows: number;
+    withViewerId: number;
+    withoutViewerId: number;
+    viewerIdMissingPct: number;
+    withSessionId: number;
+    withoutSessionId: number;
+    sessionIdMissingPct: number;
     withWatchDuration: number;
-    botPercentage: number;
+    withZeroWatchDuration: number;
+    withNullWatchDuration: number;
+    watchDurationMissingPct: number;
   };
   
   // Trends
@@ -709,11 +718,20 @@ export const AdminStats = () => {
         />
       </MetricSection>
 
-      {/* DEBUG: View Quality (temporary diagnostic) */}
-      <MetricSection title="🔍 Debug: View Quality">
+      {/* DEBUG: Data Quality Counters */}
+      <MetricSection title="🔍 Debug: Data Quality">
         <StatCard
-          title="Views Processed"
-          value={stats?.viewQuality?.totalProcessed ?? 0}
+          title="Total Sessions"
+          value={stats?.totalSessions ?? 0}
+          subtitle="DISTINCT session_id"
+          icon={Users}
+          color="text-blue-500"
+          bgColor="bg-blue-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Rows Analyzed"
+          value={stats?.dataQuality?.totalRows ?? 0}
           subtitle="from query (max 100k)"
           icon={Eye}
           color="text-gray-500"
@@ -721,30 +739,39 @@ export const AdminStats = () => {
           loading={loading}
         />
         <StatCard
-          title="Real User Views"
-          value={stats?.viewQuality?.withSession ?? 0}
-          subtitle="with session_id"
-          icon={Users}
-          color="text-green-500"
-          bgColor="bg-green-500/10"
-          loading={loading}
-        />
-        <StatCard
-          title="Bot/Crawler Views"
-          value={stats?.viewQuality?.withoutSession ?? 0}
-          subtitle={`${stats?.viewQuality?.botPercentage ?? 0}% of total`}
+          title="Missing viewer_id"
+          value={stats?.dataQuality?.withoutViewerId ?? 0}
+          subtitle={`${stats?.dataQuality?.viewerIdMissingPct ?? 0}% of rows`}
           icon={Bug}
-          color="text-red-500"
-          bgColor="bg-red-500/10"
+          color={stats?.dataQuality?.viewerIdMissingPct && stats.dataQuality.viewerIdMissingPct > 5 ? "text-red-500" : "text-green-500"}
+          bgColor={stats?.dataQuality?.viewerIdMissingPct && stats.dataQuality.viewerIdMissingPct > 5 ? "bg-red-500/10" : "bg-green-500/10"}
           loading={loading}
         />
         <StatCard
-          title="Views with Watch Duration"
-          value={stats?.viewQuality?.withWatchDuration ?? 0}
-          subtitle="watch_duration > 0"
+          title="Missing session_id"
+          value={stats?.dataQuality?.withoutSessionId ?? 0}
+          subtitle={`${stats?.dataQuality?.sessionIdMissingPct ?? 0}% of rows`}
+          icon={Bug}
+          color={stats?.dataQuality?.sessionIdMissingPct && stats.dataQuality.sessionIdMissingPct > 5 ? "text-red-500" : "text-green-500"}
+          bgColor={stats?.dataQuality?.sessionIdMissingPct && stats.dataQuality.sessionIdMissingPct > 5 ? "bg-red-500/10" : "bg-green-500/10"}
+          loading={loading}
+        />
+        <StatCard
+          title="With Watch Duration"
+          value={stats?.dataQuality?.withWatchDuration ?? 0}
+          subtitle={`${100 - (stats?.dataQuality?.watchDurationMissingPct ?? 0)}% of rows`}
           icon={Clock}
           color="text-blue-500"
           bgColor="bg-blue-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Missing Watch Duration"
+          value={(stats?.dataQuality?.withZeroWatchDuration ?? 0) + (stats?.dataQuality?.withNullWatchDuration ?? 0)}
+          subtitle={`${stats?.dataQuality?.watchDurationMissingPct ?? 0}% (0 or null)`}
+          icon={Bug}
+          color={stats?.dataQuality?.watchDurationMissingPct && stats.dataQuality.watchDurationMissingPct > 50 ? "text-amber-500" : "text-green-500"}
+          bgColor={stats?.dataQuality?.watchDurationMissingPct && stats.dataQuality.watchDurationMissingPct > 50 ? "bg-amber-500/10" : "bg-green-500/10"}
           loading={loading}
         />
       </MetricSection>
