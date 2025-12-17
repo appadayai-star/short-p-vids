@@ -1,12 +1,29 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
-// Session ID logic: a session is a continuous viewing period
-// Sessions expire after 30 minutes of inactivity (matches backend definition)
-const SESSION_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
+// Session expiry: 30 minutes of inactivity
+const SESSION_EXPIRY_MS = 30 * 60 * 1000;
 
+// Get or create PERSISTENT anonymous ID (never expires)
+// This identifies the unique visitor across all sessions
+const getOrCreateAnonymousId = (): string => {
+  const key = 'anonymous_viewer_id_v1';
+  let anonymousId = localStorage.getItem(key);
+  
+  if (!anonymousId) {
+    // Generate UUID-like ID
+    anonymousId = crypto.randomUUID ? crypto.randomUUID() : 
+      `anon_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    localStorage.setItem(key, anonymousId);
+  }
+  
+  return anonymousId;
+};
+
+// Get or create session ID (expires after 30 min inactivity)
+// This groups views into "sessions" for session-based analytics
 const getOrCreateSessionId = (): string => {
-  const key = 'video_session_v1';
+  const key = 'video_session_v2';
   const lastActivityKey = 'video_session_last_activity';
   
   const now = Date.now();
@@ -15,14 +32,15 @@ const getOrCreateSessionId = (): string => {
   
   // If session expired or doesn't exist, create new one
   if (!sessionId || (now - lastActivity) > SESSION_EXPIRY_MS) {
-    sessionId = `session_${now}_${Math.random().toString(36).substring(2, 11)}`;
+    sessionId = crypto.randomUUID ? crypto.randomUUID() : 
+      `sess_${now}_${Math.random().toString(36).substring(2, 15)}`;
     localStorage.setItem(key, sessionId);
-    // Reset session video count on new session
+    // Reset session-level counters
     localStorage.setItem('session_video_count', '0');
     localStorage.setItem('session_max_scroll_depth', '0');
   }
   
-  // Update last activity
+  // Update last activity timestamp
   localStorage.setItem(lastActivityKey, now.toString());
   
   return sessionId;
@@ -45,8 +63,9 @@ const updateScrollDepth = (index: number): void => {
 
 interface WatchMetrics {
   videoId: string;
-  userId: string | null;
-  sessionId: string;
+  viewerId: string; // auth.user.id OR anonymous_id (ALWAYS filled)
+  sessionId: string; // ALWAYS filled
+  authUserId: string | null; // Only filled for logged-in users
   watchDurationSeconds: number;
   videoDurationSeconds: number | null;
   watchCompletionPercent: number | null;
@@ -55,7 +74,7 @@ interface WatchMetrics {
 
 interface UseWatchMetricsProps {
   videoId: string;
-  userId: string | null;
+  userId: string | null; // auth.user.id (null if not logged in)
   isActive: boolean;
   videoRef: React.RefObject<HTMLVideoElement>;
   videoIndex?: number;
@@ -84,6 +103,9 @@ export const useWatchMetrics = ({
   // View recording
   const hasRecordedViewRef = useRef(false);
   const lastVideoIdRef = useRef<string>(videoId);
+  
+  // Store metrics for pagehide event
+  const pendingMetricsRef = useRef<WatchMetrics | null>(null);
 
   // Reset when video changes
   useEffect(() => {
@@ -96,6 +118,7 @@ export const useWatchMetrics = ({
       lastTimeUpdateRef.current = 0;
       lastVideoTimeRef.current = 0;
       lastVideoIdRef.current = videoId;
+      pendingMetricsRef.current = null;
     }
   }, [videoId]);
 
@@ -143,7 +166,6 @@ export const useWatchMetrics = ({
     };
 
     // Timeupdate: accumulate watch time using video time deltas
-    // This is more accurate than wall-clock time and handles seeking/looping
     const handleTimeUpdate = () => {
       if (!isActivelyPlayingRef.current) return;
       
@@ -151,7 +173,6 @@ export const useWatchMetrics = ({
       const timeDelta = currentVideoTime - lastVideoTimeRef.current;
       
       // Only count forward progress (ignore seeks backward, loops)
-      // Accept small positive deltas (normal playback) up to 1 second
       if (timeDelta > 0 && timeDelta < 1) {
         totalWatchTimeRef.current += timeDelta;
       }
@@ -159,9 +180,8 @@ export const useWatchMetrics = ({
       lastVideoTimeRef.current = currentVideoTime;
     };
 
-    // Loop: video looped - don't double count, just continue from 0
+    // Seek/loop: reset video time reference
     const handleSeeked = () => {
-      // Reset video time reference after seek/loop
       lastVideoTimeRef.current = videoEl.currentTime;
     };
 
@@ -197,10 +217,15 @@ export const useWatchMetrics = ({
     };
   }, [videoRef]);
 
-  // Get current metrics
+  // Get current metrics - ALWAYS includes viewer_id and session_id
   const getMetrics = useCallback((): WatchMetrics => {
     const videoEl = videoRef.current;
     const watchedSeconds = totalWatchTimeRef.current;
+    
+    // Get identifiers - these are ALWAYS filled
+    const anonymousId = getOrCreateAnonymousId();
+    const sessionId = getOrCreateSessionId();
+    const viewerId = userId || anonymousId; // Prefer auth user, fall back to anonymous
 
     const videoDuration = videoEl?.duration && !isNaN(videoEl.duration) && isFinite(videoEl.duration) 
       ? videoEl.duration 
@@ -209,14 +234,14 @@ export const useWatchMetrics = ({
     let completionPercent: number | null = null;
     
     if (videoDuration && videoDuration > 0 && watchedSeconds > 0) {
-      // Cap at 100% - no double counting for loops
       completionPercent = Math.min(100, Math.round((watchedSeconds / videoDuration) * 100));
     }
 
     return {
       videoId,
-      userId,
-      sessionId: getOrCreateSessionId(),
+      viewerId,
+      sessionId,
+      authUserId: userId,
       watchDurationSeconds: Math.round(watchedSeconds),
       videoDurationSeconds: videoDuration ? Math.round(videoDuration) : null,
       watchCompletionPercent: completionPercent,
@@ -226,26 +251,27 @@ export const useWatchMetrics = ({
 
   // Send metrics to database
   const sendMetrics = useCallback(async () => {
-    // Don't record the same view twice
     if (hasRecordedViewRef.current) return;
     
     const metrics = getMetrics();
     
-    // Only send if we have meaningful data (watched something or have TTFF)
+    // Only send if watched > 0s OR have TTFF (minimum meaningful data)
     if (metrics.watchDurationSeconds <= 0 && metrics.timeToFirstFrameMs === null) {
       return;
     }
 
     hasRecordedViewRef.current = true;
+    pendingMetricsRef.current = null;
     
-    // Increment session video count
     incrementSessionVideoCount();
 
     try {
+      // Store viewer_id in user_id column (works for both auth and anonymous)
+      // Store session_id ALWAYS
       await supabase.from('video_views').insert({
         video_id: metrics.videoId,
-        user_id: metrics.userId,
-        session_id: metrics.sessionId,
+        user_id: metrics.viewerId, // Always filled: auth.user.id OR anonymous_id
+        session_id: metrics.sessionId, // Always filled
         watch_duration_seconds: metrics.watchDurationSeconds,
         video_duration_seconds: metrics.videoDurationSeconds,
         watch_completion_percent: metrics.watchCompletionPercent,
@@ -257,6 +283,8 @@ export const useWatchMetrics = ({
       if (import.meta.env.DEV) {
         console.log('[Metrics] View recorded:', {
           videoId: metrics.videoId,
+          viewerId: metrics.viewerId,
+          sessionId: metrics.sessionId,
           ttff: metrics.timeToFirstFrameMs,
           watchDuration: metrics.watchDurationSeconds,
           completion: metrics.watchCompletionPercent,
@@ -264,10 +292,69 @@ export const useWatchMetrics = ({
       }
     } catch (error) {
       console.error('[Metrics] Failed to record view:', error);
-      // Reset so we can try again
       hasRecordedViewRef.current = false;
     }
   }, [getMetrics, onViewRecorded]);
+
+  // Beacon-based send for pagehide (best effort)
+  const sendMetricsBeacon = useCallback(() => {
+    if (hasRecordedViewRef.current) return;
+    
+    const metrics = getMetrics();
+    if (metrics.watchDurationSeconds <= 0 && metrics.timeToFirstFrameMs === null) {
+      return;
+    }
+    
+    hasRecordedViewRef.current = true;
+
+    // Use sendBeacon for reliability during page unload
+    const payload = JSON.stringify({
+      video_id: metrics.videoId,
+      user_id: metrics.viewerId,
+      session_id: metrics.sessionId,
+      watch_duration_seconds: metrics.watchDurationSeconds,
+      video_duration_seconds: metrics.videoDurationSeconds,
+      watch_completion_percent: metrics.watchCompletionPercent,
+      time_to_first_frame_ms: metrics.timeToFirstFrameMs,
+    });
+
+    // Try sendBeacon first (most reliable for unload)
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/video_views`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      'Prefer': 'return=minimal',
+    };
+
+    // Create a Blob for sendBeacon
+    const blob = new Blob([payload], { type: 'application/json' });
+    
+    // Try navigator.sendBeacon (works during unload)
+    if (navigator.sendBeacon) {
+      // sendBeacon doesn't support custom headers, so use fetch with keepalive
+      fetch(url, {
+        method: 'POST',
+        headers,
+        body: payload,
+        keepalive: true,
+      }).catch(() => {
+        // Silent fail - best effort
+      });
+    } else {
+      // Fallback to fetch with keepalive
+      fetch(url, {
+        method: 'POST',
+        headers,
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    }
+    
+    if (import.meta.env.DEV) {
+      console.log('[Metrics] Beacon sent on pagehide:', metrics.videoId);
+    }
+  }, [getMetrics]);
 
   // Stop watching helper
   const stopWatching = useCallback(() => {
@@ -282,23 +369,56 @@ export const useWatchMetrics = ({
     }
   }, [isActive, stopWatching, sendMetrics]);
 
+  // Handle pagehide event (tab close, navigation, etc.)
+  useEffect(() => {
+    const handlePageHide = () => {
+      if (!hasRecordedViewRef.current && totalWatchTimeRef.current > 0) {
+        isActivelyPlayingRef.current = false;
+        sendMetricsBeacon();
+      }
+    };
+
+    // pagehide is more reliable than beforeunload for mobile
+    window.addEventListener('pagehide', handlePageHide);
+    
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [sendMetricsBeacon]);
+
   // Send metrics on unmount
   useEffect(() => {
     return () => {
       isActivelyPlayingRef.current = false;
       if (!hasRecordedViewRef.current && totalWatchTimeRef.current > 0) {
-        // Fire and forget on unmount
-        const metrics = getMetrics();
-        if (metrics.watchDurationSeconds > 0 || metrics.timeToFirstFrameMs !== null) {
+        // Get metrics synchronously before unmount
+        const videoEl = videoRef.current;
+        const watchedSeconds = totalWatchTimeRef.current;
+        const anonymousId = getOrCreateAnonymousId();
+        const sessionId = getOrCreateSessionId();
+        const viewerId = userId || anonymousId;
+        
+        const videoDuration = videoEl?.duration && !isNaN(videoEl.duration) && isFinite(videoEl.duration) 
+          ? videoEl.duration 
+          : null;
+        
+        let completionPercent: number | null = null;
+        if (videoDuration && videoDuration > 0 && watchedSeconds > 0) {
+          completionPercent = Math.min(100, Math.round((watchedSeconds / videoDuration) * 100));
+        }
+        
+        if (Math.round(watchedSeconds) > 0 || ttffRef.current !== null) {
           incrementSessionVideoCount();
+          
+          // Fire and forget on unmount
           supabase.from('video_views').insert({
-            video_id: metrics.videoId,
-            user_id: metrics.userId,
-            session_id: metrics.sessionId,
-            watch_duration_seconds: metrics.watchDurationSeconds,
-            video_duration_seconds: metrics.videoDurationSeconds,
-            watch_completion_percent: metrics.watchCompletionPercent,
-            time_to_first_frame_ms: metrics.timeToFirstFrameMs,
+            video_id: videoId,
+            user_id: viewerId,
+            session_id: sessionId,
+            watch_duration_seconds: Math.round(watchedSeconds),
+            video_duration_seconds: videoDuration ? Math.round(videoDuration) : null,
+            watch_completion_percent: completionPercent,
+            time_to_first_frame_ms: ttffRef.current,
           }).then(() => {
             if (import.meta.env.DEV) {
               console.log('[Metrics] View recorded on unmount');
@@ -307,7 +427,7 @@ export const useWatchMetrics = ({
         }
       }
     };
-  }, []);
+  }, [videoId, userId]);
 
   return {
     markLoadStart,
