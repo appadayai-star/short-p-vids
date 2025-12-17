@@ -178,14 +178,35 @@ Deno.serve(async (req) => {
       ? ttffValues[Math.floor(ttffValues.length * 0.95)] 
       : 0;
 
-    // Calculate averages
+    // Calculate averages and percentiles for session metrics
     const sessionCount = viewsBySession.size || 1;
-    const totalVideosWatched = Array.from(viewsBySession.values()).reduce((sum, s) => sum + s.views, 0);
+    const sessionsArray = Array.from(viewsBySession.values());
+    const videosPerSessionArray = sessionsArray.map(s => s.views).sort((a, b) => a - b);
+    
+    // Videos per session stats
+    const totalVideosWatched = videosPerSessionArray.reduce((sum, v) => sum + v, 0);
     const avgVideosPerSession = totalVideosWatched / sessionCount;
+    
+    // Median videos per session
+    const medianVideosPerSession = videosPerSessionArray.length > 0 
+      ? videosPerSessionArray[Math.floor(videosPerSessionArray.length / 2)] 
+      : 0;
+    
+    // P90 videos per session
+    const p90VideosPerSession = videosPerSessionArray.length > 0 
+      ? videosPerSessionArray[Math.floor(videosPerSessionArray.length * 0.90)] 
+      : 0;
+    
+    // Scroll depth (max video index reached per session) - using views as proxy
+    // Each session's views count represents scroll depth (how many videos they scrolled through)
+    const scrollDepthArray = videosPerSessionArray; // Same as videos per session
+    const avgScrollDepth = avgVideosPerSession;
+    const medianScrollDepth = medianVideosPerSession;
+    const p90ScrollDepth = p90VideosPerSession;
 
     // Average session duration (last - first timestamp per session)
     let totalSessionDuration = 0;
-    viewsBySession.forEach((session) => {
+    sessionsArray.forEach((session) => {
       if (session.timestamps.length > 1) {
         const duration = Math.max(...session.timestamps) - Math.min(...session.timestamps);
         // Add estimated watch time for last video (avg of their watch durations)
@@ -213,7 +234,7 @@ Deno.serve(async (req) => {
     const saveRate = (totalSaves / totalViews) * 100;
 
     // Scroll continuation rate (views > 1 per session / total sessions)
-    const sessionsWithMultipleViews = Array.from(viewsBySession.values()).filter(s => s.views > 1).length;
+    const sessionsWithMultipleViews = sessionsArray.filter(s => s.views > 1).length;
     const scrollContinuationRate = (sessionsWithMultipleViews / sessionCount) * 100;
 
     // Return rate calculations
@@ -383,7 +404,18 @@ Deno.serve(async (req) => {
       // Core usage
       views: viewsResult.count || 0,
       uniqueViewers,
-      avgVideosPerSession: Math.round(avgVideosPerSession * 10) / 10,
+      // Session behavior (NEW)
+      videosPerSession: {
+        avg: Math.round(avgVideosPerSession * 10) / 10,
+        median: medianVideosPerSession,
+        p90: p90VideosPerSession,
+      },
+      scrollDepth: {
+        avg: Math.round(avgScrollDepth * 10) / 10,
+        median: medianScrollDepth,
+        p90: p90ScrollDepth,
+      },
+      avgVideosPerSession: Math.round(avgVideosPerSession * 10) / 10, // Keep for backward compat
       avgSessionDuration: `${avgSessionDurationMinutes}m ${avgSessionDurationSeconds}s`,
       avgSessionDurationMs,
       
