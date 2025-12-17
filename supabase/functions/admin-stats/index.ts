@@ -296,6 +296,65 @@ Deno.serve(async (req) => {
 
     const dauMauRatio = mau > 0 ? (dau / mau) * 100 : 0;
 
+    // Repeat Exposure Rate
+    // Definition: % of feed impressions that are videos the user already saw in last 7 days
+    // Plus per-session repeats (same video viewed multiple times in one session)
+    
+    // Group views by user to calculate repeat exposure
+    const userVideoViews = new Map<string, Map<string, { count: number; firstSeen: number }>>();
+    let totalImpressions = 0;
+    let repeatImpressions = 0;
+    let perSessionRepeats = 0;
+    
+    // Track per-session repeats
+    const sessionVideoViews = new Map<string, Set<string>>();
+    
+    sortedViews.forEach((v: any) => {
+      const userId = v.user_id || v.session_id || 'anonymous';
+      const videoId = v.video_id;
+      const timestamp = new Date(v.viewed_at).getTime();
+      const sessionKey = userLastSession.get(userId)?.sessionKey || userId;
+      
+      if (!videoId) return;
+      
+      totalImpressions++;
+      
+      // Check for 7-day repeat
+      if (!userVideoViews.has(userId)) {
+        userVideoViews.set(userId, new Map());
+      }
+      const userVideos = userVideoViews.get(userId)!;
+      
+      if (userVideos.has(videoId)) {
+        const firstSeen = userVideos.get(videoId)!.firstSeen;
+        // If seen within last 7 days, it's a repeat
+        if (timestamp - firstSeen < 7 * 24 * 60 * 60 * 1000) {
+          repeatImpressions++;
+        }
+        userVideos.get(videoId)!.count++;
+      } else {
+        userVideos.set(videoId, { count: 1, firstSeen: timestamp });
+      }
+      
+      // Check for per-session repeat
+      if (!sessionVideoViews.has(sessionKey)) {
+        sessionVideoViews.set(sessionKey, new Set());
+      }
+      const sessionVideos = sessionVideoViews.get(sessionKey)!;
+      if (sessionVideos.has(videoId)) {
+        perSessionRepeats++;
+      } else {
+        sessionVideos.add(videoId);
+      }
+    });
+    
+    const repeatExposureRate7d = totalImpressions > 0 
+      ? (repeatImpressions / totalImpressions) * 100 
+      : 0;
+    const perSessionRepeatRate = totalImpressions > 0 
+      ? (perSessionRepeats / totalImpressions) * 100 
+      : 0;
+
     // Active creators (uploaded in last 7 days)
     const { count: activeCreators } = await serviceClient
       .from("videos")
@@ -456,6 +515,15 @@ Deno.serve(async (req) => {
       scrollContinuationRate: Math.round(scrollContinuationRate * 100) / 100,
       returnRate24h: Math.round(returnRate24h * 100) / 100,
       returnRate7d: Math.round(returnRate7d * 100) / 100,
+      
+      // Repeat Exposure
+      repeatExposure: {
+        rate7d: Math.round(repeatExposureRate7d * 100) / 100,
+        perSessionRate: Math.round(perSessionRepeatRate * 100) / 100,
+        totalImpressions,
+        repeatImpressions,
+        perSessionRepeats,
+      },
       
       // Growth
       signups: signupsResult.count || 0,
