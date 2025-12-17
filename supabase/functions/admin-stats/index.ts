@@ -59,108 +59,293 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
+    const isLifetime = url.searchParams.get("lifetime") === "true";
 
-    if (!startDate || !endDate) {
-      return new Response(JSON.stringify({ error: "startDate and endDate are required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    console.log(`Fetching stats ${isLifetime ? "lifetime" : `from ${startDate} to ${endDate}`}`);
 
-    console.log(`Fetching stats from ${startDate} to ${endDate}`);
+    // Build date filters
+    const dateFilter = (query: any, dateCol: string) => {
+      if (isLifetime) return query;
+      return query.gte(dateCol, startDate).lte(dateCol, endDate);
+    };
 
-    // Get totals using service client for full access
-    const [viewsResult, signupsResult, likesResult, savesResult, uploadsResult] = await Promise.all([
-      serviceClient
-        .from("video_views")
-        .select("id", { count: "exact", head: true })
-        .gte("viewed_at", startDate)
-        .lte("viewed_at", endDate),
-      serviceClient
-        .from("profiles")
-        .select("id", { count: "exact", head: true })
-        .gte("created_at", startDate)
-        .lte("created_at", endDate),
-      serviceClient
-        .from("likes")
-        .select("id", { count: "exact", head: true })
-        .gte("created_at", startDate)
-        .lte("created_at", endDate),
-      serviceClient
-        .from("saved_videos")
-        .select("id", { count: "exact", head: true })
-        .gte("created_at", startDate)
-        .lte("created_at", endDate),
-      serviceClient
-        .from("videos")
-        .select("id", { count: "exact", head: true })
-        .gte("created_at", startDate)
-        .lte("created_at", endDate),
+    // Get all-time totals for lifetime stats
+    const [
+      viewsResult,
+      signupsResult,
+      likesResult,
+      savesResult,
+      uploadsResult,
+      uniqueViewersResult,
+      allViewsForSession,
+    ] = await Promise.all([
+      dateFilter(serviceClient.from("video_views").select("id", { count: "exact", head: true }), "viewed_at"),
+      dateFilter(serviceClient.from("profiles").select("id", { count: "exact", head: true }), "created_at"),
+      dateFilter(serviceClient.from("likes").select("id", { count: "exact", head: true }), "created_at"),
+      dateFilter(serviceClient.from("saved_videos").select("id", { count: "exact", head: true }), "created_at"),
+      dateFilter(serviceClient.from("videos").select("id", { count: "exact", head: true }), "created_at"),
+      // Unique viewers (distinct user_id + session_id combinations)
+      dateFilter(serviceClient.from("video_views").select("user_id, session_id"), "viewed_at"),
+      // All views for session calculations
+      dateFilter(serviceClient.from("video_views").select("user_id, session_id, viewed_at, watch_duration_seconds"), "viewed_at"),
     ]);
 
-    // Build daily array by querying counts for each day
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const daily: { date: string; views: number; signups: number; likes: number; saves: number; uploads: number }[] = [];
+    // Calculate unique viewers (user_id or session_id)
+    const uniqueViewerSet = new Set<string>();
+    (uniqueViewersResult.data || []).forEach((v: any) => {
+      const key = v.user_id || v.session_id || 'anonymous';
+      uniqueViewerSet.add(key);
+    });
+    const uniqueViewers = uniqueViewerSet.size;
+
+    // Calculate session-based metrics
+    // Group views by session (user_id + session_id combo, or infer from 30-min gaps)
+    const viewsBySession = new Map<string, { views: number; timestamps: number[]; durations: number[] }>();
+    const sortedViews = (allViewsForSession.data || []).sort((a: any, b: any) => 
+      new Date(a.viewed_at).getTime() - new Date(b.viewed_at).getTime()
+    );
     
-    // Generate list of days in range
-    const days: string[] = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      days.push(d.toISOString().split("T")[0]);
-    }
-
-    // Fetch daily counts for each day in parallel
-    const dailyPromises = days.map(async (dateStr) => {
-      const dayStart = `${dateStr}T00:00:00.000Z`;
-      const dayEnd = `${dateStr}T23:59:59.999Z`;
-
-      const [views, signups, likes, saves, uploads] = await Promise.all([
-        serviceClient
-          .from("video_views")
-          .select("id", { count: "exact", head: true })
-          .gte("viewed_at", dayStart)
-          .lte("viewed_at", dayEnd),
-        serviceClient
-          .from("profiles")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", dayStart)
-          .lte("created_at", dayEnd),
-        serviceClient
-          .from("likes")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", dayStart)
-          .lte("created_at", dayEnd),
-        serviceClient
-          .from("saved_videos")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", dayStart)
-          .lte("created_at", dayEnd),
-        serviceClient
-          .from("videos")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", dayStart)
-          .lte("created_at", dayEnd),
-      ]);
-
-      return {
-        date: dateStr,
-        views: views.count || 0,
-        signups: signups.count || 0,
-        likes: likes.count || 0,
-        saves: saves.count || 0,
-        uploads: uploads.count || 0,
-      };
+    let sessionCounter = 0;
+    const userLastSession = new Map<string, { sessionKey: string; lastTimestamp: number }>();
+    
+    sortedViews.forEach((v: any) => {
+      const userId = v.user_id || v.session_id || 'anon_' + sessionCounter++;
+      const timestamp = new Date(v.viewed_at).getTime();
+      const duration = v.watch_duration_seconds || 0;
+      
+      // Check if this is a new session (30-min gap)
+      const lastInfo = userLastSession.get(userId);
+      let sessionKey: string;
+      
+      if (lastInfo && (timestamp - lastInfo.lastTimestamp) < 30 * 60 * 1000) {
+        // Same session
+        sessionKey = lastInfo.sessionKey;
+      } else {
+        // New session
+        sessionKey = `${userId}_${sessionCounter++}`;
+      }
+      
+      userLastSession.set(userId, { sessionKey, lastTimestamp: timestamp });
+      
+      if (!viewsBySession.has(sessionKey)) {
+        viewsBySession.set(sessionKey, { views: 0, timestamps: [], durations: [] });
+      }
+      const session = viewsBySession.get(sessionKey)!;
+      session.views++;
+      session.timestamps.push(timestamp);
+      session.durations.push(duration);
     });
 
-    const dailyResults = await Promise.all(dailyPromises);
-    daily.push(...dailyResults);
+    // Calculate averages
+    const sessionCount = viewsBySession.size || 1;
+    const totalVideosWatched = Array.from(viewsBySession.values()).reduce((sum, s) => sum + s.views, 0);
+    const avgVideosPerSession = totalVideosWatched / sessionCount;
+
+    // Average session duration (last - first timestamp per session)
+    let totalSessionDuration = 0;
+    viewsBySession.forEach((session) => {
+      if (session.timestamps.length > 1) {
+        const duration = Math.max(...session.timestamps) - Math.min(...session.timestamps);
+        // Add estimated watch time for last video (avg of their watch durations)
+        const avgDuration = session.durations.reduce((a, b) => a + b, 0) / session.durations.length;
+        totalSessionDuration += duration + (avgDuration * 1000);
+      } else if (session.durations[0]) {
+        totalSessionDuration += session.durations[0] * 1000;
+      }
+    });
+    const avgSessionDurationMs = sessionCount > 0 ? totalSessionDuration / sessionCount : 0;
+    const avgSessionDurationMinutes = Math.floor(avgSessionDurationMs / 60000);
+    const avgSessionDurationSeconds = Math.floor((avgSessionDurationMs % 60000) / 1000);
+
+    // Engagement metrics
+    const totalViews = viewsResult.count || 1;
+    const totalLikes = likesResult.count || 0;
+    const totalSaves = savesResult.count || 0;
+    const engagementRate = ((totalLikes + totalSaves) / totalViews) * 100;
+    const likeRate = (totalLikes / totalViews) * 100;
+    const saveRate = (totalSaves / totalViews) * 100;
+
+    // Scroll continuation rate (views > 1 per session / total sessions)
+    const sessionsWithMultipleViews = Array.from(viewsBySession.values()).filter(s => s.views > 1).length;
+    const scrollContinuationRate = (sessionsWithMultipleViews / sessionCount) * 100;
+
+    // Return rate calculations
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Get users who viewed before the period and returned
+    const { data: returningUsers24h } = await serviceClient
+      .from("video_views")
+      .select("user_id, session_id, viewed_at")
+      .gte("viewed_at", oneDayAgo.toISOString())
+      .lte("viewed_at", now.toISOString());
+
+    const { data: previousUsers24h } = await serviceClient
+      .from("video_views")
+      .select("user_id, session_id")
+      .lt("viewed_at", oneDayAgo.toISOString())
+      .gte("viewed_at", new Date(oneDayAgo.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
+
+    const previousUserSet24h = new Set((previousUsers24h || []).map((u: any) => u.user_id || u.session_id).filter(Boolean));
+    const returningUserSet24h = new Set((returningUsers24h || []).map((u: any) => u.user_id || u.session_id).filter(Boolean));
+    const returnedCount24h = Array.from(returningUserSet24h).filter(u => previousUserSet24h.has(u)).length;
+    const returnRate24h = previousUserSet24h.size > 0 ? (returnedCount24h / previousUserSet24h.size) * 100 : 0;
+
+    // 7-day return rate
+    const { data: returningUsers7d } = await serviceClient
+      .from("video_views")
+      .select("user_id, session_id")
+      .gte("viewed_at", sevenDaysAgo.toISOString())
+      .lte("viewed_at", now.toISOString());
+
+    const { data: previousUsers7d } = await serviceClient
+      .from("video_views")
+      .select("user_id, session_id")
+      .lt("viewed_at", sevenDaysAgo.toISOString())
+      .gte("viewed_at", thirtyDaysAgo.toISOString());
+
+    const previousUserSet7d = new Set((previousUsers7d || []).map((u: any) => u.user_id || u.session_id).filter(Boolean));
+    const returningUserSet7d = new Set((returningUsers7d || []).map((u: any) => u.user_id || u.session_id).filter(Boolean));
+    const returnedCount7d = Array.from(returningUserSet7d).filter(u => previousUserSet7d.has(u)).length;
+    const returnRate7d = previousUserSet7d.size > 0 ? (returnedCount7d / previousUserSet7d.size) * 100 : 0;
+
+    // DAU / MAU
+    const { data: dauData } = await serviceClient
+      .from("video_views")
+      .select("user_id, session_id")
+      .gte("viewed_at", oneDayAgo.toISOString());
+    const dauSet = new Set((dauData || []).map((u: any) => u.user_id || u.session_id).filter(Boolean));
+    const dau = dauSet.size;
+
+    const { data: mauData } = await serviceClient
+      .from("video_views")
+      .select("user_id, session_id")
+      .gte("viewed_at", thirtyDaysAgo.toISOString());
+    const mauSet = new Set((mauData || []).map((u: any) => u.user_id || u.session_id).filter(Boolean));
+    const mau = mauSet.size;
+
+    const dauMauRatio = mau > 0 ? (dau / mau) * 100 : 0;
+
+    // Active creators (uploaded in last 7 days)
+    const { count: activeCreators } = await serviceClient
+      .from("videos")
+      .select("user_id", { count: "exact", head: true })
+      .gte("created_at", sevenDaysAgo.toISOString());
+
+    // Get comparison period stats for trends
+    let trendData = null;
+    if (!isLifetime && startDate && endDate) {
+      const startMs = new Date(startDate).getTime();
+      const endMs = new Date(endDate).getTime();
+      const periodMs = endMs - startMs;
+      const prevStartDate = new Date(startMs - periodMs).toISOString();
+      const prevEndDate = new Date(startMs).toISOString();
+
+      const [prevViews, prevLikes, prevSaves, prevSignups, prevUploads] = await Promise.all([
+        serviceClient.from("video_views").select("id", { count: "exact", head: true })
+          .gte("viewed_at", prevStartDate).lt("viewed_at", prevEndDate),
+        serviceClient.from("likes").select("id", { count: "exact", head: true })
+          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+        serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
+          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+        serviceClient.from("profiles").select("id", { count: "exact", head: true })
+          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+        serviceClient.from("videos").select("id", { count: "exact", head: true })
+          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+      ]);
+
+      const calcTrend = (current: number, previous: number) => {
+        if (previous === 0) return current > 0 ? 100 : 0;
+        return ((current - previous) / previous) * 100;
+      };
+
+      trendData = {
+        views: calcTrend(viewsResult.count || 0, prevViews.count || 0),
+        likes: calcTrend(likesResult.count || 0, prevLikes.count || 0),
+        saves: calcTrend(savesResult.count || 0, prevSaves.count || 0),
+        signups: calcTrend(signupsResult.count || 0, prevSignups.count || 0),
+        uploads: calcTrend(uploadsResult.count || 0, prevUploads.count || 0),
+      };
+    }
+
+    // Build daily array (skip for lifetime)
+    const daily: { date: string; views: number; signups: number; likes: number; saves: number; uploads: number }[] = [];
+    
+    if (!isLifetime && startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const days: string[] = [];
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        days.push(d.toISOString().split("T")[0]);
+      }
+
+      const dailyPromises = days.map(async (dateStr) => {
+        const dayStart = `${dateStr}T00:00:00.000Z`;
+        const dayEnd = `${dateStr}T23:59:59.999Z`;
+
+        const [views, signups, likes, saves, uploads] = await Promise.all([
+          serviceClient.from("video_views").select("id", { count: "exact", head: true })
+            .gte("viewed_at", dayStart).lte("viewed_at", dayEnd),
+          serviceClient.from("profiles").select("id", { count: "exact", head: true })
+            .gte("created_at", dayStart).lte("created_at", dayEnd),
+          serviceClient.from("likes").select("id", { count: "exact", head: true })
+            .gte("created_at", dayStart).lte("created_at", dayEnd),
+          serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
+            .gte("created_at", dayStart).lte("created_at", dayEnd),
+          serviceClient.from("videos").select("id", { count: "exact", head: true })
+            .gte("created_at", dayStart).lte("created_at", dayEnd),
+        ]);
+
+        return {
+          date: dateStr,
+          views: views.count || 0,
+          signups: signups.count || 0,
+          likes: likes.count || 0,
+          saves: saves.count || 0,
+          uploads: uploads.count || 0,
+        };
+      });
+
+      const dailyResults = await Promise.all(dailyPromises);
+      daily.push(...dailyResults);
+    }
 
     const stats = {
+      // Core usage
       views: viewsResult.count || 0,
-      signups: signupsResult.count || 0,
+      uniqueViewers,
+      avgVideosPerSession: Math.round(avgVideosPerSession * 10) / 10,
+      avgSessionDuration: `${avgSessionDurationMinutes}m ${avgSessionDurationSeconds}s`,
+      avgSessionDurationMs,
+      
+      // Engagement
+      engagementRate: Math.round(engagementRate * 100) / 100,
+      likeRate: Math.round(likeRate * 100) / 100,
+      saveRate: Math.round(saveRate * 100) / 100,
       likes: likesResult.count || 0,
       saves: savesResult.count || 0,
+      
+      // Retention
+      scrollContinuationRate: Math.round(scrollContinuationRate * 100) / 100,
+      returnRate24h: Math.round(returnRate24h * 100) / 100,
+      returnRate7d: Math.round(returnRate7d * 100) / 100,
+      
+      // Growth
+      signups: signupsResult.count || 0,
+      dau,
+      mau,
+      dauMauRatio: Math.round(dauMauRatio * 100) / 100,
+      
+      // Creator supply
       uploads: uploadsResult.count || 0,
+      activeCreators: activeCreators || 0,
+      
+      // Trends
+      trends: trendData,
+      
+      // Daily breakdown
       daily,
     };
 

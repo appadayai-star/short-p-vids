@@ -430,6 +430,7 @@ export type Database = {
       video_views: {
         Row: {
           id: string
+          session_id: string | null
           user_id: string | null
           video_id: string
           viewed_at: string
@@ -437,6 +438,7 @@ export type Database = {
         }
         Insert: {
           id?: string
+          session_id?: string | null
           user_id?: string | null
           video_id: string
           viewed_at?: string
@@ -444,6 +446,7 @@ export type Database = {
         }
         Update: {
           id?: string
+          session_id?: string | null
           user_id?: string | null
           video_id?: string
           viewed_at?: string
