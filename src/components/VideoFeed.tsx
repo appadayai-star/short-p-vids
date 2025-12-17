@@ -344,12 +344,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     loadMore();
   }, [activeIndex, videos.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
 
-  const handleViewTracked = useCallback(async (videoId: string) => {
+  // Track view locally to prevent duplicate fetches - actual metrics are handled by useWatchMetrics
+  const handleViewTracked = useCallback((videoId: string) => {
     addSessionViewedId(videoId);
-    try {
-      await supabase.from("video_views").insert({ video_id: videoId, user_id: userId });
-    } catch {}
-  }, [userId]);
+  }, []);
 
   const handleRetry = () => {
     window.location.reload();

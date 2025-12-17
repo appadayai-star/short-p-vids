@@ -89,8 +89,8 @@ Deno.serve(async (req) => {
       dateFilter(serviceClient.from("likes").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("saved_videos").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("videos").select("id", { count: "exact", head: true }), "created_at"),
-      // All views for detailed analysis - high limit to get all data
-      dateFilter(serviceClient.from("video_views").select("user_id, viewer_id, session_id, video_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at").limit(100000),
+      // All views for detailed analysis - ORDER BY viewed_at DESC to get newest first
+      dateFilter(serviceClient.from("video_views").select("user_id, viewer_id, session_id, video_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at").order("viewed_at", { ascending: false }).limit(100000),
       dateFilter(serviceClient.from("shares").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("profile_views").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("follows").select("id", { count: "exact", head: true }), "created_at"),
