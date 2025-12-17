@@ -5,7 +5,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2, Video } from "lucide-react";
+import { 
+  Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2, Video, 
+  Users, Play, Clock, TrendingUp, TrendingDown, Percent, 
+  RefreshCw, ArrowRight, Upload
+} from "lucide-react";
 import { format, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
@@ -21,16 +25,117 @@ interface DailyStats {
 }
 
 interface Stats {
+  // Core usage
   views: number;
-  signups: number;
+  uniqueViewers: number;
+  avgVideosPerSession: number;
+  avgSessionDuration: string;
+  avgSessionDurationMs: number;
+  
+  // Engagement
+  engagementRate: number;
+  likeRate: number;
+  saveRate: number;
   likes: number;
   saves: number;
+  
+  // Retention
+  scrollContinuationRate: number;
+  returnRate24h: number;
+  returnRate7d: number;
+  
+  // Growth
+  signups: number;
+  dau: number;
+  mau: number;
+  dauMauRatio: number;
+  
+  // Creator supply
   uploads: number;
+  activeCreators: number;
+  
+  // Trends
+  trends: {
+    views: number;
+    likes: number;
+    saves: number;
+    signups: number;
+    uploads: number;
+  } | null;
+  
   daily: DailyStats[];
 }
 
 const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
+
+const TrendIndicator = ({ value, suffix = "%" }: { value: number | undefined; suffix?: string }) => {
+  if (value === undefined || value === null) return null;
+  const isPositive = value >= 0;
+  const Icon = isPositive ? TrendingUp : TrendingDown;
+  return (
+    <span className={cn(
+      "flex items-center gap-0.5 text-xs font-medium",
+      isPositive ? "text-green-500" : "text-red-500"
+    )}>
+      <Icon className="h-3 w-3" />
+      {isPositive ? "+" : ""}{value.toFixed(1)}{suffix}
+    </span>
+  );
+};
+
+const StatCard = ({ 
+  title, 
+  value, 
+  subtitle,
+  icon: Icon, 
+  color, 
+  bgColor,
+  trend,
+  loading 
+}: { 
+  title: string; 
+  value: string | number; 
+  subtitle?: string;
+  icon: any; 
+  color: string; 
+  bgColor: string;
+  trend?: number;
+  loading: boolean;
+}) => (
+  <Card>
+    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+      <div className={cn("p-2 rounded-full", bgColor)}>
+        <Icon className={cn("h-4 w-4", color)} />
+      </div>
+    </CardHeader>
+    <CardContent>
+      {loading ? (
+        <Loader2 className="h-6 w-6 animate-spin" />
+      ) : (
+        <div className="space-y-1">
+          <div className="flex items-baseline gap-2">
+            <div className="text-2xl font-bold">
+              {typeof value === "number" ? value.toLocaleString() : value}
+            </div>
+            <TrendIndicator value={trend} />
+          </div>
+          {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+        </div>
+      )}
+    </CardContent>
+  </Card>
+);
+
+const MetricSection = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <div className="space-y-3">
+    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{title}</h3>
+    <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      {children}
+    </div>
+  </div>
+);
 
 export const AdminStats = () => {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -42,13 +147,11 @@ export const AdminStats = () => {
     to: new Date(),
   });
 
-  // Helper to get UTC start of day
   const toUTCStartOfDay = (date: Date) => {
     const d = new Date(date);
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0));
   };
 
-  // Helper to get UTC end of day
   const toUTCEndOfDay = (date: Date) => {
     const d = new Date(date);
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999));
@@ -59,8 +162,8 @@ export const AdminStats = () => {
     const now = new Date();
     
     switch (preset) {
-      case "today":
-        setDateRange({ from: now, to: now });
+      case "24h":
+        setDateRange({ from: subDays(now, 1), to: now });
         break;
       case "7d":
         setDateRange({ from: subDays(now, 7), to: now });
@@ -68,6 +171,7 @@ export const AdminStats = () => {
       case "30d":
         setDateRange({ from: subDays(now, 30), to: now });
         break;
+      case "lifetime":
       case "custom":
         break;
     }
@@ -75,8 +179,6 @@ export const AdminStats = () => {
 
   useEffect(() => {
     const fetchStats = async () => {
-      if (!dateRange?.from || !dateRange?.to) return;
-
       setLoading(true);
       setError(null);
 
@@ -84,19 +186,23 @@ export const AdminStats = () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("Not authenticated");
 
-        // Use UTC boundaries for consistent date handling
-        const startDate = toUTCStartOfDay(dateRange.from).toISOString();
-        const endDate = toUTCEndOfDay(dateRange.to).toISOString();
+        let url: string;
+        if (datePreset === "lifetime") {
+          url = `${SUPABASE_URL}/functions/v1/admin-stats?lifetime=true`;
+        } else if (dateRange?.from && dateRange?.to) {
+          const startDate = toUTCStartOfDay(dateRange.from).toISOString();
+          const endDate = toUTCEndOfDay(dateRange.to).toISOString();
+          url = `${SUPABASE_URL}/functions/v1/admin-stats?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+        } else {
+          return;
+        }
 
-        const res = await fetch(
-          `${SUPABASE_URL}/functions/v1/admin-stats?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`,
-          {
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-              apikey: SUPABASE_ANON_KEY,
-            },
-          }
-        );
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
+        });
 
         if (!res.ok) {
           const errorData = await res.json();
@@ -114,15 +220,7 @@ export const AdminStats = () => {
     };
 
     fetchStats();
-  }, [dateRange]);
-
-  const statCards = [
-    { title: "Total Views", value: stats?.views ?? 0, icon: Eye, color: "text-blue-500", bgColor: "bg-blue-500/10" },
-    { title: "New Signups", value: stats?.signups ?? 0, icon: UserPlus, color: "text-green-500", bgColor: "bg-green-500/10" },
-    { title: "Total Likes", value: stats?.likes ?? 0, icon: Heart, color: "text-red-500", bgColor: "bg-red-500/10" },
-    { title: "Total Saves", value: stats?.saves ?? 0, icon: Bookmark, color: "text-purple-500", bgColor: "bg-purple-500/10" },
-    { title: "Uploaded Videos", value: stats?.uploads ?? 0, icon: Video, color: "text-orange-500", bgColor: "bg-orange-500/10" },
-  ];
+  }, [dateRange, datePreset]);
 
   const chartData = stats?.daily?.map(d => ({
     ...d,
@@ -130,16 +228,18 @@ export const AdminStats = () => {
   })) || [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Time Range Selector */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
         <Select value={datePreset} onValueChange={handlePresetChange}>
           <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Select date range" />
+            <SelectValue placeholder="Select time range" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="today">Today</SelectItem>
+            <SelectItem value="24h">Last 24 hours</SelectItem>
             <SelectItem value="7d">Last 7 days</SelectItem>
             <SelectItem value="30d">Last 30 days</SelectItem>
+            <SelectItem value="lifetime">Lifetime</SelectItem>
             <SelectItem value="custom">Custom range</SelectItem>
           </SelectContent>
         </Select>
@@ -169,61 +269,230 @@ export const AdminStats = () => {
 
       {error && <div className="p-4 bg-destructive/10 text-destructive rounded-lg">{error}</div>}
 
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        {statCards.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
-              <div className={cn("p-2 rounded-full", stat.bgColor)}>
-                <stat.icon className={cn("h-4 w-4", stat.color)} />
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : <div className="text-2xl font-bold">{stat.value.toLocaleString()}</div>}
-            </CardContent>
-          </Card>
-        ))}
+      {/* Key KPIs (Top Row) */}
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+        <StatCard
+          title="Total Views"
+          value={stats?.views ?? 0}
+          icon={Eye}
+          color="text-blue-500"
+          bgColor="bg-blue-500/10"
+          trend={stats?.trends?.views}
+          loading={loading}
+        />
+        <StatCard
+          title="Avg Session Length"
+          value={stats?.avgSessionDuration ?? "0m 0s"}
+          icon={Clock}
+          color="text-emerald-500"
+          bgColor="bg-emerald-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Videos / Session"
+          value={stats?.avgVideosPerSession ?? 0}
+          icon={Play}
+          color="text-purple-500"
+          bgColor="bg-purple-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Engagement Rate"
+          value={`${stats?.engagementRate ?? 0}%`}
+          subtitle="(likes + saves) / views"
+          icon={TrendingUp}
+          color="text-orange-500"
+          bgColor="bg-orange-500/10"
+          loading={loading}
+        />
       </div>
 
+      {/* Core Usage Metrics */}
+      <MetricSection title="Core Usage">
+        <StatCard
+          title="Unique Viewers"
+          value={stats?.uniqueViewers ?? 0}
+          icon={Users}
+          color="text-cyan-500"
+          bgColor="bg-cyan-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="DAU"
+          value={stats?.dau ?? 0}
+          subtitle="Daily Active Users"
+          icon={Users}
+          color="text-blue-500"
+          bgColor="bg-blue-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="MAU"
+          value={stats?.mau ?? 0}
+          subtitle="Monthly Active Users"
+          icon={Users}
+          color="text-indigo-500"
+          bgColor="bg-indigo-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="DAU/MAU Ratio"
+          value={`${stats?.dauMauRatio ?? 0}%`}
+          subtitle="Stickiness indicator"
+          icon={Percent}
+          color="text-violet-500"
+          bgColor="bg-violet-500/10"
+          loading={loading}
+        />
+      </MetricSection>
+
+      {/* Engagement Metrics */}
+      <MetricSection title="Engagement">
+        <StatCard
+          title="Total Likes"
+          value={stats?.likes ?? 0}
+          icon={Heart}
+          color="text-red-500"
+          bgColor="bg-red-500/10"
+          trend={stats?.trends?.likes}
+          loading={loading}
+        />
+        <StatCard
+          title="Total Saves"
+          value={stats?.saves ?? 0}
+          icon={Bookmark}
+          color="text-purple-500"
+          bgColor="bg-purple-500/10"
+          trend={stats?.trends?.saves}
+          loading={loading}
+        />
+        <StatCard
+          title="Like Rate"
+          value={`${stats?.likeRate ?? 0}%`}
+          subtitle="likes / views"
+          icon={Heart}
+          color="text-pink-500"
+          bgColor="bg-pink-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="Save Rate"
+          value={`${stats?.saveRate ?? 0}%`}
+          subtitle="saves / views"
+          icon={Bookmark}
+          color="text-fuchsia-500"
+          bgColor="bg-fuchsia-500/10"
+          loading={loading}
+        />
+      </MetricSection>
+
+      {/* Retention & Stickiness */}
+      <MetricSection title="Retention & Stickiness">
+        <StatCard
+          title="Scroll Continuation"
+          value={`${stats?.scrollContinuationRate ?? 0}%`}
+          subtitle="Users who watch 2+ videos"
+          icon={ArrowRight}
+          color="text-teal-500"
+          bgColor="bg-teal-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="24h Return Rate"
+          value={`${stats?.returnRate24h ?? 0}%`}
+          subtitle="Users returning within 24h"
+          icon={RefreshCw}
+          color="text-green-500"
+          bgColor="bg-green-500/10"
+          loading={loading}
+        />
+        <StatCard
+          title="7-Day Return Rate"
+          value={`${stats?.returnRate7d ?? 0}%`}
+          subtitle="Users returning within 7 days"
+          icon={RefreshCw}
+          color="text-lime-500"
+          bgColor="bg-lime-500/10"
+          loading={loading}
+        />
+      </MetricSection>
+
+      {/* Growth Metrics */}
+      <MetricSection title="Growth">
+        <StatCard
+          title="New Signups"
+          value={stats?.signups ?? 0}
+          icon={UserPlus}
+          color="text-green-500"
+          bgColor="bg-green-500/10"
+          trend={stats?.trends?.signups}
+          loading={loading}
+        />
+      </MetricSection>
+
+      {/* Creator Supply */}
+      <MetricSection title="Creator Supply">
+        <StatCard
+          title="Videos Uploaded"
+          value={stats?.uploads ?? 0}
+          icon={Upload}
+          color="text-orange-500"
+          bgColor="bg-orange-500/10"
+          trend={stats?.trends?.uploads}
+          loading={loading}
+        />
+        <StatCard
+          title="Active Creators"
+          value={stats?.activeCreators ?? 0}
+          subtitle="Uploaded in last 7 days"
+          icon={Video}
+          color="text-amber-500"
+          bgColor="bg-amber-500/10"
+          loading={loading}
+        />
+      </MetricSection>
+
       {/* Trend Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Daily Trends</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center h-[300px]">
-              <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-          ) : chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="date" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
-                <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'hsl(var(--card))', 
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '8px',
-                  }}
-                  labelStyle={{ color: 'hsl(var(--foreground))' }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="views" stroke="#3b82f6" strokeWidth={2} dot={false} name="Views" />
-                <Line type="monotone" dataKey="signups" stroke="#22c55e" strokeWidth={2} dot={false} name="Signups" />
-                <Line type="monotone" dataKey="likes" stroke="#ef4444" strokeWidth={2} dot={false} name="Likes" />
-                <Line type="monotone" dataKey="saves" stroke="#a855f7" strokeWidth={2} dot={false} name="Saves" />
-                <Line type="monotone" dataKey="uploads" stroke="#f97316" strokeWidth={2} dot={false} name="Uploads" />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-              No data available for the selected period
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {datePreset !== "lifetime" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Daily Trends</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex items-center justify-center h-[300px]">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="date" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                  <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                    }}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="views" stroke="#3b82f6" strokeWidth={2} dot={false} name="Views" />
+                  <Line type="monotone" dataKey="signups" stroke="#22c55e" strokeWidth={2} dot={false} name="Signups" />
+                  <Line type="monotone" dataKey="likes" stroke="#ef4444" strokeWidth={2} dot={false} name="Likes" />
+                  <Line type="monotone" dataKey="saves" stroke="#a855f7" strokeWidth={2} dot={false} name="Saves" />
+                  <Line type="monotone" dataKey="uploads" stroke="#f97316" strokeWidth={2} dot={false} name="Uploads" />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                No data available for the selected period
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };
