@@ -725,67 +725,6 @@ export const AdminStats = () => {
         />
       </MetricSection>
 
-      {/* DEBUG: Data Quality Counters */}
-      <MetricSection title="🔍 Debug: Data Quality">
-        <div className="col-span-full text-xs text-muted-foreground mb-2">
-          Reliable tracking since: {stats?.dataQuality?.reliableTrackingSince ?? 'N/A'} • 
-          Using {stats?.dataQuality?.reliableRows ?? 0} of {stats?.dataQuality?.totalRows ?? 0} rows for metrics
-        </div>
-        <StatCard
-          title="Total Sessions"
-          value={stats?.totalSessions ?? 0}
-          subtitle="DISTINCT session_id"
-          icon={Users}
-          color="text-blue-500"
-          bgColor="bg-blue-500/10"
-          loading={loading}
-        />
-        <StatCard
-          title="Missing session_id"
-          value={stats?.dataQuality?.rowsMissingSessionId ?? 0}
-          subtitle={`${stats?.dataQuality?.sessionIdMissingPct ?? 0}% - tracking failed`}
-          icon={Bug}
-          color={stats?.dataQuality?.sessionIdMissingPct && stats.dataQuality.sessionIdMissingPct > 5 ? "text-red-500" : "text-green-500"}
-          bgColor={stats?.dataQuality?.sessionIdMissingPct && stats.dataQuality.sessionIdMissingPct > 5 ? "bg-red-500/10" : "bg-green-500/10"}
-          loading={loading}
-        />
-        <StatCard
-          title="Missing viewer_id"
-          value={stats?.dataQuality?.rowsMissingViewerId ?? 0}
-          subtitle={`${stats?.dataQuality?.viewerIdMissingPct ?? 0}% - legacy rows`}
-          icon={Bug}
-          color={stats?.dataQuality?.viewerIdMissingPct && stats.dataQuality.viewerIdMissingPct > 5 ? "text-amber-500" : "text-green-500"}
-          bgColor={stats?.dataQuality?.viewerIdMissingPct && stats.dataQuality.viewerIdMissingPct > 5 ? "bg-amber-500/10" : "bg-green-500/10"}
-          loading={loading}
-        />
-        <StatCard
-          title="Watch Duration NULL"
-          value={stats?.dataQuality?.rowsWatchDurationNull ?? 0}
-          subtitle={`${stats?.dataQuality?.watchDurationNullPct ?? 0}% - tracking failed`}
-          icon={Bug}
-          color={stats?.dataQuality?.watchDurationNullPct && stats.dataQuality.watchDurationNullPct > 20 ? "text-red-500" : "text-green-500"}
-          bgColor={stats?.dataQuality?.watchDurationNullPct && stats.dataQuality.watchDurationNullPct > 20 ? "bg-red-500/10" : "bg-green-500/10"}
-          loading={loading}
-        />
-        <StatCard
-          title="Watch Duration = 0"
-          value={stats?.dataQuality?.rowsWatchDurationZero ?? 0}
-          subtitle={`${stats?.dataQuality?.watchDurationZeroPct ?? 0}% - real bounce`}
-          icon={Clock}
-          color="text-amber-500"
-          bgColor="bg-amber-500/10"
-          loading={loading}
-        />
-        <StatCard
-          title="With Watch Duration"
-          value={stats?.dataQuality?.rowsWithWatchDuration ?? 0}
-          subtitle={`${stats?.dataQuality?.watchDurationPresentPct ?? 0}% - actual views`}
-          icon={Clock}
-          color="text-green-500"
-          bgColor="bg-green-500/10"
-          loading={loading}
-        />
-      </MetricSection>
 
       {/* Trend Chart */}
       {datePreset !== "lifetime" && (
