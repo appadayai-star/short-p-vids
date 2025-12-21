@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Loader2, RefreshCw, Play, Volume2, VolumeX } from "lucide-react";
-import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { getBestVideoSourceWithDebug, getBestThumbnailUrl, VideoSourceResult } from "@/lib/cloudinary";
 
 // Global mute state - persisted across videos
 let globalMuted = true;
@@ -48,13 +48,19 @@ export const SinglePlayer = memo(({
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
 
-  // Compute video sources - always use MP4 for reliability
-  const primarySrc = video ? getBestVideoSource(
+  // Debug mode state
+  const isDebugMode = typeof window !== 'undefined' && localStorage.getItem('videoDebug') === '1';
+  const [ttffMs, setTtffMs] = useState<number | null>(null);
+  const loadStartRef = useRef<number>(0);
+
+  // Compute video sources with debug info
+  const videoSourceResult: VideoSourceResult = video ? getBestVideoSourceWithDebug(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     null,
     video.video_url
-  ) : "";
+  ) : { url: '', sourceHost: 'supabase', isFallback: true };
+  const primarySrc = videoSourceResult.url;
   
   const fallbackSrc = video?.optimized_video_url || video?.video_url || "";
   const lastResortSrc = video?.video_url || "";
@@ -131,6 +137,8 @@ export const SinglePlayer = memo(({
       clearLoadTimeout();
       
       if (video) {
+        loadStartRef.current = performance.now();
+        setTtffMs(null);
         videoEl.pause();
         videoEl.src = primarySrc;
         setSrc(primarySrc);
@@ -201,10 +209,12 @@ export const SinglePlayer = memo(({
   }, []);
 
   const handleCanPlay = useCallback(() => {
-    console.log(`[SinglePlayer] canplay - video ready`);
+    const elapsed = loadStartRef.current ? Math.round(performance.now() - loadStartRef.current) : null;
+    if (elapsed) setTtffMs(elapsed);
+    console.log(`[SinglePlayer] canplay - TTFF: ${elapsed}ms, src: ${videoSourceResult.sourceHost}`);
     clearLoadTimeout();
     setStatus("ready");
-  }, [clearLoadTimeout]);
+  }, [clearLoadTimeout, videoSourceResult.sourceHost]);
 
   const handlePlaying = useCallback(() => {
     console.log(`[SinglePlayer] playing`);
@@ -343,6 +353,17 @@ export const SinglePlayer = memo(({
           <div className="bg-black/50 rounded-full p-4 animate-scale-in">
             {isMuted ? <VolumeX className="h-12 w-12 text-white" /> : <Volume2 className="h-12 w-12 text-white" />}
           </div>
+        </div>
+      )}
+
+      {/* Debug overlay - shows when localStorage.videoDebug = '1' */}
+      {isDebugMode && (
+        <div className="absolute top-20 left-4 z-30 bg-black/80 text-white text-xs font-mono p-2 rounded max-w-[200px] pointer-events-none">
+          <div>Host: {videoSourceResult.sourceHost}</div>
+          <div>TTFF: {ttffMs !== null ? `${ttffMs}ms` : '...'}</div>
+          <div className="truncate">Src: {src.substring(0, 40)}...</div>
+          <div>Fallback: {videoSourceResult.isFallback ? 'YES' : 'no'}</div>
+          {videoSourceResult.reason && <div className="text-yellow-300 text-[10px]">{videoSourceResult.reason}</div>}
         </div>
       )}
 
