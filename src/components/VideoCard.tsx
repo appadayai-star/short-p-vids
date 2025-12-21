@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSourceWithDebug, getBestThumbnailUrl, VideoSourceResult } from "@/lib/cloudinary";
+import { getBestVideoSource, getBestThumbnailUrl, supportsHlsNatively } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -102,27 +102,19 @@ export const VideoCard = memo(({
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Core video state - use dynamic Cloudinary URLs when available
-  const videoSourceResult: VideoSourceResult = getBestVideoSourceWithDebug(
+  const primarySrc = getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     video.stream_url || null,
     video.video_url
   );
-  const primarySrc = videoSourceResult.url;
   const fallbackSrc = video.optimized_video_url || video.video_url;
   const lastResortSrc = video.video_url;
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
   
-  // Debug mode state
-  const isDebugMode = typeof window !== 'undefined' && localStorage.getItem('videoDebug') === '1';
-  const [ttffMs, setTtffMs] = useState<number | null>(null);
-  const [lastError, setLastError] = useState<string | null>(null);
-  const loadStartRef = useRef<number>(0);
-  
   const [src, setSrc] = useState(primarySrc);
   const [status, setStatus] = useState<VideoStatus>("idle");
   const [attempt, setAttempt] = useState(0);
-  const [currentSourceHost, setCurrentSourceHost] = useState(videoSourceResult.sourceHost);
   
   // UI state
   const [isVisible, setIsVisible] = useState(false);
@@ -149,34 +141,36 @@ export const VideoCard = memo(({
     }
   }, []);
 
-  // Retry or fallback logic - immediately fall back to Supabase on Cloudinary failure
-  const retryOrFallback = useCallback((reason: "error" | "timeout", errorInfo?: string) => {
+  // Retry or fallback logic with 3 levels: primary -> fallback -> lastResort
+  const retryOrFallback = useCallback((reason: "error" | "timeout") => {
     clearLoadTimeout();
     
-    const errorMsg = errorInfo || reason;
-    setLastError(errorMsg);
-    console.log(`[VideoCard ${index}] retryOrFallback: reason=${errorMsg}, attempt=${attempt}, src=${src?.substring(0, 80)}...`);
+    console.log(`[VideoCard ${index}] retryOrFallback: reason=${reason}, attempt=${attempt}, src=${src?.substring(0, 60)}...`);
     
-    // If we're on Cloudinary and it failed, immediately try Supabase
-    if (attempt === 0 && videoSourceResult.sourceHost !== 'supabase') {
-      console.log(`[VideoCard ${index}] Cloudinary failed, falling back to Supabase: ${lastResortSrc.substring(0, 60)}...`);
+    if (attempt === 0) {
+      // First retry: reload primary with cache buster
       setAttempt(1);
-      setSrc(lastResortSrc);
-      setCurrentSourceHost('supabase');
+      const cacheBuster = primarySrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
+      setSrc(primarySrc + cacheBuster);
       setStatus("loading");
-    } else if (attempt === 1) {
-      // Supabase failed too, try with cache buster
-      console.log(`[VideoCard ${index}] Retrying Supabase with cache buster`);
+    } else if (attempt === 1 && fallbackSrc && fallbackSrc !== primarySrc) {
+      // Second retry: try optimized MP4 fallback
+      console.log(`[VideoCard ${index}] Trying fallback: ${fallbackSrc.substring(0, 60)}...`);
       setAttempt(2);
-      const cacheBuster = lastResortSrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
-      setSrc(lastResortSrc + cacheBuster);
+      setSrc(fallbackSrc);
+      setStatus("loading");
+    } else if (attempt <= 2 && lastResortSrc && lastResortSrc !== fallbackSrc && lastResortSrc !== primarySrc) {
+      // Third retry: try original Supabase URL
+      console.log(`[VideoCard ${index}] Trying lastResort: ${lastResortSrc.substring(0, 60)}...`);
+      setAttempt(3);
+      setSrc(lastResortSrc);
       setStatus("loading");
     } else {
       // All retries exhausted - show error UI
       console.log(`[VideoCard ${index}] All retries exhausted, showing error UI`);
       setStatus("error");
     }
-  }, [attempt, videoSourceResult.sourceHost, lastResortSrc, src, clearLoadTimeout, index]);
+  }, [attempt, primarySrc, fallbackSrc, lastResortSrc, src, clearLoadTimeout, index]);
 
   // Start loading timeout watchdog
   const startLoadTimeout = useCallback(() => {
@@ -246,8 +240,6 @@ export const VideoCard = memo(({
     if (shouldLoadSrc) {
       // Assign src and start loading
       if (videoEl.src !== src && src) {
-        loadStartRef.current = performance.now();
-        setTtffMs(null);
         videoEl.src = src;
         setStatus("loading");
         startLoadTimeout();
@@ -335,12 +327,10 @@ export const VideoCard = memo(({
 
   // Video event handlers
   const handleCanPlay = useCallback(() => {
-    const elapsed = loadStartRef.current ? Math.round(performance.now() - loadStartRef.current) : null;
-    if (elapsed) setTtffMs(elapsed);
-    console.log(`[VideoCard ${index}] canplay - TTFF: ${elapsed}ms, src: ${videoSourceResult.sourceHost}`);
+    console.log(`[VideoCard ${index}] canplay`);
     clearLoadTimeout();
     setStatus("ready");
-  }, [clearLoadTimeout, index, videoSourceResult.sourceHost]);
+  }, [clearLoadTimeout, index]);
 
   const handleLoadedMetadata = useCallback(() => {
     console.log(`[VideoCard ${index}] loadedmetadata`);
@@ -363,18 +353,10 @@ export const VideoCard = memo(({
 
   const handleError = useCallback(() => {
     const videoEl = videoRef.current;
-    const error = videoEl?.error;
-    // MEDIA_ERR codes: 1=ABORTED, 2=NETWORK, 3=DECODE, 4=SRC_NOT_SUPPORTED
-    const mediaErrCode = error?.code;
-    const mediaErrName = mediaErrCode === 1 ? 'ABORTED' : 
-                         mediaErrCode === 2 ? 'NETWORK' : 
-                         mediaErrCode === 3 ? 'DECODE' : 
-                         mediaErrCode === 4 ? 'SRC_NOT_SUPPORTED' : 'UNKNOWN';
-    const errorInfo = `MEDIA_ERR_${mediaErrName}(${mediaErrCode}): ${error?.message || 'no message'}`;
-    console.error(`[VideoCard ${index}] error:`, errorInfo, 'src:', src?.substring(0, 60));
+    console.error(`[VideoCard ${index}] error:`, videoEl?.error?.message);
     clearLoadTimeout();
-    retryOrFallback("error", errorInfo);
-  }, [clearLoadTimeout, retryOrFallback, index, src]);
+    retryOrFallback("error");
+  }, [clearLoadTimeout, retryOrFallback, index]);
 
   // User actions
   const toggleMute = useCallback(() => {
@@ -573,18 +555,6 @@ export const VideoCard = memo(({
           <div className="bg-black/50 rounded-full p-4 animate-scale-in">
             {isMuted ? <VolumeX className="h-12 w-12 text-white" /> : <Volume2 className="h-12 w-12 text-white" />}
           </div>
-        </div>
-      )}
-
-      {/* Debug overlay - shows when localStorage.videoDebug = '1' */}
-      {isDebugMode && isTrulyActive && (
-        <div className="absolute top-20 left-4 z-30 bg-black/90 text-white text-xs font-mono p-2 rounded max-w-[220px] pointer-events-none space-y-0.5">
-          <div>Host: <span className={currentSourceHost === 'supabase' ? 'text-yellow-400' : 'text-green-400'}>{currentSourceHost}</span></div>
-          <div>TTFF: {ttffMs !== null ? `${ttffMs}ms` : '...'}</div>
-          <div>Status: {status} | Attempt: {attempt}</div>
-          <div className="truncate text-[10px]">Src: {src?.substring(0, 50)}...</div>
-          {lastError && <div className="text-red-400 text-[10px] break-words">{lastError}</div>}
-          {videoSourceResult.reason && <div className="text-blue-300 text-[10px]">{videoSourceResult.reason}</div>}
         </div>
       )}
 
