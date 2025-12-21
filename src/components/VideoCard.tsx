@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl, supportsHlsNatively } from "@/lib/cloudinary";
+import { getBestVideoSourceWithDebug, getBestThumbnailUrl, VideoSourceResult } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -102,15 +102,21 @@ export const VideoCard = memo(({
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Core video state - use dynamic Cloudinary URLs when available
-  const primarySrc = getBestVideoSource(
+  const videoSourceResult: VideoSourceResult = getBestVideoSourceWithDebug(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     video.stream_url || null,
     video.video_url
   );
+  const primarySrc = videoSourceResult.url;
   const fallbackSrc = video.optimized_video_url || video.video_url;
   const lastResortSrc = video.video_url;
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+  
+  // Debug mode state
+  const isDebugMode = typeof window !== 'undefined' && localStorage.getItem('videoDebug') === '1';
+  const [ttffMs, setTtffMs] = useState<number | null>(null);
+  const loadStartRef = useRef<number>(0);
   
   const [src, setSrc] = useState(primarySrc);
   const [status, setStatus] = useState<VideoStatus>("idle");
@@ -240,6 +246,8 @@ export const VideoCard = memo(({
     if (shouldLoadSrc) {
       // Assign src and start loading
       if (videoEl.src !== src && src) {
+        loadStartRef.current = performance.now();
+        setTtffMs(null);
         videoEl.src = src;
         setStatus("loading");
         startLoadTimeout();
@@ -327,10 +335,12 @@ export const VideoCard = memo(({
 
   // Video event handlers
   const handleCanPlay = useCallback(() => {
-    console.log(`[VideoCard ${index}] canplay`);
+    const elapsed = loadStartRef.current ? Math.round(performance.now() - loadStartRef.current) : null;
+    if (elapsed) setTtffMs(elapsed);
+    console.log(`[VideoCard ${index}] canplay - TTFF: ${elapsed}ms, src: ${videoSourceResult.sourceHost}`);
     clearLoadTimeout();
     setStatus("ready");
-  }, [clearLoadTimeout, index]);
+  }, [clearLoadTimeout, index, videoSourceResult.sourceHost]);
 
   const handleLoadedMetadata = useCallback(() => {
     console.log(`[VideoCard ${index}] loadedmetadata`);
@@ -555,6 +565,17 @@ export const VideoCard = memo(({
           <div className="bg-black/50 rounded-full p-4 animate-scale-in">
             {isMuted ? <VolumeX className="h-12 w-12 text-white" /> : <Volume2 className="h-12 w-12 text-white" />}
           </div>
+        </div>
+      )}
+
+      {/* Debug overlay - shows when localStorage.videoDebug = '1' */}
+      {isDebugMode && isTrulyActive && (
+        <div className="absolute top-20 left-4 z-30 bg-black/80 text-white text-xs font-mono p-2 rounded max-w-[200px] pointer-events-none">
+          <div>Host: {videoSourceResult.sourceHost}</div>
+          <div>TTFF: {ttffMs !== null ? `${ttffMs}ms` : '...'}</div>
+          <div className="truncate">Src: {src.substring(0, 40)}...</div>
+          <div>Fallback: {videoSourceResult.isFallback ? 'YES' : 'no'}</div>
+          {videoSourceResult.reason && <div className="text-yellow-300 text-[10px]">{videoSourceResult.reason}</div>}
         </div>
       )}
 
