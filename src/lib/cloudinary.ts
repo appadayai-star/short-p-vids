@@ -18,32 +18,41 @@ export interface VideoSourceResult {
   reason?: string;
 }
 
+// Check if browser actually supports HLS natively (Safari, iOS)
+// This is the real check - not UA sniffing
+let hlsSupportCached: boolean | null = null;
+export function supportsHlsNatively(): boolean {
+  if (hlsSupportCached !== null) return hlsSupportCached;
+  if (typeof document === 'undefined') return false;
+  try {
+    const video = document.createElement('video');
+    hlsSupportCached = video.canPlayType('application/vnd.apple.mpegurl') !== '';
+  } catch {
+    hlsSupportCached = false;
+  }
+  return hlsSupportCached;
+}
+
 export function getOptimizedVideoUrl(publicId: string): string {
   // Optimized MP4 with faststart, capped bitrate for mobile
   // fl_faststart ensures moov atom at start for instant playback
-  // br_1500k caps bitrate for faster loading
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,q_auto,fl_faststart,br_1500k/${publicId}`;
+  // br_1500k caps bitrate, h_720 limits resolution, vc_h264 ensures compatibility
+  // NO EXTENSION - publicId may contain folders like "optimized/uuid"
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,q_auto:eco,fl_faststart,br_1500k,c_limit,h_720,vc_h264,fps_30/${publicId}`;
 }
 
 export function getStreamUrl(publicId: string): string {
-  // HLS adaptive streaming for Safari/iOS
+  // HLS adaptive streaming for Safari/iOS - sp_auto generates HLS profile
+  // NO .m3u8 extension needed when using sp_auto
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/sp_auto/${publicId}.m3u8`;
 }
 
 export function getThumbnailUrl(publicId: string): string {
-  // Optimized thumbnail from Cloudinary
+  // Optimized thumbnail from Cloudinary - no extension, Cloudinary auto-detects
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/${publicId}.jpg`;
 }
 
-// Check if browser supports HLS natively (Safari, iOS)
-export function supportsHlsNatively(): boolean {
-  if (typeof document === 'undefined') return false;
-  const video = document.createElement('video');
-  return video.canPlayType('application/vnd.apple.mpegurl') !== '';
-}
-
-// Get best video source for playback with debug info
-// Priority: 1) Cloudinary HLS (Safari), 2) Cloudinary MP4, 3) Supabase fallback
+// Get best video source for playback
 export function getBestVideoSource(
   cloudinaryPublicId: string | null,
   optimizedVideoUrl: string | null,
@@ -62,43 +71,44 @@ export function getBestVideoSourceWithDebug(
 ): VideoSourceResult {
   // If we have a Cloudinary public ID, prefer Cloudinary URLs
   if (cloudinaryPublicId) {
-    // For Safari/iOS, use HLS for adaptive streaming
-    if (supportsHlsNatively()) {
+    // Check actual HLS support (not UA sniffing)
+    const canPlayHls = supportsHlsNatively();
+    
+    if (canPlayHls) {
       const hlsUrl = getStreamUrl(cloudinaryPublicId);
       if (isDebugMode()) {
-        console.log('[Cloudinary] Using HLS for Safari:', hlsUrl);
+        console.log('[Cloudinary] HLS supported, using:', hlsUrl);
       }
       return {
         url: hlsUrl,
         sourceHost: 'cloudinary-hls',
         isFallback: false,
-        reason: 'HLS for Safari/iOS'
+        reason: 'Native HLS support detected'
       };
     }
     
-    // For other browsers, use optimized MP4 with faststart
+    // For browsers without HLS, use optimized MP4
     const mp4Url = getOptimizedVideoUrl(cloudinaryPublicId);
     if (isDebugMode()) {
-      console.log('[Cloudinary] Using optimized MP4:', mp4Url);
+      console.log('[Cloudinary] Using MP4:', mp4Url);
     }
     return {
       url: mp4Url,
       sourceHost: 'cloudinary',
       isFallback: false,
-      reason: 'Cloudinary MP4 with faststart'
+      reason: 'Cloudinary MP4 (no HLS support)'
     };
   }
   
   // No Cloudinary ID - fall back to Supabase/original URL
-  const fallbackUrl = originalVideoUrl;
   if (isDebugMode()) {
-    console.log('[Cloudinary] Fallback to Supabase:', fallbackUrl, '(no cloudinary_public_id)');
+    console.log('[Cloudinary] No publicId, using Supabase:', originalVideoUrl);
   }
   return {
-    url: fallbackUrl,
+    url: originalVideoUrl,
     sourceHost: 'supabase',
     isFallback: true,
-    reason: 'No cloudinary_public_id available'
+    reason: 'No cloudinary_public_id'
   };
 }
 
