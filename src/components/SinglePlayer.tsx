@@ -51,6 +51,7 @@ export const SinglePlayer = memo(({
   // Debug mode state
   const isDebugMode = typeof window !== 'undefined' && localStorage.getItem('videoDebug') === '1';
   const [ttffMs, setTtffMs] = useState<number | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
   const loadStartRef = useRef<number>(0);
 
   // Compute video sources with debug info
@@ -62,11 +63,11 @@ export const SinglePlayer = memo(({
   ) : { url: '', sourceHost: 'supabase', isFallback: true };
   const primarySrc = videoSourceResult.url;
   
-  const fallbackSrc = video?.optimized_video_url || video?.video_url || "";
   const lastResortSrc = video?.video_url || "";
   const posterSrc = video ? getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url) : "";
 
   const [src, setSrc] = useState(primarySrc);
+  const [currentSourceHost, setCurrentSourceHost] = useState(videoSourceResult.sourceHost);
 
   // Clear timeout helper
   const clearLoadTimeout = useCallback(() => {
@@ -76,31 +77,32 @@ export const SinglePlayer = memo(({
     }
   }, []);
 
-  // Retry or fallback logic
-  const retryOrFallback = useCallback((reason: "error" | "timeout") => {
+  // Retry or fallback logic - immediately fall back to Supabase on Cloudinary failure
+  const retryOrFallback = useCallback((reason: "error" | "timeout", errorInfo?: string) => {
     clearLoadTimeout();
-    console.log(`[SinglePlayer] retryOrFallback: reason=${reason}, attempt=${attempt}`);
+    const errorMsg = errorInfo || reason;
+    setLastError(errorMsg);
+    console.log(`[SinglePlayer] retryOrFallback: reason=${errorMsg}, attempt=${attempt}`);
     
-    if (attempt === 0) {
+    // If we're on Cloudinary and it failed, immediately try Supabase
+    if (attempt === 0 && videoSourceResult.sourceHost !== 'supabase') {
+      console.log(`[SinglePlayer] Cloudinary failed, falling back to Supabase`);
       setAttempt(1);
-      const cacheBuster = primarySrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
-      setSrc(primarySrc + cacheBuster);
-      setStatus("loading");
-    } else if (attempt === 1 && fallbackSrc && fallbackSrc !== primarySrc) {
-      console.log(`[SinglePlayer] Trying fallback`);
-      setAttempt(2);
-      setSrc(fallbackSrc);
-      setStatus("loading");
-    } else if (attempt <= 2 && lastResortSrc && lastResortSrc !== fallbackSrc && lastResortSrc !== primarySrc) {
-      console.log(`[SinglePlayer] Trying lastResort`);
-      setAttempt(3);
       setSrc(lastResortSrc);
+      setCurrentSourceHost('supabase');
+      setStatus("loading");
+    } else if (attempt === 1) {
+      // Supabase failed too, try with cache buster
+      console.log(`[SinglePlayer] Retrying Supabase with cache buster`);
+      setAttempt(2);
+      const cacheBuster = lastResortSrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
+      setSrc(lastResortSrc + cacheBuster);
       setStatus("loading");
     } else {
       console.log(`[SinglePlayer] All retries exhausted`);
       setStatus("error");
     }
-  }, [attempt, primarySrc, fallbackSrc, lastResortSrc, clearLoadTimeout]);
+  }, [attempt, videoSourceResult.sourceHost, lastResortSrc, clearLoadTimeout]);
 
   // Start loading timeout watchdog
   const startLoadTimeout = useCallback(() => {
@@ -234,9 +236,16 @@ export const SinglePlayer = memo(({
 
   const handleError = useCallback(() => {
     const videoEl = videoRef.current;
-    console.error(`[SinglePlayer] error:`, videoEl?.error?.message, videoEl?.error?.code);
+    const error = videoEl?.error;
+    const mediaErrCode = error?.code;
+    const mediaErrName = mediaErrCode === 1 ? 'ABORTED' : 
+                         mediaErrCode === 2 ? 'NETWORK' : 
+                         mediaErrCode === 3 ? 'DECODE' : 
+                         mediaErrCode === 4 ? 'SRC_NOT_SUPPORTED' : 'UNKNOWN';
+    const errorInfo = `MEDIA_ERR_${mediaErrName}(${mediaErrCode}): ${error?.message || 'no message'}`;
+    console.error(`[SinglePlayer] error:`, errorInfo);
     clearLoadTimeout();
-    retryOrFallback("error");
+    retryOrFallback("error", errorInfo);
   }, [clearLoadTimeout, retryOrFallback]);
 
   // User actions
@@ -358,12 +367,13 @@ export const SinglePlayer = memo(({
 
       {/* Debug overlay - shows when localStorage.videoDebug = '1' */}
       {isDebugMode && (
-        <div className="absolute top-20 left-4 z-30 bg-black/80 text-white text-xs font-mono p-2 rounded max-w-[200px] pointer-events-none">
-          <div>Host: {videoSourceResult.sourceHost}</div>
+        <div className="absolute top-20 left-4 z-30 bg-black/90 text-white text-xs font-mono p-2 rounded max-w-[220px] pointer-events-none space-y-0.5">
+          <div>Host: <span className={currentSourceHost === 'supabase' ? 'text-yellow-400' : 'text-green-400'}>{currentSourceHost}</span></div>
           <div>TTFF: {ttffMs !== null ? `${ttffMs}ms` : '...'}</div>
-          <div className="truncate">Src: {src.substring(0, 40)}...</div>
-          <div>Fallback: {videoSourceResult.isFallback ? 'YES' : 'no'}</div>
-          {videoSourceResult.reason && <div className="text-yellow-300 text-[10px]">{videoSourceResult.reason}</div>}
+          <div>Status: {status} | Attempt: {attempt}</div>
+          <div className="truncate text-[10px]">Src: {src?.substring(0, 50)}...</div>
+          {lastError && <div className="text-red-400 text-[10px] break-words">{lastError}</div>}
+          {videoSourceResult.reason && <div className="text-blue-300 text-[10px]">{videoSourceResult.reason}</div>}
         </div>
       )}
 
