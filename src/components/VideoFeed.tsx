@@ -35,19 +35,60 @@ interface VideoFeedProps {
   userId: string | null;
 }
 
+interface FeedCursor {
+  score: number;
+  id: string;
+}
+
+// Get persistent anonymous viewer ID (for guest repeat protection)
+const getOrCreateViewerId = (): string => {
+  const key = 'anonymous_viewer_id_v1';
+  let viewerId = localStorage.getItem(key);
+  
+  if (!viewerId) {
+    viewerId = crypto.randomUUID ? crypto.randomUUID() : 
+      `anon_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    localStorage.setItem(key, viewerId);
+  }
+  
+  return viewerId;
+};
+
+// Get session ID
+const getOrCreateSessionId = (): string => {
+  const key = 'video_session_v2';
+  const lastActivityKey = 'video_session_last_activity';
+  const SESSION_EXPIRY_MS = 30 * 60 * 1000;
+  
+  const now = Date.now();
+  const lastActivity = parseInt(localStorage.getItem(lastActivityKey) || '0', 10);
+  let sessionId = localStorage.getItem(key);
+  
+  if (!sessionId || (now - lastActivity) > SESSION_EXPIRY_MS) {
+    sessionId = crypto.randomUUID ? crypto.randomUUID() : 
+      `sess_${now}_${Math.random().toString(36).substring(2, 15)}`;
+    localStorage.setItem(key, sessionId);
+    // Clear session viewed videos on new session
+    sessionStorage.removeItem('session_viewed_videos');
+  }
+  
+  localStorage.setItem(lastActivityKey, now.toString());
+  return sessionId;
+};
+
 // Get session-viewed videos to prevent duplicates within session
-const getSessionViewedIds = (): Set<string> => {
+const getSessionViewedIds = (): string[] => {
   try {
     const viewed = sessionStorage.getItem('session_viewed_videos');
-    return new Set(viewed ? JSON.parse(viewed) : []);
+    return viewed ? JSON.parse(viewed) : [];
   } catch {
-    return new Set();
+    return [];
   }
 };
 
 const addSessionViewedId = (videoId: string) => {
   try {
-    const viewed = getSessionViewedIds();
+    const viewed = new Set(getSessionViewedIds());
     viewed.add(videoId);
     // Keep only last 100 to prevent storage bloat
     const arr = Array.from(viewed).slice(-100);
@@ -68,7 +109,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
-  const pageRef = useRef(0);
+  const cursorRef = useRef<FeedCursor | null>(null);
 
   // Preload next video's source
   const preloadNextVideo = useCallback((nextIndex: number) => {
@@ -153,19 +194,30 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setHasMore(results.length >= PAGE_SIZE);
         } else {
           // Use recommendation edge function for main feed
-          const sessionViewedIds = Array.from(getSessionViewedIds());
+          const viewerId = getOrCreateViewerId();
+          const sessionId = getOrCreateSessionId();
+          const sessionViewedIds = getSessionViewedIds();
+          
           const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-            body: { userId, page: 0, limit: PAGE_SIZE, sessionViewedIds }
+            body: { 
+              userId, 
+              viewerId,
+              sessionId,
+              cursor: null, // First page
+              limit: PAGE_SIZE, 
+              sessionViewedIds 
+            }
           });
 
           if (error) throw error;
 
           const resultVideos = data?.videos || [];
+          cursorRef.current = data?.nextCursor || null;
           console.log("[VideoFeed] Got recommended videos:", resultVideos.length);
           
           resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(resultVideos);
-          setHasMore(resultVideos.length >= PAGE_SIZE);
+          setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
           
           // Preload second video thumbnail
           if (resultVideos.length > 1) {
@@ -195,7 +247,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       setLoading(true);
       setActiveIndex(0);
       loadedIdsRef.current.clear();
-      pageRef.current = 0;
+      cursorRef.current = null;
       
       if (containerRef.current) {
         containerRef.current.scrollTop = 0;
@@ -292,11 +344,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
     const loadMore = async () => {
       setIsLoadingMore(true);
-      pageRef.current += 1;
       
       try {
         if (searchQuery || categoryFilter) {
-          // Direct query for filtered views
+          // Direct query for filtered views (keep offset-based for search)
           const offset = videos.length;
           let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&offset=${offset}&limit=${PAGE_SIZE}`;
           
@@ -320,19 +371,30 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setVideos(prev => [...prev, ...newVideos]);
           setHasMore(newVideos.length > 0);
         } else {
-          // Use edge function for paginated feed
-          const sessionViewedIds = Array.from(getSessionViewedIds());
+          // Use edge function with cursor-based pagination
+          const viewerId = getOrCreateViewerId();
+          const sessionId = getOrCreateSessionId();
+          const sessionViewedIds = getSessionViewedIds();
+          
           const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-            body: { userId, page: pageRef.current, limit: PAGE_SIZE, sessionViewedIds }
+            body: { 
+              userId, 
+              viewerId,
+              sessionId,
+              cursor: cursorRef.current, 
+              limit: PAGE_SIZE, 
+              sessionViewedIds 
+            }
           });
 
           if (error) throw error;
 
           const newVideos = (data?.videos || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
           newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
+          cursorRef.current = data?.nextCursor || null;
           
           setVideos(prev => [...prev, ...newVideos]);
-          setHasMore(newVideos.length > 0);
+          setHasMore(data?.hasMore ?? newVideos.length > 0);
         }
       } catch (err) {
         console.error("Load more error:", err);
