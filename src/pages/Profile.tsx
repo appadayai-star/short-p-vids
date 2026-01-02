@@ -696,6 +696,12 @@ const Profile = () => {
             savedVideos.find(v => v.id === selectedVideoId) ? savedVideos :
             undefined
           }
+          onVideoLikeChange={(videoId, newLikesCount) => {
+            // Update the likes count in all video arrays
+            setMyVideos(prev => prev.map(v => v.id === videoId ? { ...v, likes_count: newLikesCount } : v));
+            setLikedVideos(prev => prev.map(v => v.id === videoId ? { ...v, likes_count: newLikesCount } : v));
+            setSavedVideos(prev => prev.map(v => v.id === videoId ? { ...v, likes_count: newLikesCount } : v));
+          }}
         />
       )}
     </div>
