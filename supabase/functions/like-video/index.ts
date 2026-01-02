@@ -81,24 +81,13 @@ Deno.serve(async (req) => {
           );
         }
       } else {
-        // For guest users, manually increment the likes_count
-        const { error: updateError } = await supabase
-          .from("videos")
-          .update({ likes_count: supabase.rpc ? undefined : undefined })
-          .eq("id", videoId);
-        
-        // Use raw SQL increment since Supabase JS doesn't have increment helper
+        // For guest users, manually increment the likes_count using RPC
         const { error: incrementError } = await supabase.rpc('increment_likes_count', { 
           video_id_param: videoId 
-        }).maybeSingle();
+        });
         
-        // Fallback: direct update if RPC doesn't exist
         if (incrementError) {
-          console.log("RPC not available, using direct update");
-          await supabase
-            .from("videos")
-            .update({ likes_count: supabase.sql`likes_count + 1` })
-            .eq("id", videoId);
+          console.error("Error incrementing likes count:", incrementError);
         }
       }
     } else if (action === "unlike") {
@@ -114,13 +103,13 @@ Deno.serve(async (req) => {
           console.error("Error deleting like:", deleteError);
         }
       } else {
-        // For guest users, manually decrement the likes_count
+        // For guest users, manually decrement the likes_count using RPC
         const { error: decrementError } = await supabase.rpc('decrement_likes_count', { 
           video_id_param: videoId 
-        }).maybeSingle();
+        });
         
         if (decrementError) {
-          console.log("RPC not available for decrement");
+          console.error("Error decrementing likes count:", decrementError);
         }
       }
     }
