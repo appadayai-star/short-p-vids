@@ -702,6 +702,10 @@ export type Database = {
       }
     }
     Functions: {
+      decrement_likes_count: {
+        Args: { video_id_param: string }
+        Returns: undefined
+      }
       get_email_by_username: { Args: { p_username: string }; Returns: string }
       has_role: {
         Args: {
@@ -709,6 +713,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_likes_count: {
+        Args: { video_id_param: string }
+        Returns: undefined
       }
     }
     Enums: {
