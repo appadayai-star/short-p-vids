@@ -1,10 +1,17 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { X, Heart, Share2, Bookmark, Volume2, VolumeX } from "lucide-react";
+import { X, Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
 import { ShareDrawer } from "./ShareDrawer";
+import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Global mute state
 let globalMuted = true;
@@ -12,6 +19,31 @@ const muteListeners = new Set<(muted: boolean) => void>();
 const setGlobalMuted = (muted: boolean) => {
   globalMuted = muted;
   muteListeners.forEach(listener => listener(muted));
+};
+
+// Guest client ID for anonymous likes
+const getGuestClientId = (): string => {
+  const key = 'guest_client_id';
+  let clientId = localStorage.getItem(key);
+  if (!clientId) {
+    clientId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    localStorage.setItem(key, clientId);
+  }
+  return clientId;
+};
+
+// Guest likes storage
+const getGuestLikes = (): string[] => {
+  try {
+    const likes = localStorage.getItem('guest_likes_v1');
+    return likes ? JSON.parse(likes) : [];
+  } catch {
+    return [];
+  }
+};
+
+const setGuestLikes = (likes: string[]) => {
+  localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
 };
 
 interface Video {
@@ -39,18 +71,21 @@ interface VideoModalProps {
   initialVideoId: string;
   userId: string | null;
   videos?: Video[];
+  onVideoDeleted?: (videoId: string) => void;
 }
 
-export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: providedVideos }: VideoModalProps) => {
+export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: providedVideos, onVideoDeleted }: VideoModalProps) => {
   const navigate = useNavigate();
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isMuted, setIsMuted] = useState(globalMuted);
+  const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [likedVideos, setLikedVideos] = useState<Set<string>>(new Set());
   const [savedVideos, setSavedVideos] = useState<Set<string>>(new Set());
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+  const [saveCounts, setSaveCounts] = useState<Record<string, number>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const isScrollingRef = useRef(false);
@@ -61,6 +96,14 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     muteListeners.add(listener);
     return () => { muteListeners.delete(listener); };
   }, []);
+
+  // Check guest likes on mount
+  useEffect(() => {
+    if (!userId) {
+      const guestLikes = getGuestLikes();
+      setLikedVideos(new Set(guestLikes));
+    }
+  }, [userId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -83,6 +126,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       }
       document.body.style.overflow = 'hidden';
       fetchUserInteractions();
+      fetchSaveCounts();
     } else {
       document.body.style.overflow = 'unset';
     }
@@ -151,6 +195,25 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }
   };
 
+  const fetchSaveCounts = async () => {
+    const videoIds = providedVideos?.map(v => v.id) || [];
+    if (videoIds.length === 0) return;
+    
+    try {
+      const counts: Record<string, number> = {};
+      for (const id of videoIds) {
+        const { count } = await supabase
+          .from("saved_videos")
+          .select("*", { count: "exact", head: true })
+          .eq("video_id", id);
+        counts[id] = count || 0;
+      }
+      setSaveCounts(counts);
+    } catch (error) {
+      console.error("Error fetching save counts:", error);
+    }
+  };
+
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (isScrollingRef.current) return;
     
@@ -178,11 +241,15 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }
   }, [activeIndex, videos.length]);
 
-  const toggleMute = () => {
-    setGlobalMuted(!isMuted);
-  };
+  const toggleMute = useCallback(() => {
+    const newMuted = !isMuted;
+    setGlobalMuted(newMuted);
+    setShowMuteIcon(true);
+    setTimeout(() => setShowMuteIcon(false), 500);
+  }, [isMuted]);
 
   const toggleLike = async (videoId: string) => {
+    const clientId = getGuestClientId();
     const wasLiked = likedVideos.has(videoId);
     
     // Optimistic update
@@ -197,9 +264,33 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }));
 
     try {
-      await supabase.functions.invoke('like-video', {
-        body: { videoId, clientId: userId, action: wasLiked ? 'unlike' : 'like' }
+      const { data, error } = await supabase.functions.invoke('like-video', {
+        body: { 
+          videoId, 
+          clientId: userId || clientId, 
+          action: wasLiked ? 'unlike' : 'like' 
+        }
       });
+
+      if (error) throw error;
+
+      // Update with server count if returned
+      if (data?.likesCount !== undefined) {
+        setLikeCounts(prev => ({
+          ...prev,
+          [videoId]: data.likesCount
+        }));
+      }
+
+      // Update guest likes storage
+      if (!userId) {
+        const guestLikes = getGuestLikes();
+        if (wasLiked) {
+          setGuestLikes(guestLikes.filter(id => id !== videoId));
+        } else {
+          setGuestLikes([...guestLikes, videoId]);
+        }
+      }
     } catch {
       // Revert on error
       setLikedVideos(prev => {
@@ -228,6 +319,10 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       wasSaved ? next.delete(videoId) : next.add(videoId);
       return next;
     });
+    setSaveCounts(prev => ({
+      ...prev,
+      [videoId]: (prev[videoId] || 0) + (wasSaved ? -1 : 1)
+    }));
 
     try {
       if (wasSaved) {
@@ -243,13 +338,35 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         wasSaved ? next.add(videoId) : next.delete(videoId);
         return next;
       });
+      setSaveCounts(prev => ({
+        ...prev,
+        [videoId]: (prev[videoId] || 0) + (wasSaved ? 1 : -1)
+      }));
       toast.error("Failed to save video");
+    }
+  };
+
+  const handleDelete = async (videoId: string) => {
+    if (!userId) return;
+    
+    try {
+      await supabase.from("videos").delete().eq("id", videoId);
+      toast.success("Video deleted");
+      setVideos(prev => prev.filter(v => v.id !== videoId));
+      onVideoDeleted?.(videoId);
+      
+      if (videos.length <= 1) {
+        onClose();
+      }
+    } catch {
+      toast.error("Failed to delete video");
     }
   };
 
   if (!isOpen) return null;
 
   const activeVideo = videos[activeIndex];
+  const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
 
   return (
     <div className="fixed inset-0 z-50 bg-black">
@@ -281,6 +398,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
             const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
             const isActive = index === activeIndex;
             const isNearby = Math.abs(index - activeIndex) <= 1;
+            const isOwnVideo = userId === video.user_id;
 
             return (
               <div key={video.id} className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center">
@@ -289,8 +407,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                   <img 
                     src={posterSrc} 
                     alt="" 
-                    className="absolute inset-0 w-full h-full object-contain"
-                    style={{ opacity: isActive ? 0 : 1 }}
+                    className="absolute inset-0 w-full h-full object-cover md:object-contain"
+                    style={{ paddingBottom: navOffset, opacity: isActive ? 0 : 1 }}
                   />
                 )}
 
@@ -302,7 +420,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                     }}
                     src={videoSrc}
                     poster={posterSrc || undefined}
-                    className="absolute inset-0 w-full h-full object-contain"
+                    className="absolute inset-0 w-full h-full object-cover md:object-contain"
+                    style={{ paddingBottom: navOffset }}
                     loop
                     muted={isMuted}
                     playsInline
@@ -311,57 +430,103 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                   />
                 )}
 
-                {/* Mute button */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); toggleMute(); }}
-                  className="absolute bottom-24 right-4 p-2 bg-black/50 rounded-full z-10"
-                >
-                  {isMuted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
-                </button>
-
-                {/* Caption overlay */}
-                <div className="absolute bottom-20 left-4 right-16 z-10 pointer-events-none">
-                  <div 
-                    className="flex items-center gap-2 mb-2 pointer-events-auto cursor-pointer"
-                    onClick={() => { onClose(); navigate(`/profile/${video.user_id}`); }}
-                  >
-                    {video.profiles?.avatar_url ? (
-                      <img src={video.profiles.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold">
-                        {video.profiles?.username?.[0]?.toUpperCase() || '?'}
-                      </div>
-                    )}
-                    <span className="text-white font-semibold text-sm">@{video.profiles?.username}</span>
-                  </div>
-                  <p className="text-white text-sm drop-shadow-lg">{video.description}</p>
-                  {video.tags && video.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1 pointer-events-auto">
-                      {video.tags.map((tag, i) => (
-                        <span 
-                          key={i} 
-                          className="text-white/80 text-xs cursor-pointer hover:text-white"
-                          onClick={() => { onClose(); window.location.href = `/?category=${encodeURIComponent(tag)}`; }}
-                        >
-                          #{tag}
-                        </span>
-                      ))}
+                {/* Mute indicator flash */}
+                {showMuteIcon && isActive && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                    <div className="bg-black/50 rounded-full p-4 animate-scale-in">
+                      {isMuted ? <VolumeX className="h-12 w-12 text-white" /> : <Volume2 className="h-12 w-12 text-white" />}
                     </div>
+                  </div>
+                )}
+
+                {/* Right side actions - matching FeedItem layout */}
+                <div 
+                  className="absolute right-4 flex flex-col items-center gap-5 z-40"
+                  style={{ bottom: navOffset, paddingBottom: '140px' }}
+                >
+                  <button onClick={() => toggleLike(video.id)} className="flex flex-col items-center gap-1">
+                    <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+                      <Heart className={cn("h-6 w-6", likedVideos.has(video.id) ? "fill-primary text-primary" : "text-white")} />
+                    </div>
+                    <span className="text-white text-xs font-semibold drop-shadow">{likeCounts[video.id] || 0}</span>
+                  </button>
+
+                  <button onClick={() => toggleSave(video.id)} className="flex flex-col items-center gap-1">
+                    <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+                      <Bookmark className={cn("h-6 w-6", savedVideos.has(video.id) ? "fill-yellow-500 text-yellow-500" : "text-white")} />
+                    </div>
+                    <span className="text-white text-xs font-semibold drop-shadow">{saveCounts[video.id] || 0}</span>
+                  </button>
+
+                  <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center">
+                    <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+                      <Share2 className="h-6 w-6 text-white" />
+                    </div>
+                  </button>
+
+                  <button onClick={toggleMute} className="flex flex-col items-center">
+                    <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+                      {isMuted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
+                    </div>
+                  </button>
+
+                  {isOwnVideo && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="flex flex-col items-center">
+                          <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
+                            <MoreVertical className="h-6 w-6 text-white" />
+                          </div>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-background border-border z-50">
+                        <DropdownMenuItem onClick={() => handleDelete(video.id)} className="text-destructive focus:text-destructive cursor-pointer">
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </div>
 
-                {/* Action buttons */}
-                <div className="absolute right-3 bottom-36 flex flex-col items-center gap-4 z-10">
-                  <button onClick={() => toggleLike(video.id)} className="flex flex-col items-center">
-                    <Heart className={`h-7 w-7 ${likedVideos.has(video.id) ? 'fill-red-500 text-red-500' : 'text-white'}`} />
-                    <span className="text-white text-xs mt-1">{likeCounts[video.id] || 0}</span>
-                  </button>
-                  <button onClick={() => toggleSave(video.id)} className="flex flex-col items-center">
-                    <Bookmark className={`h-7 w-7 ${savedVideos.has(video.id) ? 'fill-yellow-500 text-yellow-500' : 'text-white'}`} />
-                  </button>
-                  <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center">
-                    <Share2 className="h-7 w-7 text-white" />
-                  </button>
+                {/* Bottom info - matching FeedItem layout */}
+                <div 
+                  className="absolute left-0 right-0 p-4 z-40 bg-gradient-to-t from-black via-black/60 to-transparent pr-[80px]"
+                  style={{ bottom: navOffset }}
+                >
+                  <div className="space-y-2">
+                    <div 
+                      className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit"
+                      onClick={() => { onClose(); navigate(`/profile/${video.user_id}`); }}
+                    >
+                      <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
+                        {video.profiles?.avatar_url ? (
+                          <img src={video.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
+                            {video.profiles?.username?.[0]?.toUpperCase() || '?'}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-white font-semibold">@{video.profiles?.username}</span>
+                    </div>
+                    
+                    {video.description && <p className="text-white/90 text-sm">{video.description}</p>}
+                    
+                    {video.tags && video.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {video.tags.map((tag, i) => (
+                          <button
+                            key={i}
+                            onClick={() => { onClose(); window.location.href = `/?category=${encodeURIComponent(tag)}`; }}
+                            className="text-primary text-sm font-semibold hover:underline cursor-pointer"
+                          >
+                            #{tag}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );
