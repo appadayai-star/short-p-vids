@@ -79,7 +79,6 @@ Deno.serve(async (req) => {
       likesResult,
       savesResult,
       uploadsResult,
-      allViewsForAnalysis,
       sharesResult,
       profileViewsResult,
       followsResult,
@@ -89,15 +88,39 @@ Deno.serve(async (req) => {
       dateFilter(serviceClient.from("likes").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("saved_videos").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("videos").select("id", { count: "exact", head: true }), "created_at"),
-      // All views for detailed analysis - ORDER BY viewed_at DESC to get newest first
-      dateFilter(serviceClient.from("video_views").select("user_id, viewer_id, session_id, video_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"), "viewed_at").order("viewed_at", { ascending: false }).limit(100000),
       dateFilter(serviceClient.from("shares").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("profile_views").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("follows").select("id", { count: "exact", head: true }), "created_at"),
     ]);
+
+    // Fetch ALL views for detailed analysis using pagination to overcome Supabase's 1000 row limit
+    const allViews: any[] = [];
+    const pageSize = 1000;
+    let offset = 0;
+    let hasMore = true;
     
-    const allViews = allViewsForAnalysis.data || [];
-    console.log(`Fetched ${allViews.length} views for analysis`);
+    while (hasMore) {
+      const { data: pageData, error: pageError } = await dateFilter(
+        serviceClient.from("video_views").select("user_id, viewer_id, session_id, video_id, viewed_at, watch_duration_seconds, video_duration_seconds, watch_completion_percent, time_to_first_frame_ms"),
+        "viewed_at"
+      ).order("viewed_at", { ascending: false }).range(offset, offset + pageSize - 1);
+      
+      if (pageError) {
+        console.error("Error fetching views page:", pageError);
+        break;
+      }
+      
+      if (pageData && pageData.length > 0) {
+        allViews.push(...pageData);
+        offset += pageSize;
+        // Stop if we got fewer rows than requested (last page) or if we've hit a reasonable limit
+        hasMore = pageData.length === pageSize && allViews.length < 50000;
+      } else {
+        hasMore = false;
+      }
+    }
+    
+    console.log(`Fetched ${allViews.length} views for analysis (paginated)`);
 
     // === DEBUG COUNTERS (all rows) ===
     let rowsMissingSessionId = 0;
