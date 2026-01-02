@@ -72,9 +72,10 @@ interface VideoModalProps {
   userId: string | null;
   videos?: Video[];
   onVideoDeleted?: (videoId: string) => void;
+  onVideoLikeChange?: (videoId: string, newLikesCount: number) => void;
 }
 
-export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: providedVideos, onVideoDeleted }: VideoModalProps) => {
+export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: providedVideos, onVideoDeleted, onVideoLikeChange }: VideoModalProps) => {
   const navigate = useNavigate();
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -280,6 +281,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
           ...prev,
           [videoId]: data.likesCount
         }));
+        // Notify parent about the like change so it can update its state
+        onVideoLikeChange?.(videoId, data.likesCount);
       }
 
       // Update guest likes storage
