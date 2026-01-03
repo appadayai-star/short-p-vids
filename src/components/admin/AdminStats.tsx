@@ -224,6 +224,7 @@ export const AdminStats = () => {
     from: subDays(new Date(), 7),
     to: new Date(),
   });
+  const [fetchKey, setFetchKey] = useState(0);
 
   const toUTCStartOfDay = (date: Date) => {
     const d = new Date(date);
@@ -236,26 +237,37 @@ export const AdminStats = () => {
   };
 
   const handlePresetChange = (preset: string) => {
-    setDatePreset(preset);
     const now = new Date();
+    let newRange: DateRange | undefined;
     
     switch (preset) {
       case "24h":
-        setDateRange({ from: subDays(now, 1), to: now });
+        newRange = { from: subDays(now, 1), to: now };
         break;
       case "7d":
-        setDateRange({ from: subDays(now, 7), to: now });
+        newRange = { from: subDays(now, 7), to: now };
         break;
       case "30d":
-        setDateRange({ from: subDays(now, 30), to: now });
+        newRange = { from: subDays(now, 30), to: now };
         break;
       case "lifetime":
       case "custom":
+        newRange = dateRange;
         break;
+      default:
+        newRange = dateRange;
     }
+    
+    // Batch the state updates and trigger a single fetch
+    setDatePreset(preset);
+    setDateRange(newRange);
+    setFetchKey(prev => prev + 1);
   };
 
   useEffect(() => {
+    let isCancelled = false;
+    const abortController = new AbortController();
+    
     const fetchStats = async () => {
       setLoading(true);
       setError(null);
@@ -280,7 +292,10 @@ export const AdminStats = () => {
             Authorization: `Bearer ${session.access_token}`,
             apikey: SUPABASE_ANON_KEY,
           },
+          signal: abortController.signal,
         });
+
+        if (isCancelled) return;
 
         if (!res.ok) {
           const errorData = await res.json();
@@ -288,17 +303,27 @@ export const AdminStats = () => {
         }
 
         const data = await res.json();
-        setStats(data);
+        if (!isCancelled) {
+          setStats(data);
+        }
       } catch (err) {
+        if (isCancelled || (err instanceof Error && err.name === 'AbortError')) return;
         console.error("Error fetching stats:", err);
         setError(err instanceof Error ? err.message : "Failed to load stats");
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
     };
 
     fetchStats();
-  }, [dateRange, datePreset]);
+    
+    return () => {
+      isCancelled = true;
+      abortController.abort();
+    };
+  }, [fetchKey]);
 
   const chartData = stats?.daily?.map(d => ({
     ...d,
@@ -339,7 +364,19 @@ export const AdminStats = () => {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar initialFocus mode="range" defaultMonth={dateRange?.from} selected={dateRange} onSelect={setDateRange} numberOfMonths={2} />
+              <Calendar 
+                initialFocus 
+                mode="range" 
+                defaultMonth={dateRange?.from} 
+                selected={dateRange} 
+                onSelect={(range) => {
+                  setDateRange(range);
+                  if (range?.from && range?.to) {
+                    setFetchKey(prev => prev + 1);
+                  }
+                }} 
+                numberOfMonths={2} 
+              />
             </PopoverContent>
           </Popover>
         )}
