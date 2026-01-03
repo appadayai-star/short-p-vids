@@ -430,51 +430,99 @@ Deno.serve(async (req) => {
       };
     }
 
-    // Daily breakdown
+    // Time-based breakdown (hourly for 24h, daily for longer periods)
     const daily: { date: string; views: number; profilesCreated: number; likes: number; saves: number; uploads: number; shares: number }[] = [];
+    let isHourlyBreakdown = false;
     
     if (!isLifetime && startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      const days: string[] = [];
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        days.push(d.toISOString().split("T")[0]);
+      const periodMs = end.getTime() - start.getTime();
+      const periodHours = periodMs / (1000 * 60 * 60);
+      
+      // Use hourly breakdown for periods <= 48 hours
+      if (periodHours <= 48) {
+        isHourlyBreakdown = true;
+        const hours: Date[] = [];
+        for (let d = new Date(start); d < end; d.setHours(d.getHours() + 1)) {
+          hours.push(new Date(d));
+        }
+
+        const hourlyPromises = hours.map(async (hourStart) => {
+          const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
+          const hourStartStr = hourStart.toISOString();
+          const hourEndStr = hourEnd.toISOString();
+
+          const [views, profiles, likes, saves, uploads, shares] = await Promise.all([
+            serviceClient.from("video_views").select("id", { count: "exact", head: true })
+              .gte("viewed_at", hourStartStr).lt("viewed_at", hourEndStr),
+            serviceClient.from("profiles").select("id", { count: "exact", head: true })
+              .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
+            serviceClient.from("likes").select("id", { count: "exact", head: true })
+              .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
+            serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
+              .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
+            serviceClient.from("videos").select("id", { count: "exact", head: true })
+              .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
+            serviceClient.from("shares").select("id", { count: "exact", head: true })
+              .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
+          ]);
+
+          return {
+            date: hourStartStr, // Full ISO string for hourly data
+            views: views.count || 0,
+            profilesCreated: profiles.count || 0,
+            likes: likes.count || 0,
+            saves: saves.count || 0,
+            uploads: uploads.count || 0,
+            shares: shares.count || 0,
+          };
+        });
+
+        const hourlyResults = await Promise.all(hourlyPromises);
+        daily.push(...hourlyResults);
+      } else {
+        // Daily breakdown for periods > 48 hours
+        const days: string[] = [];
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          days.push(d.toISOString().split("T")[0]);
+        }
+
+        const dailyPromises = days.map(async (dateStr) => {
+          const dayStart = `${dateStr}T00:00:00.000Z`;
+          const nextDay = new Date(dateStr);
+          nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+          const dayEnd = nextDay.toISOString();
+
+          const [views, profiles, likes, saves, uploads, shares] = await Promise.all([
+            serviceClient.from("video_views").select("id", { count: "exact", head: true })
+              .gte("viewed_at", dayStart).lt("viewed_at", dayEnd),
+            serviceClient.from("profiles").select("id", { count: "exact", head: true })
+              .gte("created_at", dayStart).lt("created_at", dayEnd),
+            serviceClient.from("likes").select("id", { count: "exact", head: true })
+              .gte("created_at", dayStart).lt("created_at", dayEnd),
+            serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
+              .gte("created_at", dayStart).lt("created_at", dayEnd),
+            serviceClient.from("videos").select("id", { count: "exact", head: true })
+              .gte("created_at", dayStart).lt("created_at", dayEnd),
+            serviceClient.from("shares").select("id", { count: "exact", head: true })
+              .gte("created_at", dayStart).lt("created_at", dayEnd),
+          ]);
+
+          return {
+            date: dateStr,
+            views: views.count || 0,
+            profilesCreated: profiles.count || 0,
+            likes: likes.count || 0,
+            saves: saves.count || 0,
+            uploads: uploads.count || 0,
+            shares: shares.count || 0,
+          };
+        });
+
+        const dailyResults = await Promise.all(dailyPromises);
+        daily.push(...dailyResults);
       }
-
-      const dailyPromises = days.map(async (dateStr) => {
-        const dayStart = `${dateStr}T00:00:00.000Z`;
-        const nextDay = new Date(dateStr);
-        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-        const dayEnd = nextDay.toISOString();
-
-        const [views, profiles, likes, saves, uploads, shares] = await Promise.all([
-          serviceClient.from("video_views").select("id", { count: "exact", head: true })
-            .gte("viewed_at", dayStart).lt("viewed_at", dayEnd),
-          serviceClient.from("profiles").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lt("created_at", dayEnd),
-          serviceClient.from("likes").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lt("created_at", dayEnd),
-          serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lt("created_at", dayEnd),
-          serviceClient.from("videos").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lt("created_at", dayEnd),
-          serviceClient.from("shares").select("id", { count: "exact", head: true })
-            .gte("created_at", dayStart).lt("created_at", dayEnd),
-        ]);
-
-        return {
-          date: dateStr,
-          views: views.count || 0,
-          profilesCreated: profiles.count || 0,
-          likes: likes.count || 0,
-          saves: saves.count || 0,
-          uploads: uploads.count || 0,
-          shares: shares.count || 0,
-        };
-      });
-
-      const dailyResults = await Promise.all(dailyPromises);
-      daily.push(...dailyResults);
     }
 
     // Format helpers
@@ -605,8 +653,9 @@ Deno.serve(async (req) => {
       // Trends
       trends: trendData,
       
-      // Daily breakdown
+      // Time-based breakdown (hourly or daily)
       daily,
+      isHourlyBreakdown,
     };
 
     console.log("Stats:", { ...stats, daily: `${daily.length} days` });

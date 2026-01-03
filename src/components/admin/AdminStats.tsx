@@ -142,6 +142,7 @@ interface Stats {
   } | null;
   
   daily: DailyStats[];
+  isHourlyBreakdown?: boolean;
 }
 
 const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
@@ -370,7 +371,9 @@ export const AdminStats = () => {
 
   const chartData = stats?.daily?.map(d => ({
     ...d,
-    date: format(new Date(d.date), "MMM d"),
+    date: stats?.isHourlyBreakdown 
+      ? format(new Date(d.date), "ha") // e.g., "3PM", "4PM"
+      : format(new Date(d.date), "MMM d"),
   })) || [];
 
   return (
@@ -810,7 +813,7 @@ export const AdminStats = () => {
       {datePreset !== "lifetime" && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Daily Trends</CardTitle>
+            <CardTitle className="text-lg">{stats?.isHourlyBreakdown ? "Hourly Trends" : "Daily Trends"}</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
