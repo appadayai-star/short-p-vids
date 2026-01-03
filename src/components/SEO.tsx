@@ -25,9 +25,11 @@ interface SEOProps {
 
 const defaults = {
   siteName: "ShortPornVids",
-  title: "ShortPornVids – Free Short Porn Videos XXX",
-  description: "Watch free short porn videos on ShortPornVids. Discover endless hot clips, trending XXX content, and personalized recommendations.",
-  keywords: "short porn videos, free porn, xxx videos, adult videos, porn clips, mobile porn, trending porn",
+  title: "Short Porn Clips Porno Videos XXX – ShortPornVids",
+  description:
+    "Watch free short porn videos and porn clips on ShortPornVids. Discover trending XXX clips, vertical mobile porn, TikTok-style videos, and endless adult content.",
+  keywords:
+    "short porn videos, short porn clips, free porn clips, porn clips, xxx clips, short xxx videos, vertical porn videos, mobile porn, tiktok porn, trending porn videos, hd porn clips",
   image: "https://shortpornvids.com/og-image.jpg",
   url: "https://shortpornvids.com",
 };
@@ -172,9 +174,9 @@ export const generateVideoSEO = (video: {
 
 // Export helper for generating category page metadata
 export const generateCategorySEO = (category: string) => ({
-  title: `${category} Videos`,
-  description: `Browse the best ${category.toLowerCase()} videos on ${defaults.siteName}. Discover trending content from top creators.`,
-  keywords: `${category.toLowerCase()}, ${category.toLowerCase()} videos, trending ${category.toLowerCase()}`,
+  title: `${category} Porn Clips & Short Videos XXX`,
+  description: `Watch the best ${category.toLowerCase()} porn clips and short XXX videos on ${defaults.siteName}. Free, mobile-friendly, and trending now.`,
+  keywords: `${category.toLowerCase()} porn clips, ${category.toLowerCase()} short porn videos, free ${category.toLowerCase()} xxx, ${category.toLowerCase()} mobile porn`,
   url: `${defaults.url}/feed?category=${encodeURIComponent(category)}`,
 });
 
