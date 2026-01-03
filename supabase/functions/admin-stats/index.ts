@@ -268,59 +268,65 @@ Deno.serve(async (req) => {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+    // Helper to fetch all viewer_ids with pagination (to overcome 1000 row limit)
+    const fetchAllViewerIds = async (gteDate: string, ltDate?: string): Promise<Set<string>> => {
+      const viewerIds = new Set<string>();
+      const fetchPageSize = 1000;
+      let offset = 0;
+      let hasMore = true;
+      
+      while (hasMore) {
+        let query = serviceClient
+          .from("video_views")
+          .select("viewer_id")
+          .not("viewer_id", "is", null)
+          .gte("viewed_at", gteDate);
+        
+        if (ltDate) {
+          query = query.lt("viewed_at", ltDate);
+        }
+        
+        const { data, error } = await query
+          .order("viewed_at", { ascending: false })
+          .range(offset, offset + fetchPageSize - 1);
+        
+        if (error || !data || data.length === 0) {
+          hasMore = false;
+        } else {
+          data.forEach((row: any) => {
+            if (row.viewer_id) viewerIds.add(row.viewer_id);
+          });
+          offset += fetchPageSize;
+          hasMore = data.length === fetchPageSize && viewerIds.size < 50000;
+        }
+      }
+      
+      return viewerIds;
+    };
+
     // 24h return rate (use viewer_id for reliable tracking)
-    const { data: returningUsers24h } = await serviceClient
-      .from("video_views")
-      .select("viewer_id")
-      .not("viewer_id", "is", null)
-      .gte("viewed_at", oneDayAgo.toISOString());
-
-    const { data: previousUsers24h } = await serviceClient
-      .from("video_views")
-      .select("viewer_id")
-      .not("viewer_id", "is", null)
-      .lt("viewed_at", oneDayAgo.toISOString())
-      .gte("viewed_at", new Date(oneDayAgo.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
-
-    const previousUserSet24h = new Set((previousUsers24h || []).map((u: any) => u.viewer_id).filter(Boolean));
-    const returningUserSet24h = new Set((returningUsers24h || []).map((u: any) => u.viewer_id).filter(Boolean));
+    const [returningUserSet24h, previousUserSet24h] = await Promise.all([
+      fetchAllViewerIds(oneDayAgo.toISOString()),
+      fetchAllViewerIds(new Date(oneDayAgo.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(), oneDayAgo.toISOString()),
+    ]);
+    
     const returnedCount24h = Array.from(returningUserSet24h).filter(u => previousUserSet24h.has(u)).length;
     const returnRate24h = previousUserSet24h.size > 0 ? (returnedCount24h / previousUserSet24h.size) * 100 : 0;
 
     // 7-day return rate
-    const { data: returningUsers7d } = await serviceClient
-      .from("video_views")
-      .select("viewer_id")
-      .not("viewer_id", "is", null)
-      .gte("viewed_at", sevenDaysAgo.toISOString());
+    const [returningUserSet7d, previousUserSet7d] = await Promise.all([
+      fetchAllViewerIds(sevenDaysAgo.toISOString()),
+      fetchAllViewerIds(thirtyDaysAgo.toISOString(), sevenDaysAgo.toISOString()),
+    ]);
 
-    const { data: previousUsers7d } = await serviceClient
-      .from("video_views")
-      .select("viewer_id")
-      .not("viewer_id", "is", null)
-      .lt("viewed_at", sevenDaysAgo.toISOString())
-      .gte("viewed_at", thirtyDaysAgo.toISOString());
-
-    const previousUserSet7d = new Set((previousUsers7d || []).map((u: any) => u.viewer_id).filter(Boolean));
-    const returningUserSet7d = new Set((returningUsers7d || []).map((u: any) => u.viewer_id).filter(Boolean));
     const returnedCount7d = Array.from(returningUserSet7d).filter(u => previousUserSet7d.has(u)).length;
     const returnRate7d = previousUserSet7d.size > 0 ? (returnedCount7d / previousUserSet7d.size) * 100 : 0;
 
-    // DAU / MAU (use viewer_id)
-    const { data: dauData } = await serviceClient
-      .from("video_views")
-      .select("viewer_id")
-      .not("viewer_id", "is", null)
-      .gte("viewed_at", oneDayAgo.toISOString());
-    const dauSet = new Set((dauData || []).map((u: any) => u.viewer_id).filter(Boolean));
+    // DAU / MAU (use viewer_id) - reuse the already-fetched sets where possible
+    const dauSet = returningUserSet24h; // Already fetched views from last 24h
     const dau = dauSet.size;
 
-    const { data: mauData } = await serviceClient
-      .from("video_views")
-      .select("viewer_id")
-      .not("viewer_id", "is", null)
-      .gte("viewed_at", thirtyDaysAgo.toISOString());
-    const mauSet = new Set((mauData || []).map((u: any) => u.viewer_id).filter(Boolean));
+    const mauSet = await fetchAllViewerIds(thirtyDaysAgo.toISOString());
     const mau = mauSet.size;
 
     const dauMauRatio = mau > 0 ? (dau / mau) * 100 : 0;
