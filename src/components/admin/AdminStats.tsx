@@ -236,6 +236,34 @@ export const AdminStats = () => {
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999));
   };
 
+  // For time-based presets, we need exact timestamps, not day boundaries
+  const getDateRangeForPreset = (preset: string): { startDate: string; endDate: string } | null => {
+    const now = new Date();
+    
+    switch (preset) {
+      case "24h":
+        // Exact 24 hours ago to now
+        return {
+          startDate: subDays(now, 1).toISOString(),
+          endDate: now.toISOString(),
+        };
+      case "7d":
+        // Exact 7 days ago to now
+        return {
+          startDate: subDays(now, 7).toISOString(),
+          endDate: now.toISOString(),
+        };
+      case "30d":
+        // Exact 30 days ago to now
+        return {
+          startDate: subDays(now, 30).toISOString(),
+          endDate: now.toISOString(),
+        };
+      default:
+        return null;
+    }
+  };
+
   const handlePresetChange = (preset: string) => {
     const now = new Date();
     let newRange: DateRange | undefined;
@@ -279,12 +307,27 @@ export const AdminStats = () => {
         let url: string;
         if (datePreset === "lifetime") {
           url = `${SUPABASE_URL}/functions/v1/admin-stats?lifetime=true`;
-        } else if (dateRange?.from && dateRange?.to) {
-          const startDate = toUTCStartOfDay(dateRange.from).toISOString();
-          const endDate = toUTCEndOfDay(dateRange.to).toISOString();
-          url = `${SUPABASE_URL}/functions/v1/admin-stats?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
         } else {
-          return;
+          // For time-based presets (24h, 7d, 30d), use exact timestamps
+          // For custom date ranges, use day boundaries
+          const presetDates = getDateRangeForPreset(datePreset);
+          
+          let startDate: string;
+          let endDate: string;
+          
+          if (presetDates) {
+            // Use exact timestamps for presets
+            startDate = presetDates.startDate;
+            endDate = presetDates.endDate;
+          } else if (dateRange?.from && dateRange?.to) {
+            // Use day boundaries for custom ranges
+            startDate = toUTCStartOfDay(dateRange.from).toISOString();
+            endDate = toUTCEndOfDay(dateRange.to).toISOString();
+          } else {
+            return;
+          }
+          
+          url = `${SUPABASE_URL}/functions/v1/admin-stats?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
         }
 
         const res = await fetch(url, {
