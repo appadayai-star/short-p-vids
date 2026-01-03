@@ -601,7 +601,7 @@ Deno.serve(async (req) => {
       engagementRate: Math.round(engagementRate * 100) / 100,
       likeRate: Math.round(likeRate * 100) / 100,
       saveRate: Math.round(saveRate * 100) / 100,
-      likes: likesResult.count || 0,
+      likes: totalLikes, // Includes both authenticated and guest likes
       saves: savesResult.count || 0,
       shares: sharesResult.count || 0,
       profileViews: profileViewsResult.count || 0,
