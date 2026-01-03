@@ -73,11 +73,12 @@ Deno.serve(async (req) => {
       return query.gte(dateCol, startDate).lte(dateCol, endDate);
     };
 
-    // Fetch all data in parallel
+    // Fetch all data in parallel (including guest_likes for total engagement)
     const [
       viewsResult,
       profilesResult,
       likesResult,
+      guestLikesResult,
       savesResult,
       uploadsResult,
       sharesResult,
@@ -87,6 +88,7 @@ Deno.serve(async (req) => {
       dateFilter(serviceClient.from("video_views").select("id", { count: "exact", head: true }), "viewed_at"),
       dateFilter(serviceClient.from("profiles").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("likes").select("id", { count: "exact", head: true }), "created_at"),
+      dateFilter(serviceClient.from("guest_likes").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("saved_videos").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("videos").select("id", { count: "exact", head: true }), "created_at"),
       dateFilter(serviceClient.from("shares").select("id", { count: "exact", head: true }), "created_at"),
@@ -247,8 +249,10 @@ Deno.serve(async (req) => {
       ? ttffValues[Math.floor(ttffValues.length * 0.95)] 
       : 0;
 
-    // Engagement metrics
-    const totalLikes = likesResult.count || 0;
+    // Engagement metrics (combine authenticated + guest likes)
+    const totalAuthLikes = likesResult.count || 0;
+    const totalGuestLikes = guestLikesResult.count || 0;
+    const totalLikes = totalAuthLikes + totalGuestLikes;
     const totalSaves = savesResult.count || 0;
     const engagementRate = ((totalLikes + totalSaves) / totalViews) * 100;
     const likeRate = (totalLikes / totalViews) * 100;
@@ -400,10 +404,12 @@ Deno.serve(async (req) => {
       const prevStartDate = new Date(startMs - periodMs).toISOString();
       const prevEndDate = new Date(startMs).toISOString();
 
-      const [prevViews, prevLikes, prevSaves, prevSignups, prevUploads, prevShares] = await Promise.all([
+      const [prevViews, prevLikes, prevGuestLikes, prevSaves, prevSignups, prevUploads, prevShares] = await Promise.all([
         serviceClient.from("video_views").select("id", { count: "exact", head: true })
           .gte("viewed_at", prevStartDate).lte("viewed_at", prevEndDate),
         serviceClient.from("likes").select("id", { count: "exact", head: true })
+          .gte("created_at", prevStartDate).lte("created_at", prevEndDate),
+        serviceClient.from("guest_likes").select("id", { count: "exact", head: true })
           .gte("created_at", prevStartDate).lte("created_at", prevEndDate),
         serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
           .gte("created_at", prevStartDate).lte("created_at", prevEndDate),
@@ -420,9 +426,11 @@ Deno.serve(async (req) => {
         return ((current - previous) / previous) * 100;
       };
 
+      const prevTotalLikes = (prevLikes.count || 0) + (prevGuestLikes.count || 0);
+      
       trendData = {
         views: calcTrend(viewsResult.count || 0, prevViews.count || 0),
-        likes: calcTrend(likesResult.count || 0, prevLikes.count || 0),
+        likes: calcTrend(totalLikes, prevTotalLikes),
         saves: calcTrend(savesResult.count || 0, prevSaves.count || 0),
         profilesCreated: calcTrend(profilesResult.count || 0, prevSignups.count || 0),
         uploads: calcTrend(uploadsResult.count || 0, prevUploads.count || 0),
@@ -453,12 +461,14 @@ Deno.serve(async (req) => {
           const hourStartStr = hourStart.toISOString();
           const hourEndStr = hourEnd.toISOString();
 
-          const [views, profiles, likes, saves, uploads, shares] = await Promise.all([
+          const [views, profiles, likes, guestLikes, saves, uploads, shares] = await Promise.all([
             serviceClient.from("video_views").select("id", { count: "exact", head: true })
               .gte("viewed_at", hourStartStr).lt("viewed_at", hourEndStr),
             serviceClient.from("profiles").select("id", { count: "exact", head: true })
               .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
             serviceClient.from("likes").select("id", { count: "exact", head: true })
+              .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
+            serviceClient.from("guest_likes").select("id", { count: "exact", head: true })
               .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
             serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
               .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
@@ -472,7 +482,7 @@ Deno.serve(async (req) => {
             date: hourStartStr, // Full ISO string for hourly data
             views: views.count || 0,
             profilesCreated: profiles.count || 0,
-            likes: likes.count || 0,
+            likes: (likes.count || 0) + (guestLikes.count || 0),
             saves: saves.count || 0,
             uploads: uploads.count || 0,
             shares: shares.count || 0,
@@ -494,12 +504,14 @@ Deno.serve(async (req) => {
           nextDay.setUTCDate(nextDay.getUTCDate() + 1);
           const dayEnd = nextDay.toISOString();
 
-          const [views, profiles, likes, saves, uploads, shares] = await Promise.all([
+          const [views, profiles, likes, guestLikes, saves, uploads, shares] = await Promise.all([
             serviceClient.from("video_views").select("id", { count: "exact", head: true })
               .gte("viewed_at", dayStart).lt("viewed_at", dayEnd),
             serviceClient.from("profiles").select("id", { count: "exact", head: true })
               .gte("created_at", dayStart).lt("created_at", dayEnd),
             serviceClient.from("likes").select("id", { count: "exact", head: true })
+              .gte("created_at", dayStart).lt("created_at", dayEnd),
+            serviceClient.from("guest_likes").select("id", { count: "exact", head: true })
               .gte("created_at", dayStart).lt("created_at", dayEnd),
             serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
               .gte("created_at", dayStart).lt("created_at", dayEnd),
@@ -513,7 +525,7 @@ Deno.serve(async (req) => {
             date: dateStr,
             views: views.count || 0,
             profilesCreated: profiles.count || 0,
-            likes: likes.count || 0,
+            likes: (likes.count || 0) + (guestLikes.count || 0),
             saves: saves.count || 0,
             uploads: uploads.count || 0,
             shares: shares.count || 0,

@@ -81,7 +81,16 @@ Deno.serve(async (req) => {
           );
         }
       } else {
-        // For guest users, manually increment the likes_count using RPC
+        // For guest users, insert into guest_likes table AND increment count
+        const { error: insertError } = await supabase
+          .from("guest_likes")
+          .insert({ guest_id: clientId, video_id: videoId });
+        
+        if (insertError && !insertError.message.includes('duplicate')) {
+          console.error("Error inserting guest like:", insertError);
+        }
+        
+        // Also increment the likes_count on videos table
         const { error: incrementError } = await supabase.rpc('increment_likes_count', { 
           video_id_param: videoId 
         });
@@ -103,7 +112,18 @@ Deno.serve(async (req) => {
           console.error("Error deleting like:", deleteError);
         }
       } else {
-        // For guest users, manually decrement the likes_count using RPC
+        // For guest users, delete from guest_likes table AND decrement count
+        const { error: deleteError } = await supabase
+          .from("guest_likes")
+          .delete()
+          .eq("guest_id", clientId)
+          .eq("video_id", videoId);
+        
+        if (deleteError) {
+          console.error("Error deleting guest like:", deleteError);
+        }
+        
+        // Also decrement the likes_count on videos table
         const { error: decrementError } = await supabase.rpc('decrement_likes_count', { 
           video_id_param: videoId 
         });

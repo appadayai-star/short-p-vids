@@ -169,6 +169,27 @@ export type Database = {
           },
         ]
       }
+      guest_likes: {
+        Row: {
+          created_at: string
+          guest_id: string
+          id: string
+          video_id: string
+        }
+        Insert: {
+          created_at?: string
+          guest_id: string
+          id?: string
+          video_id: string
+        }
+        Update: {
+          created_at?: string
+          guest_id?: string
+          id?: string
+          video_id?: string
+        }
+        Relationships: []
+      }
       likes: {
         Row: {
           created_at: string
