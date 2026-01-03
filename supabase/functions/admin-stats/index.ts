@@ -66,10 +66,11 @@ Deno.serve(async (req) => {
 
     console.log(`Fetching stats ${isLifetime ? "lifetime" : `from ${startDate} to ${endDate}`}`);
 
-    // Build date filters - EXCLUSIVE end for consistency (>= start AND < end)
+    // Build date filters - INCLUSIVE end (>= start AND <= end)
+    // We now use exact timestamps from frontend, so inclusive makes sense
     const dateFilter = (query: any, dateCol: string) => {
       if (isLifetime) return query;
-      return query.gte(dateCol, startDate).lt(dateCol, endDate);
+      return query.gte(dateCol, startDate).lte(dateCol, endDate);
     };
 
     // Fetch all data in parallel
@@ -401,17 +402,17 @@ Deno.serve(async (req) => {
 
       const [prevViews, prevLikes, prevSaves, prevSignups, prevUploads, prevShares] = await Promise.all([
         serviceClient.from("video_views").select("id", { count: "exact", head: true })
-          .gte("viewed_at", prevStartDate).lt("viewed_at", prevEndDate),
+          .gte("viewed_at", prevStartDate).lte("viewed_at", prevEndDate),
         serviceClient.from("likes").select("id", { count: "exact", head: true })
-          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+          .gte("created_at", prevStartDate).lte("created_at", prevEndDate),
         serviceClient.from("saved_videos").select("id", { count: "exact", head: true })
-          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+          .gte("created_at", prevStartDate).lte("created_at", prevEndDate),
         serviceClient.from("profiles").select("id", { count: "exact", head: true })
-          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+          .gte("created_at", prevStartDate).lte("created_at", prevEndDate),
         serviceClient.from("videos").select("id", { count: "exact", head: true })
-          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+          .gte("created_at", prevStartDate).lte("created_at", prevEndDate),
         serviceClient.from("shares").select("id", { count: "exact", head: true })
-          .gte("created_at", prevStartDate).lt("created_at", prevEndDate),
+          .gte("created_at", prevStartDate).lte("created_at", prevEndDate),
       ]);
 
       const calcTrend = (current: number, previous: number) => {
