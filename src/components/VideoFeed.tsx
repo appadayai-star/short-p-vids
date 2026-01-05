@@ -306,7 +306,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
+            // Start playing as soon as 15% of the video is visible
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.15) {
               const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
               if (idx !== activeIndex) {
                 setActiveIndex(idx);
@@ -322,7 +323,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             }
           });
         },
-        { threshold: [0.4, 0.6, 0.8], root: container }
+        { threshold: [0.15, 0.3, 0.5], root: container }
       );
       observer.observe(item);
       observers.push(observer);
