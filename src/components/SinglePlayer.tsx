@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Loader2, RefreshCw, Play, Volume2, VolumeX } from "lucide-react";
 import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { VideoDebugOverlay } from "./VideoDebugOverlay";
 
 // Global mute state - persisted across videos
 let globalMuted = true;
@@ -299,6 +300,13 @@ export const SinglePlayer = memo(({
       <div 
         className="absolute inset-0 z-10 pointer-events-auto"
         onClick={handleVideoTap}
+      />
+
+      {/* Debug overlay - enabled via localStorage.videoDebug = '1' */}
+      <VideoDebugOverlay 
+        videoId={video.id} 
+        currentSrc={currentSrc} 
+        videoRef={videoRef} 
       />
 
       {/* Loading spinner overlay */}

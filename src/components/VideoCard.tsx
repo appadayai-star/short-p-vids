@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
 import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { VideoDebugOverlay } from "./VideoDebugOverlay";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -511,6 +512,15 @@ export const VideoCard = memo(({
           onWaiting={handleWaiting}
           onStalled={handleStalled}
           onError={handleError}
+        />
+      )}
+
+      {/* Debug overlay - enabled via localStorage.videoDebug = '1' */}
+      {isTrulyActive && (
+        <VideoDebugOverlay 
+          videoId={video.id} 
+          currentSrc={src} 
+          videoRef={videoRef} 
         />
       )}
 
