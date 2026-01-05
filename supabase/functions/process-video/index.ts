@@ -14,14 +14,17 @@ async function updateVideoStatus(
   data?: {
     cloudinary_public_id?: string | null;
     optimized_video_url?: string | null;
+    thumbnail_url?: string | null;
     processing_error?: string | null;
   }
 ) {
   // Build update payload
-  const updatePayload = {
+  const updatePayload: Record<string, unknown> = {
     processing_status: status,
     cloudinary_public_id: data?.cloudinary_public_id,
     optimized_video_url: data?.optimized_video_url,
+    thumbnail_url: data?.thumbnail_url,
+    thumbnail_generated: status === "completed",
     processing_error: data?.processing_error,
   };
 
@@ -297,12 +300,16 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // STEP 4: Generate optimized delivery URL with transforms
+    // STEP 4: Generate optimized delivery URLs with transforms
     // ============================================================
-    // Use transforms for optimal playback: MP4, H.264, 720p max, faststart
+    // Optimized video: MP4, H.264, 720p max, faststart for quick playback
     const optimizedVideoUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,vc_h264,c_limit,h_720,q_auto,fl_faststart/${uploadedPublicId}.mp4`;
     
-    console.log(`Optimized delivery URL: ${optimizedVideoUrl}`);
+    // Thumbnail: grab first frame as JPG, 480px width
+    const thumbnailUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/so_0,f_jpg,w_480,q_auto/${uploadedPublicId}.jpg`;
+    
+    console.log(`Optimized video URL: ${optimizedVideoUrl}`);
+    console.log(`Thumbnail URL: ${thumbnailUrl}`);
 
     // ============================================================
     // STEP 5: Update database with success
@@ -312,6 +319,7 @@ serve(async (req) => {
     await updateVideoStatus(supabase, videoId, "completed", {
       cloudinary_public_id: uploadedPublicId,
       optimized_video_url: optimizedVideoUrl,
+      thumbnail_url: thumbnailUrl,
       processing_error: null,
     });
 
@@ -322,6 +330,7 @@ serve(async (req) => {
         success: true,
         cloudinaryPublicId: uploadedPublicId,
         optimizedVideoUrl: optimizedVideoUrl,
+        thumbnailUrl: thumbnailUrl,
         originalSize: cloudinaryResult.bytes,
         duration: cloudinaryResult.duration,
       }),
