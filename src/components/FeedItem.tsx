@@ -139,14 +139,14 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive
+  // Play/pause based on isActive - metrics tracked via event listeners in hook
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
-      markLoadStart();
+      markLoadStart(); // Start TTFF timer
       videoEl.currentTime = 0;
       
       const attemptPlay = () => {
@@ -177,6 +177,7 @@ export const FeedItem = memo(({
         videoEl.removeEventListener('canplay', handleCanPlay);
       };
     } else {
+      // Stop watching when scrolling away
       stopWatching();
       videoEl.pause();
     }
@@ -342,7 +343,7 @@ export const FeedItem = memo(({
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
-        src={videoSrc}
+        src={isActive || shouldPreload ? videoSrc : undefined}
         poster={posterSrc}
         loop
         playsInline

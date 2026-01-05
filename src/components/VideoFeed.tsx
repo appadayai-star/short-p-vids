@@ -294,38 +294,43 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     refetch();
   }, [searchQuery, categoryFilter]);
 
-  // Simple intersection observer - low threshold for fast activation
+  // Intersection observer for active detection - 40% threshold for earlier activation
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-            const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
-            if (idx !== activeIndex) {
-              setActiveIndex(idx);
-              
-              // Track session view
-              if (videos[idx]) {
-                addSessionViewedId(videos[idx].id);
-              }
-              
-              // Preload adjacent videos
-              preloadNextVideo(idx + 1);
-              preloadNextVideo(idx + 2);
-            }
-          }
-        });
-      },
-      { threshold: [0.5], root: container }
-    );
+    const observers: IntersectionObserver[] = [];
     
     const items = container.querySelectorAll('[data-video-index]');
-    items.forEach((item) => observer.observe(item));
+    items.forEach((item) => {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
+              const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
+              if (idx !== activeIndex) {
+                setActiveIndex(idx);
+                
+                // Track session view
+                if (videos[idx]) {
+                  addSessionViewedId(videos[idx].id);
+                }
+                
+                // Preload next video immediately
+                preloadNextVideo(idx + 1);
+              }
+            }
+          });
+        },
+        { threshold: [0.4, 0.6, 0.8], root: container }
+      );
+      observer.observe(item);
+      observers.push(observer);
+    });
 
-    return () => observer.disconnect();
+    return () => {
+      observers.forEach(obs => obs.disconnect());
+    };
   }, [videos, activeIndex, preloadNextVideo]);
 
   // Load more - trigger earlier (within last 2 items instead of 3)
@@ -472,7 +477,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             video={video}
             index={index}
             isActive={index === activeIndex}
-            shouldPreload={Math.abs(index - activeIndex) <= 2}
+            shouldPreload={Math.abs(index - activeIndex) <= 1}
             hasEntered={hasEntered}
             currentUserId={userId}
             onViewTracked={handleViewTracked}
