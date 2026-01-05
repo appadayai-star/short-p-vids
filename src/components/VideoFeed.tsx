@@ -294,7 +294,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     refetch();
   }, [searchQuery, categoryFilter]);
 
-  // Intersection observer for active detection - 40% threshold for earlier activation
+  // Intersection observer for active detection - lower threshold for earlier activation
+  // Use 0.3 threshold so video starts loading/playing as soon as 30% is visible
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
@@ -306,7 +307,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
+            // Activate at 30% visibility for faster response
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.3) {
               const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
               if (idx !== activeIndex) {
                 setActiveIndex(idx);
@@ -316,13 +318,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
                   addSessionViewedId(videos[idx].id);
                 }
                 
-                // Preload next video immediately
+                // Preload next TWO videos immediately (both directions)
                 preloadNextVideo(idx + 1);
+                preloadNextVideo(idx + 2);
+                if (idx > 0) preloadNextVideo(idx - 1);
               }
             }
           });
         },
-        { threshold: [0.4, 0.6, 0.8], root: container }
+        { threshold: [0.2, 0.3, 0.5], root: container }
       );
       observer.observe(item);
       observers.push(observer);
@@ -477,7 +481,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             video={video}
             index={index}
             isActive={index === activeIndex}
-            shouldPreload={Math.abs(index - activeIndex) <= 1}
+            shouldPreload={Math.abs(index - activeIndex) <= 2}
             hasEntered={hasEntered}
             currentUserId={userId}
             onViewTracked={handleViewTracked}
