@@ -1,15 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent, ArrowUpDown } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent, ArrowUpDown, Video } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
-interface Video {
+interface VideoItem {
   id: string;
   title: string;
   description: string | null;
@@ -18,6 +18,7 @@ interface Video {
   views_count: number;
   likes_count: number;
   saved_count: number;
+  engagement: number;
   created_at: string;
   user_id: string;
   uploader_email: string;
@@ -30,24 +31,56 @@ type SortOrder = "asc" | "desc";
 const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
 
+const VideoThumbnailCell = ({ video }: { video: VideoItem }) => {
+  const [imgError, setImgError] = useState(false);
+  
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-16 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
+        {video.thumbnail_url && !imgError ? (
+          <img 
+            src={video.thumbnail_url} 
+            alt="" 
+            className="w-full h-full object-cover"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <Video className="h-4 w-4 text-muted-foreground" />
+        )}
+      </div>
+      <div className="min-w-0">
+        <div className="font-medium truncate max-w-[150px]">{video.title || "Untitled"}</div>
+        <div className="text-xs text-muted-foreground lg:hidden">{video.uploader_username}</div>
+      </div>
+    </div>
+  );
+};
+
 export const AdminVideos = () => {
   const { toast } = useToast();
-  const [videos, setVideos] = useState<Video[]>([]);
+  const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [deleteVideo, setDeleteVideo] = useState<Video | null>(null);
+  const [deleteVideo, setDeleteVideo] = useState<VideoItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const limit = 20;
+  
+  // Track current request to prevent race conditions
+  const requestIdRef = useRef(0);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchVideos = async (currentPage: number, currentSortField: SortField, currentSortOrder: SortOrder, currentSearch: string) => {
-    setLoading(true);
-    setError(null);
-
+  const fetchVideos = useCallback(async (
+    requestId: number,
+    currentPage: number, 
+    currentSortField: SortField, 
+    currentSortOrder: SortOrder, 
+    currentSearch: string
+  ) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
@@ -58,7 +91,7 @@ export const AdminVideos = () => {
         sortField: currentSortField,
         sortOrder: currentSortOrder,
       };
-      if (currentSearch) params.q = currentSearch;
+      if (currentSearch.trim()) params.q = currentSearch.trim();
 
       const queryString = new URLSearchParams(params).toString();
 
@@ -69,29 +102,76 @@ export const AdminVideos = () => {
         },
       });
 
+      // Check if this request is still the latest one
+      if (requestId !== requestIdRef.current) {
+        return; // Stale request, ignore results
+      }
+
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || "Failed to fetch videos");
       }
 
       const data = await res.json();
-      setVideos(data.videos);
-      setTotal(data.total);
+      setVideos(data.videos || []);
+      setTotal(data.total || 0);
+      setError(null);
     } catch (err) {
-      console.error("Error fetching videos:", err);
-      setError(err instanceof Error ? err.message : "Failed to load videos");
+      // Only update error if this is still the current request
+      if (requestId === requestIdRef.current) {
+        console.error("Error fetching videos:", err);
+        setError(err instanceof Error ? err.message : "Failed to load videos");
+      }
     } finally {
-      setLoading(false);
+      // Only update loading if this is still the current request
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
+  }, []);
+
+  // Effect for fetching data - handles all filter/sort/page changes
+  useEffect(() => {
+    // Clear any pending search timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = null;
+    }
+
+    // Increment request ID to invalidate any in-flight requests
+    requestIdRef.current += 1;
+    const currentRequestId = requestIdRef.current;
+    
+    setLoading(true);
+
+    // Debounce only for search changes
+    const delay = search ? 300 : 0;
+    
+    searchTimeoutRef.current = setTimeout(() => {
+      fetchVideos(currentRequestId, page, sortField, sortOrder, search);
+    }, delay);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [search, page, sortField, sortOrder, fetchVideos]);
+
+  const handleSortFieldChange = (value: string) => {
+    setSortField(value as SortField);
+    setPage(1);
   };
 
-  // Debounce only for search input
-  useEffect(() => {
-    const debounce = setTimeout(() => {
-      fetchVideos(page, sortField, sortOrder, search);
-    }, search ? 300 : 0);
-    return () => clearTimeout(debounce);
-  }, [search, page, sortField, sortOrder]);
+  const handleSortOrderChange = (value: string) => {
+    setSortOrder(value as SortOrder);
+    setPage(1);
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(e.target.value);
+    setPage(1);
+  };
 
   const handleDelete = async () => {
     if (!deleteVideo) return;
@@ -152,15 +232,12 @@ export const AdminVideos = () => {
           <Input
             placeholder="Search by title, description, or video ID..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
+            onChange={handleSearchChange}
             className="pl-10"
           />
         </div>
         <div className="flex gap-2">
-          <Select value={sortField} onValueChange={(v) => { setSortField(v as SortField); setPage(1); }}>
+          <Select value={sortField} onValueChange={handleSortFieldChange}>
             <SelectTrigger className="w-[140px]">
               <ArrowUpDown className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Sort by" />
@@ -172,7 +249,7 @@ export const AdminVideos = () => {
               <SelectItem value="engagement">Engagement %</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={sortOrder} onValueChange={(v) => { setSortOrder(v as SortOrder); setPage(1); }}>
+          <Select value={sortOrder} onValueChange={handleSortOrderChange}>
             <SelectTrigger className="w-[100px]">
               <SelectValue />
             </SelectTrigger>
@@ -205,7 +282,7 @@ export const AdminVideos = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
+            {loading && videos.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin mx-auto" />
@@ -219,17 +296,9 @@ export const AdminVideos = () => {
               </TableRow>
             ) : (
               videos.map((video) => (
-                <TableRow key={video.id}>
+                <TableRow key={video.id} className={loading ? "opacity-50" : ""}>
                   <TableCell>
-                    <div className="flex items-center gap-3">
-                      {video.thumbnail_url && (
-                        <img src={video.thumbnail_url} alt={video.title} className="w-16 h-10 object-cover rounded" />
-                      )}
-                      <div className="min-w-0">
-                        <div className="font-medium truncate max-w-[150px]">{video.title || "Untitled"}</div>
-                        <div className="text-xs text-muted-foreground lg:hidden">{video.uploader_username}</div>
-                      </div>
-                    </div>
+                    <VideoThumbnailCell video={video} />
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
                     <div>
@@ -267,10 +336,10 @@ export const AdminVideos = () => {
             Page {page} of {totalPages} ({total} videos)
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1 || loading}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
