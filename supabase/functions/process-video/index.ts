@@ -6,11 +6,79 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper to update video status in database
+async function updateVideoStatus(
+  supabase: ReturnType<typeof createClient>,
+  videoId: string,
+  status: "processing" | "completed" | "failed",
+  data?: {
+    cloudinary_public_id?: string | null;
+    optimized_video_url?: string | null;
+    processing_error?: string | null;
+  }
+) {
+  // Build update payload
+  const updatePayload = {
+    processing_status: status,
+    cloudinary_public_id: data?.cloudinary_public_id,
+    optimized_video_url: data?.optimized_video_url,
+    processing_error: data?.processing_error,
+  };
+
+  // On failure, clear cloudinary fields to prevent frontend from using invalid URLs
+  if (status === "failed") {
+    updatePayload.cloudinary_public_id = null;
+    updatePayload.optimized_video_url = null;
+  }
+
+  // Use any to bypass strict typing for Supabase client
+  const { error } = await (supabase as any)
+    .from("videos")
+    .update(updatePayload)
+    .eq("id", videoId);
+
+  if (error) {
+    console.error(`Failed to update video ${videoId} status to ${status}:`, error);
+  } else {
+    console.log(`Video ${videoId} status updated to ${status}`);
+  }
+}
+
+// Verify the asset exists on Cloudinary by checking the delivery URL
+async function verifyCloudinaryAsset(
+  cloudName: string,
+  publicId: string
+): Promise<{ exists: boolean; error?: string }> {
+  try {
+    // Build the delivery URL for the raw uploaded video
+    const deliveryUrl = `https://res.cloudinary.com/${cloudName}/video/upload/${publicId}`;
+    
+    console.log(`Verifying Cloudinary asset at: ${deliveryUrl}`);
+    
+    const response = await fetch(deliveryUrl, { method: "HEAD" });
+    
+    if (response.ok) {
+      console.log(`Cloudinary asset verified: ${publicId}`);
+      return { exists: true };
+    } else {
+      console.error(`Cloudinary asset not found: ${response.status} ${response.statusText}`);
+      return { exists: false, error: `Asset not found: HTTP ${response.status}` };
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`Failed to verify Cloudinary asset: ${errorMessage}`);
+    return { exists: false, error: errorMessage };
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  let videoId: string | undefined;
+  let supabase: ReturnType<typeof createClient> | undefined;
 
   try {
     const CLOUDINARY_CLOUD_NAME = Deno.env.get("CLOUDINARY_CLOUD_NAME");
@@ -24,6 +92,22 @@ serve(async (req) => {
       throw new Error("Cloudinary credentials not configured");
     }
 
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error("Supabase credentials not configured");
+    }
+
+    // Parse request body
+    const body = await req.json();
+    videoId = body.videoId;
+    const videoUrl = body.videoUrl;
+
+    if (!videoUrl || !videoId) {
+      throw new Error("Missing videoUrl or videoId");
+    }
+
+    console.log(`=== Processing video: ${videoId} ===`);
+    console.log(`Source URL: ${videoUrl}`);
+
     // Verify the user is authenticated
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -33,8 +117,8 @@ serve(async (req) => {
       );
     }
 
-    // Create a client with the user's JWT to verify their identity
-    const userSupabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    // Create user client to verify identity
+    const userSupabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY!, {
       global: { headers: { Authorization: authHeader } }
     });
 
@@ -47,19 +131,11 @@ serve(async (req) => {
       );
     }
 
-    const { videoUrl, videoId } = await req.json();
-
-    if (!videoUrl || !videoId) {
-      throw new Error("Missing videoUrl or videoId");
-    }
-
-    console.log(`Processing video: ${videoId} for user: ${user.id}`);
-
-    // Initialize Supabase admin client for database operations
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    // Initialize admin client for database operations
+    supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Verify the user owns the video
-    const { data: video, error: videoError } = await supabase
+    const { data: video, error: videoError } = await (supabase as any)
       .from("videos")
       .select("user_id")
       .eq("id", videoId)
@@ -73,104 +149,179 @@ serve(async (req) => {
       );
     }
 
-    if (video.user_id !== user.id) {
-      console.error(`User ${user.id} attempted to process video owned by ${video.user_id}`);
+    const videoUserId = video.user_id as string;
+    if (videoUserId !== user.id) {
+      console.error(`User ${user.id} attempted to process video owned by ${videoUserId}`);
       return new Response(
         JSON.stringify({ error: "Forbidden: You do not own this video" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`Original URL: ${videoUrl}`);
+    // Mark as processing
+    await updateVideoStatus(supabase, videoId, "processing", {
+      processing_error: null,
+    });
 
-    // Update status to processing
-    await supabase
-      .from("videos")
-      .update({ processing_status: "processing" })
-      .eq("id", videoId);
-
-    // Generate Cloudinary signature for upload
-    const timestamp = Math.floor(Date.now() / 1000);
+    // ============================================================
+    // STEP 1: Fetch actual video bytes from Supabase Storage
+    // ============================================================
+    console.log("Step 1: Fetching video bytes from Supabase Storage...");
     
-    // Eager transformations:
-    // 1. MP4 for progressive download (fallback)
-    // 2. HLS for adaptive streaming (primary for mobile)
-    const eagerTransforms = [
-      // Progressive MP4 - optimized for quick start
-      "f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k",
-      // HLS adaptive streaming - multiple bitrates for smooth playback
-      "sp_hd/m3u8"
-    ].join("|");
+    let videoBlob: Blob;
+    try {
+      const fetchResponse = await fetch(videoUrl, {
+        headers: {
+          // Use service role key for authenticated access if needed
+          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      });
+
+      if (!fetchResponse.ok) {
+        throw new Error(`Failed to fetch video: HTTP ${fetchResponse.status} ${fetchResponse.statusText}`);
+      }
+
+      videoBlob = await fetchResponse.blob();
+      console.log(`Fetched video: ${videoBlob.size} bytes, type: ${videoBlob.type}`);
+
+      if (videoBlob.size === 0) {
+        throw new Error("Fetched video has 0 bytes");
+      }
+    } catch (fetchError) {
+      const errorMessage = fetchError instanceof Error ? fetchError.message : "Unknown fetch error";
+      console.error(`Failed to fetch video from storage: ${errorMessage}`);
+      
+      await updateVideoStatus(supabase, videoId, "failed", {
+        processing_error: `Failed to fetch video: ${errorMessage}`,
+      });
+
+      return new Response(
+        JSON.stringify({ error: `Failed to fetch video: ${errorMessage}` }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ============================================================
+    // STEP 2: Upload actual bytes to Cloudinary
+    // ============================================================
+    console.log("Step 2: Uploading video bytes to Cloudinary...");
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const publicId = `optimized/${videoId}`;
     
     // Create signature for authenticated upload
-    const signatureString = `eager=${eagerTransforms}&eager_async=true&folder=optimized&public_id=${videoId}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+    // Note: For file uploads (not URL), we don't include the file in signature
+    const signatureString = `folder=optimized&public_id=${videoId}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
     
-    // Hash the signature using crypto
     const encoder = new TextEncoder();
     const data = encoder.encode(signatureString);
     const hashBuffer = await crypto.subtle.digest("SHA-1", data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
-    console.log("Uploading to Cloudinary with HLS and MP4 transformations");
-
-    // Upload video to Cloudinary with transformations
+    // Build multipart form with actual file bytes
     const formData = new FormData();
-    formData.append("file", videoUrl);
+    formData.append("file", videoBlob, `${videoId}.mp4`);
     formData.append("api_key", CLOUDINARY_API_KEY);
     formData.append("timestamp", timestamp.toString());
     formData.append("signature", signature);
     formData.append("public_id", videoId);
     formData.append("folder", "optimized");
     formData.append("resource_type", "video");
-    formData.append("eager", eagerTransforms);
-    formData.append("eager_async", "true"); // Process HLS in background
 
-    const cloudinaryResponse = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`,
-      {
-        method: "POST",
-        body: formData,
+    let cloudinaryResult: Record<string, unknown>;
+    try {
+      const cloudinaryResponse = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      cloudinaryResult = await cloudinaryResponse.json();
+
+      console.log("Cloudinary response:", JSON.stringify(cloudinaryResult, null, 2));
+
+      // Check for Cloudinary error
+      if (cloudinaryResult.error) {
+        const errorMsg = (cloudinaryResult.error as { message?: string })?.message || "Unknown Cloudinary error";
+        throw new Error(errorMsg);
       }
-    );
 
-    const cloudinaryResult = await cloudinaryResponse.json();
+      // Verify required fields are present
+      if (!cloudinaryResult.secure_url || !cloudinaryResult.public_id) {
+        throw new Error(`Cloudinary response missing required fields. Got: ${Object.keys(cloudinaryResult).join(", ")}`);
+      }
+    } catch (uploadError) {
+      const errorMessage = uploadError instanceof Error ? uploadError.message : "Unknown upload error";
+      console.error(`Cloudinary upload failed: ${errorMessage}`);
+      
+      await updateVideoStatus(supabase, videoId, "failed", {
+        processing_error: `Cloudinary upload failed: ${errorMessage}`,
+      });
 
-    if (cloudinaryResult.error) {
-      console.error("Cloudinary error:", cloudinaryResult.error);
-      throw new Error(cloudinaryResult.error.message);
+      return new Response(
+        JSON.stringify({ error: `Cloudinary upload failed: ${errorMessage}` }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    console.log("Cloudinary upload successful:", cloudinaryResult.secure_url);
-    console.log("Original size:", cloudinaryResult.bytes, "bytes");
-    console.log("Public ID:", cloudinaryResult.public_id);
+    const uploadedPublicId = cloudinaryResult.public_id as string;
+    const secureUrl = cloudinaryResult.secure_url as string;
 
-    // Store the public_id - URLs are generated dynamically on frontend
-    const publicId = cloudinaryResult.public_id;
+    console.log(`Cloudinary upload successful!`);
+    console.log(`  public_id: ${uploadedPublicId}`);
+    console.log(`  secure_url: ${secureUrl}`);
+    console.log(`  size: ${cloudinaryResult.bytes} bytes`);
+    console.log(`  duration: ${cloudinaryResult.duration}s`);
 
-    console.log("Cloudinary public_id:", publicId);
+    // ============================================================
+    // STEP 3: Verify the asset actually exists on Cloudinary
+    // ============================================================
+    console.log("Step 3: Verifying asset exists on Cloudinary...");
 
-    // Update the video record with cloudinary_public_id
-    // URLs are now generated dynamically on the frontend for flexibility
-    const { error: updateError } = await supabase
-      .from("videos")
-      .update({
-        cloudinary_public_id: publicId,
-        processing_status: "completed",
-      })
-      .eq("id", videoId);
+    const verification = await verifyCloudinaryAsset(CLOUDINARY_CLOUD_NAME, uploadedPublicId);
+    
+    if (!verification.exists) {
+      console.error(`Asset verification failed: ${verification.error}`);
+      
+      await updateVideoStatus(supabase, videoId, "failed", {
+        processing_error: `Asset verification failed: ${verification.error}`,
+      });
 
-    if (updateError) {
-      console.error("Error updating video record:", updateError);
-      throw updateError;
+      return new Response(
+        JSON.stringify({ error: `Asset verification failed: ${verification.error}` }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    console.log("Video processing completed successfully");
+    // ============================================================
+    // STEP 4: Generate optimized delivery URL with transforms
+    // ============================================================
+    // Use transforms for optimal playback: MP4, H.264, 720p max, faststart
+    const optimizedVideoUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,vc_h264,c_limit,h_720,q_auto,fl_faststart/${uploadedPublicId}.mp4`;
+    
+    console.log(`Optimized delivery URL: ${optimizedVideoUrl}`);
+
+    // ============================================================
+    // STEP 5: Update database with success
+    // ============================================================
+    console.log("Step 5: Updating database with success...");
+
+    await updateVideoStatus(supabase, videoId, "completed", {
+      cloudinary_public_id: uploadedPublicId,
+      optimized_video_url: optimizedVideoUrl,
+      processing_error: null,
+    });
+
+    console.log(`=== Video ${videoId} processing completed successfully ===`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        cloudinaryPublicId: publicId,
+        cloudinaryPublicId: uploadedPublicId,
+        optimizedVideoUrl: optimizedVideoUrl,
         originalSize: cloudinaryResult.bytes,
         duration: cloudinaryResult.duration,
       }),
@@ -179,24 +330,14 @@ serve(async (req) => {
       }
     );
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error("Error processing video:", errorMessage);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`=== Video processing failed: ${errorMessage} ===`);
     
-    // Try to update status to failed if we have videoId
-    try {
-      const { videoId } = await req.clone().json().catch(() => ({}));
-      if (videoId) {
-        const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-        
-        await supabase
-          .from("videos")
-          .update({ processing_status: "failed" })
-          .eq("id", videoId);
-      }
-    } catch (e) {
-      console.error("Failed to update error status:", e);
+    // Try to update status to failed
+    if (videoId && supabase) {
+      await updateVideoStatus(supabase, videoId, "failed", {
+        processing_error: errorMessage,
+      });
     }
 
     return new Response(

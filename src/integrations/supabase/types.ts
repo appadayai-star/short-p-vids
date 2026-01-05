@@ -621,6 +621,7 @@ export type Database = {
           id: string
           likes_count: number
           optimized_video_url: string | null
+          processing_error: string | null
           processing_status: string | null
           stream_url: string | null
           tags: string[] | null
@@ -640,6 +641,7 @@ export type Database = {
           id?: string
           likes_count?: number
           optimized_video_url?: string | null
+          processing_error?: string | null
           processing_status?: string | null
           stream_url?: string | null
           tags?: string[] | null
@@ -659,6 +661,7 @@ export type Database = {
           id?: string
           likes_count?: number
           optimized_video_url?: string | null
+          processing_error?: string | null
           processing_status?: string | null
           stream_url?: string | null
           tags?: string[] | null
