@@ -55,7 +55,12 @@ export const SinglePlayer = memo(({
     null,
     video.video_url
   ) : "";
+  const fallbackSrc = video?.video_url || "";
   const posterSrc = video ? getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url) : "";
+
+  // Track current src for fallback logic
+  const [currentSrc, setCurrentSrc] = useState(videoSrc);
+  const [usedFallback, setUsedFallback] = useState(false);
 
   // Clear timeout helper
   const clearLoadTimeout = useCallback(() => {
@@ -65,14 +70,33 @@ export const SinglePlayer = memo(({
     }
   }, []);
 
-  // Retry logic - simple: just reload the same URL with cache buster
+  // Retry logic - fall back to Supabase storage if Cloudinary fails
   const retryOrFallback = useCallback(() => {
     clearLoadTimeout();
     const videoEl = videoRef.current;
     if (!videoEl || !video) return;
 
     attemptRef.current++;
-    console.log(`[SinglePlayer] Retry attempt ${attemptRef.current} for video ${video.id}`);
+    console.log(`[SinglePlayer] Retry attempt ${attemptRef.current} for video ${video.id}, usedFallback=${usedFallback}`);
+    
+    // Check if current src is a Cloudinary URL
+    const isCloudinaryUrl = currentSrc?.includes('cloudinary.com') || currentSrc?.includes('res.cloudinary.com');
+    
+    if (!usedFallback && isCloudinaryUrl && fallbackSrc && fallbackSrc !== currentSrc) {
+      // Cloudinary failed - immediately try Supabase storage
+      console.log(`[SinglePlayer] Cloudinary failed, falling back to Supabase: ${fallbackSrc.substring(0, 60)}...`);
+      setUsedFallback(true);
+      setCurrentSrc(fallbackSrc);
+      videoEl.src = fallbackSrc;
+      videoEl.load();
+      setStatus("loading");
+      
+      timeoutRef.current = setTimeout(() => {
+        console.log(`[SinglePlayer] Fallback load timeout`);
+        retryOrFallback();
+      }, LOAD_TIMEOUT_MS);
+      return;
+    }
     
     if (attemptRef.current >= MAX_RETRY_ATTEMPTS) {
       console.log(`[SinglePlayer] All retries exhausted for video ${video.id}`);
@@ -81,8 +105,11 @@ export const SinglePlayer = memo(({
     }
 
     // Add cache buster and reload
-    const cacheBuster = videoSrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
-    videoEl.src = videoSrc + cacheBuster;
+    const srcToUse = usedFallback ? fallbackSrc : videoSrc;
+    const cacheBuster = srcToUse.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
+    const newSrc = srcToUse + cacheBuster;
+    setCurrentSrc(newSrc);
+    videoEl.src = newSrc;
     videoEl.load();
     setStatus("loading");
     
@@ -91,7 +118,7 @@ export const SinglePlayer = memo(({
       console.log(`[SinglePlayer] Load timeout after ${LOAD_TIMEOUT_MS}ms`);
       retryOrFallback();
     }, LOAD_TIMEOUT_MS);
-  }, [video, videoSrc, clearLoadTimeout]);
+  }, [video, videoSrc, fallbackSrc, currentSrc, usedFallback, clearLoadTimeout]);
 
   // Sync with global mute state
   useEffect(() => {
@@ -116,9 +143,11 @@ export const SinglePlayer = memo(({
       console.log(`[SinglePlayer] Video changed: ${currentVideoId} -> ${video?.id}`);
       setCurrentVideoId(video?.id || null);
       attemptRef.current = 0;
+      setUsedFallback(false);
       clearLoadTimeout();
       
       if (video && videoSrc) {
+        setCurrentSrc(videoSrc);
         videoEl.pause();
         videoEl.src = videoSrc;
         setStatus("loading");
@@ -132,6 +161,7 @@ export const SinglePlayer = memo(({
       } else {
         videoEl.pause();
         videoEl.src = "";
+        setCurrentSrc("");
         setStatus("idle");
       }
     }
@@ -221,10 +251,12 @@ export const SinglePlayer = memo(({
   const handleRetry = useCallback(() => {
     console.log(`[SinglePlayer] Manual retry requested`);
     attemptRef.current = 0;
+    setUsedFallback(false);
     setStatus("loading");
     
     const videoEl = videoRef.current;
     if (videoEl && videoSrc) {
+      setCurrentSrc(videoSrc);
       videoEl.pause();
       videoEl.src = videoSrc;
       videoEl.load();
