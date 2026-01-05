@@ -342,12 +342,12 @@ export const FeedItem = memo(({
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
-        src={isActive || shouldPreload ? videoSrc : undefined}
+        src={videoSrc}
         poster={posterSrc}
         loop
         playsInline
         muted={isMuted}
-        preload={isActive ? "auto" : shouldPreload ? "auto" : "none"}
+        preload={isActive ? "auto" : shouldPreload ? "metadata" : "none"}
         onClick={toggleMute}
       />
 
