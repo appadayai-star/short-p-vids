@@ -300,15 +300,16 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // STEP 4: Generate optimized delivery URLs with transforms
+    // STEP 4: Use Cloudinary's returned secure_url directly
     // ============================================================
-    // Optimized video: MP4, H.264, 720p max, faststart for quick playback
-    const optimizedVideoUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,vc_h264,c_limit,h_720,q_auto,fl_faststart/${uploadedPublicId}.mp4`;
+    // IMPORTANT: Use the secure_url returned by Cloudinary, NOT constructed URLs
+    // Constructed URLs with transformations can fail with HTTP 400
+    const optimizedVideoUrl = secureUrl;
     
-    // Thumbnail: grab first frame as JPG, 480px width
+    // Thumbnail: grab first frame as JPG - this transformation is safe
     const thumbnailUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/so_0,f_jpg,w_480,q_auto/${uploadedPublicId}.jpg`;
     
-    console.log(`Optimized video URL: ${optimizedVideoUrl}`);
+    console.log(`Stored optimized_video_url (Cloudinary secure_url): ${optimizedVideoUrl}`);
     console.log(`Thumbnail URL: ${thumbnailUrl}`);
 
     // ============================================================
