@@ -92,8 +92,9 @@ async function processVideo(
       throw new Error("Asset verification failed - not found on Cloudinary");
     }
 
-    // Step 4: Generate optimized URL and update database
+    // Step 4: Generate optimized URLs and update database
     const optimizedVideoUrl = `https://res.cloudinary.com/${cloudName}/video/upload/f_mp4,vc_h264,c_limit,h_720,q_auto,fl_faststart/${uploadedPublicId}.mp4`;
+    const thumbnailUrl = `https://res.cloudinary.com/${cloudName}/video/upload/so_0,f_jpg,w_480,q_auto/${uploadedPublicId}.jpg`;
 
     const { error: updateError } = await supabase
       .from("videos")
@@ -101,6 +102,8 @@ async function processVideo(
         processing_status: "completed",
         cloudinary_public_id: uploadedPublicId,
         optimized_video_url: optimizedVideoUrl,
+        thumbnail_url: thumbnailUrl,
+        thumbnail_generated: true,
         processing_error: null,
       })
       .eq("id", videoId);
