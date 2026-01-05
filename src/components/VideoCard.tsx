@@ -5,8 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
-import { VideoDebugOverlay } from "./VideoDebugOverlay";
+import { getBestVideoSource, getBestThumbnailUrl, supportsHlsNatively } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -102,15 +101,14 @@ export const VideoCard = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Core video state - use Cloudinary if available, fallback directly to Supabase storage
+  // Core video state - use dynamic Cloudinary URLs when available
   const primarySrc = getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     video.stream_url || null,
     video.video_url
   );
-  // Fallback directly to Supabase storage (skip broken Cloudinary URLs)
-  const fallbackSrc = video.video_url;
+  const fallbackSrc = video.optimized_video_url || video.video_url;
   const lastResortSrc = video.video_url;
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
   
@@ -143,35 +141,36 @@ export const VideoCard = memo(({
     }
   }, []);
 
-  // Retry or fallback logic: primary -> Supabase storage fallback
+  // Retry or fallback logic with 3 levels: primary -> fallback -> lastResort
   const retryOrFallback = useCallback((reason: "error" | "timeout") => {
     clearLoadTimeout();
     
     console.log(`[VideoCard ${index}] retryOrFallback: reason=${reason}, attempt=${attempt}, src=${src?.substring(0, 60)}...`);
     
-    // Check if current src is a Cloudinary URL
-    const isCloudinaryUrl = src?.includes('cloudinary.com') || src?.includes('res.cloudinary.com');
-    
-    if (attempt === 0 && isCloudinaryUrl && fallbackSrc !== primarySrc) {
-      // First failure on Cloudinary - immediately fall back to Supabase storage
-      console.log(`[VideoCard ${index}] Cloudinary failed, falling back to Supabase: ${fallbackSrc.substring(0, 60)}...`);
+    if (attempt === 0) {
+      // First retry: reload primary with cache buster
       setAttempt(1);
+      const cacheBuster = primarySrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
+      setSrc(primarySrc + cacheBuster);
+      setStatus("loading");
+    } else if (attempt === 1 && fallbackSrc && fallbackSrc !== primarySrc) {
+      // Second retry: try optimized MP4 fallback
+      console.log(`[VideoCard ${index}] Trying fallback: ${fallbackSrc.substring(0, 60)}...`);
+      setAttempt(2);
       setSrc(fallbackSrc);
       setStatus("loading");
-    } else if (attempt <= 1) {
-      // Retry current source with cache buster
-      console.log(`[VideoCard ${index}] Retrying with cache buster`);
-      setAttempt(prev => prev + 1);
-      const currentSrc = fallbackSrc || primarySrc;
-      const cacheBuster = currentSrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
-      setSrc(currentSrc + cacheBuster);
+    } else if (attempt <= 2 && lastResortSrc && lastResortSrc !== fallbackSrc && lastResortSrc !== primarySrc) {
+      // Third retry: try original Supabase URL
+      console.log(`[VideoCard ${index}] Trying lastResort: ${lastResortSrc.substring(0, 60)}...`);
+      setAttempt(3);
+      setSrc(lastResortSrc);
       setStatus("loading");
     } else {
       // All retries exhausted - show error UI
       console.log(`[VideoCard ${index}] All retries exhausted, showing error UI`);
       setStatus("error");
     }
-  }, [attempt, primarySrc, fallbackSrc, src, clearLoadTimeout, index]);
+  }, [attempt, primarySrc, fallbackSrc, lastResortSrc, src, clearLoadTimeout, index]);
 
   // Start loading timeout watchdog
   const startLoadTimeout = useCallback(() => {
@@ -512,15 +511,6 @@ export const VideoCard = memo(({
           onWaiting={handleWaiting}
           onStalled={handleStalled}
           onError={handleError}
-        />
-      )}
-
-      {/* Debug overlay - enabled via localStorage.videoDebug = '1' */}
-      {isTrulyActive && (
-        <VideoDebugOverlay 
-          videoId={video.id} 
-          currentSrc={src} 
-          videoRef={videoRef} 
         />
       )}
 

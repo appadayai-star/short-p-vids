@@ -25,11 +25,10 @@ export function AdminReprocess() {
   const checkMissingVideos = async () => {
     setIsChecking(true);
     try {
-      // Check for videos missing optimized_video_url (the key field that indicates successful processing)
       const { count, error } = await supabase
         .from("videos")
         .select("*", { count: "exact", head: true })
-        .is("optimized_video_url", null);
+        .is("cloudinary_public_id", null);
 
       if (error) throw error;
       setVideosMissing(count || 0);
@@ -46,37 +45,33 @@ export function AdminReprocess() {
     setResults([]);
 
     try {
-      const { data, error } = await supabase.functions.invoke('batch-reprocess-videos', {
-        body: { dryRun: false, limit: 10 }
-      });
+      const { data, error } = await supabase.functions.invoke('batch-reprocess-videos');
 
       if (error) {
         throw new Error(error.message);
       }
 
-      // New background processing response
-      if (data?.started !== undefined) {
-        if (data.started > 0) {
-          toast.success(`Started processing ${data.started} videos in background`);
+      if (data?.results) {
+        setResults(data.results);
+        const succeeded = data.results.filter((r: ReprocessResult) => r.status === 'completed').length;
+        const failed = data.results.filter((r: ReprocessResult) => r.status === 'failed').length;
+        
+        if (succeeded > 0 && failed === 0) {
+          toast.success(`Successfully reprocessed ${succeeded} videos`);
+        } else if (succeeded > 0 && failed > 0) {
+          toast.warning(`Reprocessed ${succeeded} videos, ${failed} failed`);
+        } else if (failed > 0) {
+          toast.error(`Failed to reprocess ${failed} videos`);
         } else {
           toast.info("No videos needed reprocessing");
         }
-        
-        // Poll for updates after a delay
-        setTimeout(() => {
-          checkMissingVideos();
-        }, 5000);
-        return;
       }
 
-      // Legacy response format (dry run)
-      if (data?.mode === "dry_run") {
-        toast.info(`Found ${data.videosFound} videos to reprocess (dry run)`);
-      }
-
+      // Refresh the count
+      await checkMissingVideos();
     } catch (error) {
       console.error("Reprocess error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to start reprocessing");
+      toast.error(error instanceof Error ? error.message : "Failed to reprocess videos");
     } finally {
       setIsLoading(false);
     }

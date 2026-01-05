@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl, videoLog } from "@/lib/cloudinary";
+import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import {
   DropdownMenu,
@@ -114,7 +114,6 @@ export const FeedItem = memo(({
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
-  const srcAssignedTimeRef = useRef<number>(0);
 
   // Video sources - ALWAYS have a poster
   const videoSrc = getBestVideoSource(
@@ -124,14 +123,6 @@ export const FeedItem = memo(({
     video.video_url
   );
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
-
-  // Log when src is assigned
-  useEffect(() => {
-    if ((isActive || shouldPreload) && videoSrc) {
-      srcAssignedTimeRef.current = performance.now();
-      videoLog(`src assigned for index ${index}:`, videoSrc.substring(0, 80));
-    }
-  }, [isActive, shouldPreload, videoSrc, index]);
 
 
   // Sync with global mute state
@@ -159,12 +150,7 @@ export const FeedItem = memo(({
       videoEl.currentTime = 0;
       
       const attemptPlay = () => {
-        const playStartTime = performance.now();
-        videoEl.play().then(() => {
-          const playingTime = performance.now();
-          videoLog(`Playing fired for index ${index}, delay from src:`, 
-            Math.round(playingTime - srcAssignedTimeRef.current), 'ms');
-        }).catch((err) => {
+        videoEl.play().catch((err) => {
           if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
             return;
           }
@@ -184,11 +170,7 @@ export const FeedItem = memo(({
 
       attemptPlay();
       
-      const handleCanPlay = () => {
-        videoLog(`canplay for index ${index}, time since src:`, 
-          Math.round(performance.now() - srcAssignedTimeRef.current), 'ms');
-        attemptPlay();
-      };
+      const handleCanPlay = () => attemptPlay();
       videoEl.addEventListener('canplay', handleCanPlay);
       
       return () => {
@@ -199,34 +181,28 @@ export const FeedItem = memo(({
       stopWatching();
       videoEl.pause();
     }
-  }, [isActive, hasEntered, markLoadStart, stopWatching, index]);
+  }, [isActive, hasEntered, markLoadStart, stopWatching]);
 
-  // Log when preloading starts
+  // Preload next video when this one is active
   useEffect(() => {
-    if (shouldPreload && !isActive) {
-      videoLog(`Preload started for index ${index}`);
-    }
-  }, [shouldPreload, isActive, index]);
+    if (!isActive || !hasEntered) return;
+    
+    // The preloading is handled by shouldPreload prop on adjacent items
+    // This effect could be used for more aggressive prefetching if needed
+  }, [isActive, hasEntered]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
     
     retryCountRef.current++;
-    console.log(`[Video ${index}] RETRY #${retryCountRef.current}:`, {
-      currentSrc: videoEl.currentSrc,
-      newSrc: videoSrc,
-      srcChanged: videoEl.currentSrc !== videoSrc,
-    });
     setPlaybackFailed(false);
     videoEl.src = videoSrc;
     videoEl.load();
-    console.log(`[Video ${index}] Called load(), attempting play()`);
-    videoEl.play().catch((err) => {
-      console.error(`[Video ${index}] Retry play failed:`, err);
+    videoEl.play().catch(() => {
       setPlaybackFailed(true);
     });
-  }, [videoSrc, index]);
+  }, [videoSrc]);
 
   // Check if guest has liked this video
   useEffect(() => {
@@ -361,7 +337,6 @@ export const FeedItem = memo(({
 
       {/* Video player - overlays poster */}
       <video
-        key={isActive || shouldPreload ? videoSrc : 'inactive'}
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
@@ -370,25 +345,8 @@ export const FeedItem = memo(({
         loop
         playsInline
         muted={isMuted}
-        preload={isActive || shouldPreload ? "auto" : "none"}
+        preload={isActive ? "auto" : shouldPreload ? "metadata" : "none"}
         onClick={toggleMute}
-        onError={(e) => {
-          const v = e.currentTarget;
-          console.error(`[Video ${index}] ERROR:`, {
-            currentSrc: v.currentSrc,
-            networkState: v.networkState,
-            readyState: v.readyState,
-            errorCode: v.error?.code,
-            errorMessage: v.error?.message,
-          });
-          setPlaybackFailed(true);
-        }}
-        onStalled={() => videoLog(`stalled for index ${index}`)}
-        onWaiting={() => videoLog(`waiting for index ${index}`)}
-        onAbort={() => videoLog(`abort for index ${index}`)}
-        onLoadedMetadata={() => videoLog(`loadedmetadata for index ${index}, readyState:`, videoRef.current?.readyState)}
-        onCanPlay={() => videoLog(`canplay for index ${index}`)}
-        onPlaying={() => videoLog(`playing for index ${index}`)}
       />
 
       {/* Playback failed - retry UI - pointer-events only on button */}

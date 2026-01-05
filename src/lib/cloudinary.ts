@@ -1,56 +1,66 @@
-// Video utilities - STABLE SOURCE SELECTION
-// Only use verified optimized_video_url, never generate from cloudinary_public_id alone
-// Debug logging helper - enabled via localStorage.videoDebug = '1'
+// Cloudinary URL generation utilities
+// Generate dynamic transformation URLs from public_id
+// Optimized for instant startup and mobile streaming
 
-export const isVideoDebug = (): boolean => {
-  if (typeof localStorage === 'undefined') return false;
-  return localStorage.getItem('videoDebug') === '1';
-};
+const CLOUDINARY_CLOUD_NAME = 'domj6omwb';
 
-export const videoLog = (message: string, ...args: unknown[]): void => {
-  if (isVideoDebug()) {
-    console.log(`[Video] ${message}`, ...args);
-  }
-};
-
-// Static placeholder for missing thumbnails
+// Static placeholder for missing thumbnails - gradient placeholder
 export const DEFAULT_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="480" height="852" viewBox="0 0 480 852"%3E%3Cdefs%3E%3ClinearGradient id="g" x1="0%25" y1="0%25" x2="0%25" y2="100%25"%3E%3Cstop offset="0%25" style="stop-color:%231a1a2e"%2F%3E%3Cstop offset="100%25" style="stop-color:%230f0f1a"%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect fill="url(%23g)" width="480" height="852"%2F%3E%3C%2Fsvg%3E';
 
-/**
- * STABLE SOURCE SELECTION POLICY:
- * 
- * 1. If optimized_video_url exists → use it (verified Cloudinary URL)
- * 2. Otherwise → use original video_url from Supabase storage
- * 
- * IMPORTANT: We do NOT generate URLs from cloudinary_public_id because
- * many videos have placeholder public_ids that don't actually exist on Cloudinary.
- * Only optimized_video_url is set after a verified successful upload.
- */
+export function getOptimizedVideoUrl(publicId: string): string {
+  // Simple MP4 - let Cloudinary auto-optimize
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_auto,q_auto/${publicId}`;
+}
+
+export function getStreamUrl(publicId: string): string {
+  // HLS adaptive streaming - simplified
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${publicId}.m3u8`;
+}
+
+export function getThumbnailUrl(publicId: string): string {
+  // Optimized thumbnail from Cloudinary
+  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/${publicId}.jpg`;
+  // Debug: log the first generated URL
+  if (typeof window !== 'undefined' && !(window as any).__thumbnailLogged) {
+    console.log('[Cloudinary] Generated thumbnail URL:', url);
+    (window as any).__thumbnailLogged = true;
+  }
+  return url;
+}
+
+// Check if browser supports HLS natively (Safari, iOS)
+export function supportsHlsNatively(): boolean {
+  if (typeof document === 'undefined') return false;
+  const video = document.createElement('video');
+  return video.canPlayType('application/vnd.apple.mpegurl') !== '';
+}
+
+// Get best video source for playback
+// TEMPORARILY: Skip Cloudinary and use original URLs until reprocessing is fixed
 export function getBestVideoSource(
-  _cloudinaryPublicId: string | null,
+  cloudinaryPublicId: string | null,
   optimizedVideoUrl: string | null,
-  _streamUrl: string | null,
+  streamUrl: string | null,
   originalVideoUrl: string
 ): string {
-  // Priority 1: Use optimized_video_url if available (Cloudinary's secure_url)
-  if (optimizedVideoUrl) {
-    videoLog('Using optimized_video_url:', optimizedVideoUrl.substring(0, 80));
-    return optimizedVideoUrl;
-  }
-  
-  // Priority 2: Fallback to original Supabase storage URL
-  videoLog('Using video_url (Supabase):', originalVideoUrl.substring(0, 60));
+  // For now, always use original video URL since Cloudinary videos aren't ready
+  // TODO: Re-enable Cloudinary once reprocessing is confirmed working
   return originalVideoUrl;
 }
 
-// Get best thumbnail - use stored thumbnail_url or placeholder
+// Get best thumbnail - ALWAYS returns a valid image URL, never undefined
+// Priority: 1) cloudinary_public_id, 2) thumbnail_url, 3) placeholder
 export function getBestThumbnailUrl(
-  _cloudinaryPublicId: string | null,
+  cloudinaryPublicId: string | null,
   thumbnailUrl: string | null
 ): string {
+  if (cloudinaryPublicId) {
+    return getThumbnailUrl(cloudinaryPublicId);
+  }
   if (thumbnailUrl) {
     return thumbnailUrl;
   }
+  // Always return placeholder - never null/undefined
   return DEFAULT_PLACEHOLDER;
 }
 
@@ -63,4 +73,12 @@ export function preloadImage(src: string): void {
   } catch {
     // Ignore - this is just warming
   }
+}
+
+// Warm video source - completely non-blocking, never throws
+// Using Image instead of fetch to avoid CORS issues
+export function warmVideoSource(src: string): void {
+  if (!src) return;
+  // Don't actually make requests - just let video preload handle it
+  // Previous HEAD requests caused CORS issues
 }

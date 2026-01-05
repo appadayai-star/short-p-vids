@@ -1,151 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Declare EdgeRuntime for background tasks
-declare const EdgeRuntime: {
-  waitUntil: (promise: Promise<unknown>) => void;
-};
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-// NOTE: Removed HEAD verification - Cloudinary's API response is authoritative
-// HEAD requests can fail with 403/405 even when the asset is accessible via GET
-
-// Process a single video - fetch bytes and upload to Cloudinary
-async function processVideo(
-  supabase: any,
-  videoId: string,
-  videoUrl: string,
-  cloudName: string,
-  apiKey: string,
-  apiSecret: string,
-  serviceRoleKey: string
-): Promise<{ success: boolean; error?: string }> {
-  console.log(`  Processing video: ${videoId}`);
-
-  try {
-    // Step 1: Fetch video bytes from Supabase Storage
-    console.log(`    Fetching video from: ${videoUrl.substring(0, 80)}...`);
-    const fetchResponse = await fetch(videoUrl, {
-      headers: { "Authorization": `Bearer ${serviceRoleKey}` },
-    });
-
-    if (!fetchResponse.ok) {
-      throw new Error(`Failed to fetch video: HTTP ${fetchResponse.status}`);
-    }
-
-    const videoBlob = await fetchResponse.blob();
-    console.log(`    Fetched ${videoBlob.size} bytes`);
-
-    if (videoBlob.size === 0) {
-      throw new Error("Video has 0 bytes");
-    }
-
-    // Step 2: Upload to Cloudinary with actual file bytes
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signatureString = `folder=optimized&public_id=${videoId}&timestamp=${timestamp}${apiSecret}`;
-    
-    const encoder = new TextEncoder();
-    const data = encoder.encode(signatureString);
-    const hashBuffer = await crypto.subtle.digest("SHA-1", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-
-    const formData = new FormData();
-    formData.append("file", videoBlob, `${videoId}.mp4`);
-    formData.append("api_key", apiKey);
-    formData.append("timestamp", timestamp.toString());
-    formData.append("signature", signature);
-    formData.append("public_id", videoId);
-    formData.append("folder", "optimized");
-    formData.append("resource_type", "video");
-
-    console.log(`    Uploading to Cloudinary...`);
-    const cloudinaryResponse = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
-      { method: "POST", body: formData }
-    );
-
-    const cloudinaryResult = await cloudinaryResponse.json();
-    
-    // Enhanced logging for Cloudinary response
-    console.log(`    Cloudinary response status: ${cloudinaryResponse.status}`);
-    console.log(`    Cloudinary response body: ${JSON.stringify(cloudinaryResult)}`);
-
-    if (cloudinaryResult.error) {
-      const errorDetail = JSON.stringify(cloudinaryResult.error);
-      throw new Error(`Cloudinary upload failed: ${errorDetail}`);
-    }
-
-    if (!cloudinaryResult.secure_url || !cloudinaryResult.public_id) {
-      throw new Error(`Cloudinary response missing required fields. Keys: ${Object.keys(cloudinaryResult).join(", ")}`);
-    }
-
-    const uploadedPublicId = cloudinaryResult.public_id as string;
-    const secureUrl = cloudinaryResult.secure_url as string;
-    
-    // Enhanced logging for Cloudinary fields to verify upload type
-    console.log(`    === Cloudinary Upload Success ===`);
-    console.log(`    public_id: ${uploadedPublicId}`);
-    console.log(`    secure_url: ${secureUrl}`);
-    console.log(`    type: ${cloudinaryResult.type}`);
-    console.log(`    resource_type: ${cloudinaryResult.resource_type}`);
-    console.log(`    format: ${cloudinaryResult.format}`);
-    console.log(`    bytes: ${cloudinaryResult.bytes}`);
-    console.log(`    duration: ${cloudinaryResult.duration}s`);
-    
-    // Verify type is 'upload' (public delivery)
-    if (cloudinaryResult.type !== 'upload') {
-      console.warn(`    WARNING: type is '${cloudinaryResult.type}', expected 'upload'`);
-    }
-
-    // NOTE: Skipping HEAD verification - Cloudinary's API response is authoritative
-
-    // Step 4: Use Cloudinary's returned secure_url directly (NOT constructed URLs)
-    // Constructed URLs with transformations can fail with HTTP 400
-    const optimizedVideoUrl = secureUrl;
-    const thumbnailUrl = `https://res.cloudinary.com/${cloudName}/video/upload/so_0,f_jpg,w_480,q_auto/${uploadedPublicId}.jpg`;
-
-    const { error: updateError } = await supabase
-      .from("videos")
-      .update({
-        processing_status: "completed",
-        cloudinary_public_id: uploadedPublicId,
-        optimized_video_url: optimizedVideoUrl,
-        thumbnail_url: thumbnailUrl,
-        thumbnail_generated: true,
-        processing_error: null,
-      })
-      .eq("id", videoId);
-
-    if (updateError) {
-      throw new Error(`Database update failed: ${updateError.message}`);
-    }
-
-    console.log(`    ✓ Successfully processed video ${videoId}`);
-    return { success: true };
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error(`    ✗ Failed: ${errorMessage}`);
-
-    // Mark as failed in database
-    await supabase
-      .from("videos")
-      .update({
-        processing_status: "failed",
-        cloudinary_public_id: null,
-        optimized_video_url: null,
-        processing_error: errorMessage,
-      })
-      .eq("id", videoId);
-
-    return { success: false, error: errorMessage };
-  }
-}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -164,10 +23,6 @@ serve(async (req) => {
       throw new Error("Cloudinary credentials not configured");
     }
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error("Supabase credentials not configured");
-    }
-
     // Verify admin authorization
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -177,7 +32,7 @@ serve(async (req) => {
       );
     }
 
-    const userSupabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY!, {
+    const userSupabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
       global: { headers: { Authorization: authHeader } }
     });
 
@@ -190,7 +45,7 @@ serve(async (req) => {
     }
 
     // Check if user is admin
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) as any;
+    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     const { data: roleData } = await supabase
       .from("user_roles")
       .select("role")
@@ -205,97 +60,106 @@ serve(async (req) => {
       );
     }
 
-    // Parse request body
-    const body = await req.json().catch(() => ({}));
-    const limit = Math.min(body.limit || 5, 20); // Smaller limit for background processing
-    const dryRun = body.dryRun ?? true;
-
-    console.log(`=== Batch Reprocess Videos ===`);
-    console.log(`Mode: ${dryRun ? "DRY RUN" : "LIVE"}`);
-    console.log(`Limit: ${limit}`);
-
-    // Find videos that need reprocessing
-    const { data: brokenVideos, error: queryError } = await supabase
+    // Get all videos without cloudinary_public_id
+    const { data: videos, error: videosError } = await supabase
       .from("videos")
-      .select("id, video_url, cloudinary_public_id, optimized_video_url, processing_status, processing_error")
-      .or("optimized_video_url.is.null,processing_status.eq.failed")
-      .order("created_at", { ascending: false })
-      .limit(limit);
+      .select("id, video_url")
+      .is("cloudinary_public_id", null)
+      .order("created_at", { ascending: true });
 
-    if (queryError) {
-      throw new Error(`Query failed: ${queryError.message}`);
+    if (videosError) {
+      throw videosError;
     }
 
-    const videoCount = brokenVideos?.length || 0;
-    console.log(`Found ${videoCount} videos to reprocess`);
+    console.log(`Found ${videos?.length || 0} videos to reprocess`);
 
-    if (dryRun) {
-      return new Response(
-        JSON.stringify({
-          mode: "dry_run",
-          videosFound: videoCount,
-          videos: brokenVideos?.map((v: any) => ({
-            id: v.id,
-            hasCloudinaryId: !!v.cloudinary_public_id,
-            hasOptimizedUrl: !!v.optimized_video_url,
-            status: v.processing_status,
-            error: v.processing_error,
-          })),
-          message: "Set dryRun: false to actually reprocess these videos",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const results: { id: string; status: string; error?: string }[] = [];
 
-    if (videoCount === 0) {
-      return new Response(
-        JSON.stringify({
-          mode: "live",
-          message: "No videos need reprocessing",
-          started: 0,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    for (const video of videos || []) {
+      try {
+        console.log(`Processing video: ${video.id}`);
 
-    // Use background task to process videos - return immediately
-    const backgroundProcess = async () => {
-      console.log(`Starting background processing of ${videoCount} videos`);
-      
-      for (const video of brokenVideos || []) {
-        await processVideo(
-          supabase,
-          video.id,
-          video.video_url,
-          CLOUDINARY_CLOUD_NAME!,
-          CLOUDINARY_API_KEY!,
-          CLOUDINARY_API_SECRET!,
-          SUPABASE_SERVICE_ROLE_KEY!
-        );
+        // Update status to processing
+        await supabase
+          .from("videos")
+          .update({ processing_status: "processing" })
+          .eq("id", video.id);
+
+        // Generate Cloudinary signature
+        const timestamp = Math.floor(Date.now() / 1000);
+        const eagerTransforms = [
+          "f_mp4,q_auto:eco,c_limit,h_720,vc_h264,fps_30,br_2000k",
+          "sp_hd/m3u8"
+        ].join("|");
         
-        // Small delay between videos
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const signatureString = `eager=${eagerTransforms}&eager_async=true&folder=optimized&public_id=${video.id}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+        
+        const encoder = new TextEncoder();
+        const data = encoder.encode(signatureString);
+        const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const signature = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+
+        // Upload to Cloudinary
+        const formData = new FormData();
+        formData.append("file", video.video_url);
+        formData.append("api_key", CLOUDINARY_API_KEY);
+        formData.append("timestamp", timestamp.toString());
+        formData.append("signature", signature);
+        formData.append("public_id", video.id);
+        formData.append("folder", "optimized");
+        formData.append("resource_type", "video");
+        formData.append("eager", eagerTransforms);
+        formData.append("eager_async", "true");
+
+        const cloudinaryResponse = await fetch(
+          `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`,
+          { method: "POST", body: formData }
+        );
+
+        const cloudinaryResult = await cloudinaryResponse.json();
+
+        if (cloudinaryResult.error) {
+          throw new Error(cloudinaryResult.error.message);
+        }
+
+        // Update video with cloudinary_public_id
+        await supabase
+          .from("videos")
+          .update({
+            cloudinary_public_id: cloudinaryResult.public_id,
+            processing_status: "completed",
+          })
+          .eq("id", video.id);
+
+        results.push({ id: video.id, status: "completed" });
+        console.log(`Video ${video.id} processed successfully`);
+
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : "Unknown error";
+        console.error(`Error processing video ${video.id}:`, errorMsg);
+        
+        await supabase
+          .from("videos")
+          .update({ processing_status: "failed" })
+          .eq("id", video.id);
+
+        results.push({ id: video.id, status: "failed", error: errorMsg });
       }
-      
-      console.log(`=== Background processing complete ===`);
-    };
+    }
 
-    // Start background processing
-    EdgeRuntime.waitUntil(backgroundProcess());
-
-    // Return immediately
     return new Response(
       JSON.stringify({
-        mode: "live",
-        message: `Started processing ${videoCount} videos in background`,
-        started: videoCount,
+        success: true,
+        total: videos?.length || 0,
+        results,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error(`Batch reprocess failed: ${errorMessage}`);
+    console.error("Batch reprocess error:", errorMessage);
     
     return new Response(
       JSON.stringify({ error: errorMessage }),

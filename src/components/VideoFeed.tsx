@@ -3,15 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { FeedItem } from "./FeedItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
-import { getBestThumbnailUrl, preloadImage, getBestVideoSource, videoLog } from "@/lib/cloudinary";
+import { getBestThumbnailUrl, preloadImage, getBestVideoSource } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const DEBUG_SCROLL = import.meta.env.DEV;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-// Thresholds for preload vs play
-const PRELOAD_THRESHOLD = 0.15; // Start buffering early
-const PLAY_THRESHOLD = 0.40;   // Start playing when mostly visible
 
 interface Video {
   id: string;
@@ -106,7 +103,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [preloadIndex, setPreloadIndex] = useState(-1); // Index that should preload (not play yet)
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   
@@ -114,40 +110,19 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
   const cursorRef = useRef<FeedCursor | null>(null);
-  
-  // Prefetch state - only one video at a time
-  const prefetchVideoRef = useRef<HTMLVideoElement | null>(null);
-  const prefetchingIdRef = useRef<string | null>(null);
 
-  // Cleanup prefetch video
-  const cleanupPrefetch = useCallback(() => {
-    if (prefetchVideoRef.current) {
-      videoLog('Cleaning up prefetch for:', prefetchingIdRef.current);
-      prefetchVideoRef.current.src = '';
-      prefetchVideoRef.current.load();
-      prefetchVideoRef.current = null;
-      prefetchingIdRef.current = null;
-    }
-  }, []);
-
-  // Prefetch next video with preload="auto" for real buffering
-  const prefetchNextVideo = useCallback((nextIndex: number) => {
+  // Preload next video's source
+  const preloadNextVideo = useCallback((nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= videos.length) return;
     
     const nextVideo = videos[nextIndex];
     if (!nextVideo) return;
     
-    // Don't prefetch if already prefetching this video
-    if (prefetchingIdRef.current === nextVideo.id) return;
-    
-    // Cleanup any existing prefetch
-    cleanupPrefetch();
-    
-    // Preload thumbnail first
+    // Preload thumbnail
     const thumb = getBestThumbnailUrl(nextVideo.cloudinary_public_id || null, nextVideo.thumbnail_url);
     preloadImage(thumb);
     
-    // Get video source
+    // Warm video source by creating a hidden video element
     const videoSrc = getBestVideoSource(
       nextVideo.cloudinary_public_id || null,
       nextVideo.optimized_video_url || null,
@@ -155,30 +130,21 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       nextVideo.video_url
     );
     
-    videoLog('Prefetching video:', nextVideo.id, 'src:', videoSrc.substring(0, 80));
-    
-    // Create hidden video element with preload="auto" for real buffering
+    // Create hidden preload video
     const preloadVideo = document.createElement('video');
-    preloadVideo.preload = 'auto'; // Full buffering, not just metadata
-    preloadVideo.muted = true;
-    preloadVideo.playsInline = true;
+    preloadVideo.preload = 'metadata';
     preloadVideo.src = videoSrc;
-    
-    prefetchVideoRef.current = preloadVideo;
-    prefetchingIdRef.current = nextVideo.id;
-    
-    // Start loading
+    preloadVideo.muted = true;
     preloadVideo.load();
     
-    // Log when enough data is buffered
-    preloadVideo.oncanplay = () => {
-      videoLog('Prefetch canplay:', nextVideo.id);
+    // Clean up after metadata loaded or timeout
+    const cleanup = () => {
+      preloadVideo.src = '';
+      preloadVideo.load();
     };
-    
-    preloadVideo.onerror = () => {
-      videoLog('Prefetch error:', nextVideo.id);
-    };
-  }, [videos, cleanupPrefetch]);
+    preloadVideo.onloadedmetadata = cleanup;
+    setTimeout(cleanup, 5000);
+  }, [videos]);
 
   // Fetch videos using the recommendation edge function
   useEffect(() => {
@@ -186,7 +152,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     hasFetchedRef.current = true;
 
     const fetchVideos = async () => {
-      videoLog('Starting fetch...');
+      console.log("[VideoFeed] Starting fetch...");
       
       try {
         // For search/category, use direct query; for main feed, use recommendation algorithm
@@ -247,7 +213,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
           const resultVideos = data?.videos || [];
           cursorRef.current = data?.nextCursor || null;
-          videoLog('Got recommended videos:', resultVideos.length);
+          console.log("[VideoFeed] Got recommended videos:", resultVideos.length);
           
           resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(resultVideos);
@@ -265,7 +231,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         setVideos([]);
       } finally {
         setLoading(false);
-        videoLog('Fetch complete');
+        console.log("[VideoFeed] Fetch complete");
       }
     };
 
@@ -280,10 +246,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     const refetch = async () => {
       setLoading(true);
       setActiveIndex(0);
-      setPreloadIndex(-1);
       loadedIdsRef.current.clear();
       cursorRef.current = null;
-      cleanupPrefetch();
       
       if (containerRef.current) {
         containerRef.current.scrollTop = 0;
@@ -328,9 +292,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
 
     refetch();
-  }, [searchQuery, categoryFilter, cleanupPrefetch]);
+  }, [searchQuery, categoryFilter]);
 
-  // Dual-threshold intersection observer: preload early, play later
+  // Intersection observer for active detection - 40% threshold for earlier activation
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
@@ -339,35 +303,12 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     
     const items = container.querySelectorAll('[data-video-index]');
     items.forEach((item) => {
-      // Preload observer - triggers early (15% visible)
-      const preloadObserver = new IntersectionObserver(
+      const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            if (entry.isIntersecting && entry.intersectionRatio >= PRELOAD_THRESHOLD) {
-              const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
-              
-              // If this is the next video (not current), mark for preload
-              if (idx === activeIndex + 1 && preloadIndex !== idx) {
-                videoLog('Preload threshold hit for index:', idx);
-                setPreloadIndex(idx);
-                prefetchNextVideo(idx + 1); // Prefetch the one after that
-              }
-            }
-          });
-        },
-        { threshold: [PRELOAD_THRESHOLD], root: container }
-      );
-      preloadObserver.observe(item);
-      observers.push(preloadObserver);
-      
-      // Play observer - triggers when mostly visible (40% visible)
-      const playObserver = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting && entry.intersectionRatio >= PLAY_THRESHOLD) {
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
               const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
               if (idx !== activeIndex) {
-                videoLog('Play threshold hit for index:', idx, 'ratio:', entry.intersectionRatio.toFixed(2));
                 setActiveIndex(idx);
                 
                 // Track session view
@@ -375,29 +316,31 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
                   addSessionViewedId(videos[idx].id);
                 }
                 
-                // Start prefetching next+1 video
-                prefetchNextVideo(idx + 1);
+                // Preload next video immediately
+                preloadNextVideo(idx + 1);
               }
             }
           });
         },
-        { threshold: [PLAY_THRESHOLD, 0.6, 0.8], root: container }
+        { threshold: [0.4, 0.6, 0.8], root: container }
       );
-      playObserver.observe(item);
-      observers.push(playObserver);
+      observer.observe(item);
+      observers.push(observer);
     });
 
     return () => {
       observers.forEach(obs => obs.disconnect());
     };
-  }, [videos, activeIndex, preloadIndex, prefetchNextVideo]);
+  }, [videos, activeIndex, preloadNextVideo]);
 
-  // Load more - trigger earlier (within last 2 items)
+  // Load more - trigger earlier (within last 2 items instead of 3)
   useEffect(() => {
     if (!hasMore || isLoadingMore || loading || videos.length === 0) return;
-    if (activeIndex < videos.length - 2) return;
+    if (activeIndex < videos.length - 2) return; // Changed from -3 to -2 for earlier trigger
     
-    videoLog('Triggering load more:', { activeIndex, videosLength: videos.length, hasMore });
+    if (DEBUG_SCROLL) {
+      console.log('[Pagination] Triggering load more:', { activeIndex, videosLength: videos.length, hasMore });
+    }
 
     const loadMore = async () => {
       setIsLoadingMore(true);
@@ -463,17 +406,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     loadMore();
   }, [activeIndex, videos.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
 
-  // Track view locally to prevent duplicate fetches
+  // Track view locally to prevent duplicate fetches - actual metrics are handled by useWatchMetrics
   const handleViewTracked = useCallback((videoId: string) => {
     addSessionViewedId(videoId);
   }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      cleanupPrefetch();
-    };
-  }, [cleanupPrefetch]);
 
   const handleRetry = () => {
     window.location.reload();
@@ -535,19 +471,13 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           );
         }
         
-        // Determine preload state:
-        // - isActive: currently playing
-        // - shouldPreload: next video that should buffer with preload="auto"
-        const isActive = index === activeIndex;
-        const shouldPreload = index === activeIndex + 1 || index === preloadIndex;
-        
         return (
           <FeedItem
             key={video.id}
             video={video}
             index={index}
-            isActive={isActive}
-            shouldPreload={shouldPreload}
+            isActive={index === activeIndex}
+            shouldPreload={Math.abs(index - activeIndex) <= 1}
             hasEntered={hasEntered}
             currentUserId={userId}
             onViewTracked={handleViewTracked}

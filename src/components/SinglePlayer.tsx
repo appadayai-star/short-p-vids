@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Loader2, RefreshCw, Play, Volume2, VolumeX } from "lucide-react";
 import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
-import { VideoDebugOverlay } from "./VideoDebugOverlay";
 
 // Global mute state - persisted across videos
 let globalMuted = true;
@@ -42,26 +41,26 @@ export const SinglePlayer = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const trackedViewsRef = useRef<Set<string>>(new Set());
-  const attemptRef = useRef(0);
   
   const [status, setStatus] = useState<VideoStatus>("idle");
+  const [attempt, setAttempt] = useState(0);
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
 
-  // Compute video source - stable policy: optimized_video_url if exists, else video_url
-  const videoSrc = video ? getBestVideoSource(
+  // Compute video sources - always use MP4 for reliability
+  const primarySrc = video ? getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     null,
     video.video_url
   ) : "";
-  const fallbackSrc = video?.video_url || "";
+  
+  const fallbackSrc = video?.optimized_video_url || video?.video_url || "";
+  const lastResortSrc = video?.video_url || "";
   const posterSrc = video ? getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url) : "";
 
-  // Track current src for fallback logic
-  const [currentSrc, setCurrentSrc] = useState(videoSrc);
-  const [usedFallback, setUsedFallback] = useState(false);
+  const [src, setSrc] = useState(primarySrc);
 
   // Clear timeout helper
   const clearLoadTimeout = useCallback(() => {
@@ -71,55 +70,40 @@ export const SinglePlayer = memo(({
     }
   }, []);
 
-  // Retry logic - fall back to Supabase storage if Cloudinary fails
-  const retryOrFallback = useCallback(() => {
+  // Retry or fallback logic
+  const retryOrFallback = useCallback((reason: "error" | "timeout") => {
     clearLoadTimeout();
-    const videoEl = videoRef.current;
-    if (!videoEl || !video) return;
-
-    attemptRef.current++;
-    console.log(`[SinglePlayer] Retry attempt ${attemptRef.current} for video ${video.id}, usedFallback=${usedFallback}`);
+    console.log(`[SinglePlayer] retryOrFallback: reason=${reason}, attempt=${attempt}`);
     
-    // Check if current src is a Cloudinary URL
-    const isCloudinaryUrl = currentSrc?.includes('cloudinary.com') || currentSrc?.includes('res.cloudinary.com');
-    
-    if (!usedFallback && isCloudinaryUrl && fallbackSrc && fallbackSrc !== currentSrc) {
-      // Cloudinary failed - immediately try Supabase storage
-      console.log(`[SinglePlayer] Cloudinary failed, falling back to Supabase: ${fallbackSrc.substring(0, 60)}...`);
-      setUsedFallback(true);
-      setCurrentSrc(fallbackSrc);
-      videoEl.src = fallbackSrc;
-      videoEl.load();
+    if (attempt === 0) {
+      setAttempt(1);
+      const cacheBuster = primarySrc.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
+      setSrc(primarySrc + cacheBuster);
       setStatus("loading");
-      
-      timeoutRef.current = setTimeout(() => {
-        console.log(`[SinglePlayer] Fallback load timeout`);
-        retryOrFallback();
-      }, LOAD_TIMEOUT_MS);
-      return;
-    }
-    
-    if (attemptRef.current >= MAX_RETRY_ATTEMPTS) {
-      console.log(`[SinglePlayer] All retries exhausted for video ${video.id}`);
+    } else if (attempt === 1 && fallbackSrc && fallbackSrc !== primarySrc) {
+      console.log(`[SinglePlayer] Trying fallback`);
+      setAttempt(2);
+      setSrc(fallbackSrc);
+      setStatus("loading");
+    } else if (attempt <= 2 && lastResortSrc && lastResortSrc !== fallbackSrc && lastResortSrc !== primarySrc) {
+      console.log(`[SinglePlayer] Trying lastResort`);
+      setAttempt(3);
+      setSrc(lastResortSrc);
+      setStatus("loading");
+    } else {
+      console.log(`[SinglePlayer] All retries exhausted`);
       setStatus("error");
-      return;
     }
+  }, [attempt, primarySrc, fallbackSrc, lastResortSrc, clearLoadTimeout]);
 
-    // Add cache buster and reload
-    const srcToUse = usedFallback ? fallbackSrc : videoSrc;
-    const cacheBuster = srcToUse.includes("?") ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
-    const newSrc = srcToUse + cacheBuster;
-    setCurrentSrc(newSrc);
-    videoEl.src = newSrc;
-    videoEl.load();
-    setStatus("loading");
-    
-    // Set timeout for this attempt
+  // Start loading timeout watchdog
+  const startLoadTimeout = useCallback(() => {
+    clearLoadTimeout();
     timeoutRef.current = setTimeout(() => {
-      console.log(`[SinglePlayer] Load timeout after ${LOAD_TIMEOUT_MS}ms`);
-      retryOrFallback();
+      console.log(`[SinglePlayer] Load timeout triggered after ${LOAD_TIMEOUT_MS}ms`);
+      retryOrFallback("timeout");
     }, LOAD_TIMEOUT_MS);
-  }, [video, videoSrc, fallbackSrc, currentSrc, usedFallback, clearLoadTimeout]);
+  }, [clearLoadTimeout, retryOrFallback]);
 
   // Sync with global mute state
   useEffect(() => {
@@ -143,30 +127,35 @@ export const SinglePlayer = memo(({
     if (video?.id !== currentVideoId) {
       console.log(`[SinglePlayer] Video changed: ${currentVideoId} -> ${video?.id}`);
       setCurrentVideoId(video?.id || null);
-      attemptRef.current = 0;
-      setUsedFallback(false);
+      setAttempt(0);
       clearLoadTimeout();
       
-      if (video && videoSrc) {
-        setCurrentSrc(videoSrc);
+      if (video) {
         videoEl.pause();
-        videoEl.src = videoSrc;
+        videoEl.src = primarySrc;
+        setSrc(primarySrc);
         setStatus("loading");
         videoEl.load();
-        
-        // Set timeout for initial load
-        timeoutRef.current = setTimeout(() => {
-          console.log(`[SinglePlayer] Initial load timeout`);
-          retryOrFallback();
-        }, LOAD_TIMEOUT_MS);
+        startLoadTimeout();
       } else {
         videoEl.pause();
         videoEl.src = "";
-        setCurrentSrc("");
         setStatus("idle");
       }
     }
-  }, [video?.id, videoSrc, currentVideoId, clearLoadTimeout, retryOrFallback]);
+  }, [video?.id, primarySrc, currentVideoId, startLoadTimeout, clearLoadTimeout]);
+
+  // Handle src changes for retries
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !video || status !== "loading" || attempt === 0) return;
+    
+    console.log(`[SinglePlayer] Retry attempt ${attempt}, src: ${src.substring(0, 50)}...`);
+    videoEl.pause();
+    videoEl.src = src;
+    videoEl.load();
+    startLoadTimeout();
+  }, [src, attempt, status, video, startLoadTimeout]);
 
   // Handle playback based on hasEntered and status
   useEffect(() => {
@@ -207,6 +196,10 @@ export const SinglePlayer = memo(({
   }, [clearLoadTimeout]);
 
   // Video event handlers
+  const handleLoadedMetadata = useCallback(() => {
+    console.log(`[SinglePlayer] loadedmetadata`);
+  }, []);
+
   const handleCanPlay = useCallback(() => {
     console.log(`[SinglePlayer] canplay - video ready`);
     clearLoadTimeout();
@@ -221,11 +214,19 @@ export const SinglePlayer = memo(({
     }
   }, [clearLoadTimeout, status]);
 
+  const handleWaiting = useCallback(() => {
+    console.log(`[SinglePlayer] waiting (buffering)`);
+  }, []);
+
+  const handleStalled = useCallback(() => {
+    console.log(`[SinglePlayer] stalled - network issue`);
+  }, []);
+
   const handleError = useCallback(() => {
     const videoEl = videoRef.current;
     console.error(`[SinglePlayer] error:`, videoEl?.error?.message, videoEl?.error?.code);
     clearLoadTimeout();
-    retryOrFallback();
+    retryOrFallback("error");
   }, [clearLoadTimeout, retryOrFallback]);
 
   // User actions
@@ -251,22 +252,18 @@ export const SinglePlayer = memo(({
 
   const handleRetry = useCallback(() => {
     console.log(`[SinglePlayer] Manual retry requested`);
-    attemptRef.current = 0;
-    setUsedFallback(false);
+    setAttempt(0);
+    setSrc(primarySrc);
     setStatus("loading");
     
     const videoEl = videoRef.current;
-    if (videoEl && videoSrc) {
-      setCurrentSrc(videoSrc);
+    if (videoEl) {
       videoEl.pause();
-      videoEl.src = videoSrc;
+      videoEl.src = primarySrc;
       videoEl.load();
-      
-      timeoutRef.current = setTimeout(() => {
-        retryOrFallback();
-      }, LOAD_TIMEOUT_MS);
+      startLoadTimeout();
     }
-  }, [videoSrc, retryOrFallback]);
+  }, [primarySrc, startLoadTimeout]);
 
   // Don't render if no video
   if (!video) return null;
@@ -291,8 +288,11 @@ export const SinglePlayer = memo(({
         muted={isMuted}
         preload="auto"
         poster={posterSrc || undefined}
+        onLoadedMetadata={handleLoadedMetadata}
         onCanPlay={handleCanPlay}
         onPlaying={handlePlaying}
+        onWaiting={handleWaiting}
+        onStalled={handleStalled}
         onError={handleError}
       />
       
@@ -300,13 +300,6 @@ export const SinglePlayer = memo(({
       <div 
         className="absolute inset-0 z-10 pointer-events-auto"
         onClick={handleVideoTap}
-      />
-
-      {/* Debug overlay - enabled via localStorage.videoDebug = '1' */}
-      <VideoDebugOverlay 
-        videoId={video.id} 
-        currentSrc={currentSrc} 
-        videoRef={videoRef} 
       />
 
       {/* Loading spinner overlay */}
