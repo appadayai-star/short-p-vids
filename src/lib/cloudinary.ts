@@ -28,17 +28,13 @@ export const DEFAULT_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.
  */
 export function getBestVideoSource(
   _cloudinaryPublicId: string | null,
-  optimizedVideoUrl: string | null,
+  _optimizedVideoUrl: string | null,
   _streamUrl: string | null,
   originalVideoUrl: string
 ): string {
-  // Priority 1: Use optimized_video_url if available (verified Cloudinary upload)
-  if (optimizedVideoUrl) {
-    videoLog('Using optimized_video_url:', optimizedVideoUrl.substring(0, 80));
-    return optimizedVideoUrl;
-  }
-  
-  // Priority 2: Fallback to original Supabase storage URL
+  // TEMPORARY: Always use Supabase storage directly
+  // Cloudinary URLs are broken (assets don't exist)
+  // Once Cloudinary uploads are fixed, we can re-enable optimized URLs
   videoLog('Using video_url (Supabase):', originalVideoUrl.substring(0, 60));
   return originalVideoUrl;
 }
