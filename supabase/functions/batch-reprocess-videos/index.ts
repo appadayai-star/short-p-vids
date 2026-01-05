@@ -78,17 +78,24 @@ async function processVideo(
     );
 
     const cloudinaryResult = await cloudinaryResponse.json();
+    
+    // Enhanced logging for Cloudinary response
+    console.log(`    Cloudinary response status: ${cloudinaryResponse.status}`);
+    console.log(`    Cloudinary response body: ${JSON.stringify(cloudinaryResult)}`);
 
     if (cloudinaryResult.error) {
-      throw new Error(cloudinaryResult.error.message || "Cloudinary upload failed");
+      const errorDetail = JSON.stringify(cloudinaryResult.error);
+      throw new Error(`Cloudinary upload failed: ${errorDetail}`);
     }
 
     if (!cloudinaryResult.secure_url || !cloudinaryResult.public_id) {
-      throw new Error("Cloudinary response missing required fields");
+      throw new Error(`Cloudinary response missing required fields. Keys: ${Object.keys(cloudinaryResult).join(", ")}`);
     }
 
     const uploadedPublicId = cloudinaryResult.public_id as string;
+    const secureUrl = cloudinaryResult.secure_url as string;
     console.log(`    Uploaded to Cloudinary: ${uploadedPublicId}`);
+    console.log(`    Cloudinary secure_url: ${secureUrl}`);
 
     // Step 3: Verify asset exists
     console.log(`    Verifying asset exists...`);
@@ -97,8 +104,9 @@ async function processVideo(
       throw new Error("Asset verification failed - not found on Cloudinary");
     }
 
-    // Step 4: Generate optimized URLs and update database
-    const optimizedVideoUrl = `https://res.cloudinary.com/${cloudName}/video/upload/f_mp4,vc_h264,c_limit,h_720,q_auto,fl_faststart/${uploadedPublicId}.mp4`;
+    // Step 4: Use Cloudinary's returned secure_url directly (NOT constructed URLs)
+    // Constructed URLs with transformations can fail with HTTP 400
+    const optimizedVideoUrl = secureUrl;
     const thumbnailUrl = `https://res.cloudinary.com/${cloudName}/video/upload/so_0,f_jpg,w_480,q_auto/${uploadedPublicId}.jpg`;
 
     const { error: updateError } = await supabase
