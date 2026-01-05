@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent, ArrowUpDown, Video } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent, ArrowUpDown } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -31,30 +31,6 @@ type SortOrder = "asc" | "desc";
 const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
 
-const VideoThumbnailCell = ({ video }: { video: VideoItem }) => {
-  const [imgError, setImgError] = useState(false);
-  
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-16 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
-        {video.thumbnail_url && !imgError ? (
-          <img 
-            src={video.thumbnail_url} 
-            alt="" 
-            className="w-full h-full object-cover"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <Video className="h-4 w-4 text-muted-foreground" />
-        )}
-      </div>
-      <div className="min-w-0">
-        <div className="font-medium truncate max-w-[150px]">{video.title || "Untitled"}</div>
-        <div className="text-xs text-muted-foreground lg:hidden">{video.uploader_username}</div>
-      </div>
-    </div>
-  );
-};
 
 export const AdminVideos = () => {
   const { toast } = useToast();
@@ -298,7 +274,10 @@ export const AdminVideos = () => {
               videos.map((video) => (
                 <TableRow key={video.id} className={loading ? "opacity-50" : ""}>
                   <TableCell>
-                    <VideoThumbnailCell video={video} />
+                    <div className="min-w-0">
+                      <div className="font-medium truncate max-w-[200px]">{video.title || "Untitled"}</div>
+                      <div className="text-xs text-muted-foreground font-mono">{video.id.slice(0, 8)}...</div>
+                    </div>
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
                     <div>
