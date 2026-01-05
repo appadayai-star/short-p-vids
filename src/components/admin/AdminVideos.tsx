@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent, ArrowUpDown } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -23,6 +24,9 @@ interface Video {
   uploader_username: string;
 }
 
+type SortField = "created_at" | "views_count" | "likes_count" | "engagement";
+type SortOrder = "asc" | "desc";
+
 const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
 
@@ -36,6 +40,8 @@ export const AdminVideos = () => {
   const [total, setTotal] = useState(0);
   const [deleteVideo, setDeleteVideo] = useState<Video | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [sortField, setSortField] = useState<SortField>("created_at");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const limit = 20;
 
   const fetchVideos = async () => {
@@ -49,6 +55,8 @@ export const AdminVideos = () => {
       const params: Record<string, string> = {
         page: page.toString(),
         limit: limit.toString(),
+        sortField,
+        sortOrder,
       };
       if (search) params.q = search;
 
@@ -80,7 +88,7 @@ export const AdminVideos = () => {
   useEffect(() => {
     const debounce = setTimeout(fetchVideos, 300);
     return () => clearTimeout(debounce);
-  }, [search, page]);
+  }, [search, page, sortField, sortOrder]);
 
   const handleDelete = async () => {
     if (!deleteVideo) return;
@@ -135,17 +143,42 @@ export const AdminVideos = () => {
 
   return (
     <div className="space-y-4">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by title, description, or video ID..."
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          className="pl-10"
-        />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by title, description, or video ID..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Select value={sortField} onValueChange={(v) => { setSortField(v as SortField); setPage(1); }}>
+            <SelectTrigger className="w-[140px]">
+              <ArrowUpDown className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="created_at">Date</SelectItem>
+              <SelectItem value="views_count">Views</SelectItem>
+              <SelectItem value="likes_count">Likes</SelectItem>
+              <SelectItem value="engagement">Engagement %</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortOrder} onValueChange={(v) => { setSortOrder(v as SortOrder); setPage(1); }}>
+            <SelectTrigger className="w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="desc">High → Low</SelectItem>
+              <SelectItem value="asc">Low → High</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {error && (
