@@ -46,46 +46,37 @@ export function AdminReprocess() {
     setResults([]);
 
     try {
-      // Call batch-reprocess with dryRun: false to actually process videos
       const { data, error } = await supabase.functions.invoke('batch-reprocess-videos', {
-        body: { dryRun: false, limit: 20 }
+        body: { dryRun: false, limit: 10 }
       });
 
       if (error) {
         throw new Error(error.message);
       }
 
-      // Handle the response format from batch-reprocess-videos
-      if (data?.mode === "live" && data?.results) {
-        const { succeeded, failed, errors } = data.results;
-        
-        // Convert errors to results format for display
-        const displayResults = errors?.map((e: { id: string; error: string }) => ({
-          id: e.id,
-          status: 'failed',
-          error: e.error
-        })) || [];
-        
-        setResults(displayResults);
-        
-        if (succeeded > 0 && failed === 0) {
-          toast.success(`Successfully reprocessed ${succeeded} videos`);
-        } else if (succeeded > 0 && failed > 0) {
-          toast.warning(`Reprocessed ${succeeded} videos, ${failed} failed`);
-        } else if (failed > 0) {
-          toast.error(`Failed to reprocess ${failed} videos`);
+      // New background processing response
+      if (data?.started !== undefined) {
+        if (data.started > 0) {
+          toast.success(`Started processing ${data.started} videos in background`);
         } else {
           toast.info("No videos needed reprocessing");
         }
-      } else if (data?.mode === "dry_run") {
+        
+        // Poll for updates after a delay
+        setTimeout(() => {
+          checkMissingVideos();
+        }, 5000);
+        return;
+      }
+
+      // Legacy response format (dry run)
+      if (data?.mode === "dry_run") {
         toast.info(`Found ${data.videosFound} videos to reprocess (dry run)`);
       }
 
-      // Refresh the count
-      await checkMissingVideos();
     } catch (error) {
       console.error("Reprocess error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to reprocess videos");
+      toast.error(error instanceof Error ? error.message : "Failed to start reprocessing");
     } finally {
       setIsLoading(false);
     }

@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Declare EdgeRuntime for background tasks
+declare const EdgeRuntime: {
+  waitUntil: (promise: Promise<unknown>) => void;
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -194,16 +199,14 @@ serve(async (req) => {
 
     // Parse request body
     const body = await req.json().catch(() => ({}));
-    const limit = Math.min(body.limit || 10, 50); // Cap at 50 to avoid timeout
+    const limit = Math.min(body.limit || 5, 20); // Smaller limit for background processing
     const dryRun = body.dryRun ?? true;
 
     console.log(`=== Batch Reprocess Videos ===`);
     console.log(`Mode: ${dryRun ? "DRY RUN" : "LIVE"}`);
     console.log(`Limit: ${limit}`);
 
-    // Find videos that need reprocessing:
-    // 1. Videos where optimized_video_url is null (regardless of cloudinary_public_id)
-    // 2. Videos where processing_status is 'failed'
+    // Find videos that need reprocessing
     const { data: brokenVideos, error: queryError } = await supabase
       .from("videos")
       .select("id, video_url, cloudinary_public_id, optimized_video_url, processing_status, processing_error")
@@ -215,13 +218,14 @@ serve(async (req) => {
       throw new Error(`Query failed: ${queryError.message}`);
     }
 
-    console.log(`Found ${brokenVideos?.length || 0} videos to reprocess`);
+    const videoCount = brokenVideos?.length || 0;
+    console.log(`Found ${videoCount} videos to reprocess`);
 
     if (dryRun) {
       return new Response(
         JSON.stringify({
           mode: "dry_run",
-          videosFound: brokenVideos?.length || 0,
+          videosFound: videoCount,
           videos: brokenVideos?.map((v: any) => ({
             id: v.id,
             hasCloudinaryId: !!v.cloudinary_public_id,
@@ -235,43 +239,48 @@ serve(async (req) => {
       );
     }
 
-    // Process videos sequentially
-    const results = {
-      total: brokenVideos?.length || 0,
-      succeeded: 0,
-      failed: 0,
-      errors: [] as { id: string; error: string }[],
-    };
-
-    for (const video of brokenVideos || []) {
-      const result = await processVideo(
-        supabase,
-        video.id,
-        video.video_url,
-        CLOUDINARY_CLOUD_NAME,
-        CLOUDINARY_API_KEY,
-        CLOUDINARY_API_SECRET,
-        SUPABASE_SERVICE_ROLE_KEY
+    if (videoCount === 0) {
+      return new Response(
+        JSON.stringify({
+          mode: "live",
+          message: "No videos need reprocessing",
+          started: 0,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
-
-      if (result.success) {
-        results.succeeded++;
-      } else {
-        results.failed++;
-        results.errors.push({ id: video.id, error: result.error || "Unknown error" });
-      }
-
-      // Small delay between videos to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    console.log(`=== Batch Reprocess Complete ===`);
-    console.log(`Succeeded: ${results.succeeded}, Failed: ${results.failed}`);
+    // Use background task to process videos - return immediately
+    const backgroundProcess = async () => {
+      console.log(`Starting background processing of ${videoCount} videos`);
+      
+      for (const video of brokenVideos || []) {
+        await processVideo(
+          supabase,
+          video.id,
+          video.video_url,
+          CLOUDINARY_CLOUD_NAME!,
+          CLOUDINARY_API_KEY!,
+          CLOUDINARY_API_SECRET!,
+          SUPABASE_SERVICE_ROLE_KEY!
+        );
+        
+        // Small delay between videos
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      console.log(`=== Background processing complete ===`);
+    };
 
+    // Start background processing
+    EdgeRuntime.waitUntil(backgroundProcess());
+
+    // Return immediately
     return new Response(
       JSON.stringify({
         mode: "live",
-        results,
+        message: `Started processing ${videoCount} videos in background`,
+        started: videoCount,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
