@@ -213,13 +213,20 @@ export const FeedItem = memo(({
     if (!videoEl) return;
     
     retryCountRef.current++;
+    console.log(`[Video ${index}] RETRY #${retryCountRef.current}:`, {
+      currentSrc: videoEl.currentSrc,
+      newSrc: videoSrc,
+      srcChanged: videoEl.currentSrc !== videoSrc,
+    });
     setPlaybackFailed(false);
     videoEl.src = videoSrc;
     videoEl.load();
-    videoEl.play().catch(() => {
+    console.log(`[Video ${index}] Called load(), attempting play()`);
+    videoEl.play().catch((err) => {
+      console.error(`[Video ${index}] Retry play failed:`, err);
       setPlaybackFailed(true);
     });
-  }, [videoSrc]);
+  }, [videoSrc, index]);
 
   // Check if guest has liked this video
   useEffect(() => {
@@ -354,6 +361,7 @@ export const FeedItem = memo(({
 
       {/* Video player - overlays poster */}
       <video
+        key={isActive || shouldPreload ? videoSrc : 'inactive'}
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
@@ -364,6 +372,23 @@ export const FeedItem = memo(({
         muted={isMuted}
         preload={isActive || shouldPreload ? "auto" : "none"}
         onClick={toggleMute}
+        onError={(e) => {
+          const v = e.currentTarget;
+          console.error(`[Video ${index}] ERROR:`, {
+            currentSrc: v.currentSrc,
+            networkState: v.networkState,
+            readyState: v.readyState,
+            errorCode: v.error?.code,
+            errorMessage: v.error?.message,
+          });
+          setPlaybackFailed(true);
+        }}
+        onStalled={() => videoLog(`stalled for index ${index}`)}
+        onWaiting={() => videoLog(`waiting for index ${index}`)}
+        onAbort={() => videoLog(`abort for index ${index}`)}
+        onLoadedMetadata={() => videoLog(`loadedmetadata for index ${index}, readyState:`, videoRef.current?.readyState)}
+        onCanPlay={() => videoLog(`canplay for index ${index}`)}
+        onPlaying={() => videoLog(`playing for index ${index}`)}
       />
 
       {/* Playback failed - retry UI - pointer-events only on button */}
