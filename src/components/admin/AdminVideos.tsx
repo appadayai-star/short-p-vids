@@ -44,7 +44,7 @@ export const AdminVideos = () => {
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const limit = 20;
 
-  const fetchVideos = async () => {
+  const fetchVideos = async (currentPage: number, currentSortField: SortField, currentSortOrder: SortOrder, currentSearch: string) => {
     setLoading(true);
     setError(null);
 
@@ -53,12 +53,12 @@ export const AdminVideos = () => {
       if (!session) throw new Error("Not authenticated");
 
       const params: Record<string, string> = {
-        page: page.toString(),
+        page: currentPage.toString(),
         limit: limit.toString(),
-        sortField,
-        sortOrder,
+        sortField: currentSortField,
+        sortOrder: currentSortOrder,
       };
-      if (search) params.q = search;
+      if (currentSearch) params.q = currentSearch;
 
       const queryString = new URLSearchParams(params).toString();
 
@@ -85,8 +85,11 @@ export const AdminVideos = () => {
     }
   };
 
+  // Debounce only for search input
   useEffect(() => {
-    const debounce = setTimeout(fetchVideos, 300);
+    const debounce = setTimeout(() => {
+      fetchVideos(page, sortField, sortOrder, search);
+    }, search ? 300 : 0);
     return () => clearTimeout(debounce);
   }, [search, page, sortField, sortOrder]);
 
