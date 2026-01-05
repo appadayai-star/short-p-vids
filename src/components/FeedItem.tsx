@@ -71,7 +71,6 @@ interface FeedItemProps {
   video: Video;
   index: number;
   isActive: boolean;
-  isPreplaying?: boolean; // Start playing before becoming fully active
   shouldPreload?: boolean;
   hasEntered: boolean;
   currentUserId: string | null;
@@ -83,7 +82,6 @@ export const FeedItem = memo(({
   video, 
   index,
   isActive,
-  isPreplaying = false,
   shouldPreload = false,
   hasEntered,
   currentUserId, 
@@ -141,21 +139,15 @@ export const FeedItem = memo(({
     };
   }, []);
 
-  // Play/pause based on isActive OR isPreplaying - start early for smoother scrolling
+  // Play/pause based on isActive
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    const shouldPlay = (isActive || isPreplaying) && hasEntered;
-
-    if (shouldPlay) {
+    if (isActive && hasEntered) {
       setPlaybackFailed(false);
-      
-      // Only reset time and mark load start when becoming fully active
-      if (isActive) {
-        markLoadStart();
-        videoEl.currentTime = 0;
-      }
+      markLoadStart();
+      videoEl.currentTime = 0;
       
       const attemptPlay = () => {
         videoEl.play().catch((err) => {
@@ -185,13 +177,10 @@ export const FeedItem = memo(({
         videoEl.removeEventListener('canplay', handleCanPlay);
       };
     } else {
-      // Stop watching when scrolling away (only if not preplaying)
-      if (!isPreplaying) {
-        stopWatching();
-        videoEl.pause();
-      }
+      stopWatching();
+      videoEl.pause();
     }
-  }, [isActive, isPreplaying, hasEntered, markLoadStart, stopWatching]);
+  }, [isActive, hasEntered, markLoadStart, stopWatching]);
 
   // Preload next video when this one is active
   useEffect(() => {
@@ -353,12 +342,12 @@ export const FeedItem = memo(({
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover md:object-contain"
         style={{ paddingBottom: navOffset }}
-        src={isActive || isPreplaying || shouldPreload ? videoSrc : undefined}
+        src={isActive || shouldPreload ? videoSrc : undefined}
         poster={posterSrc}
         loop
         playsInline
         muted={isMuted}
-        preload={isActive || isPreplaying ? "auto" : shouldPreload ? "auto" : "none"}
+        preload={isActive ? "auto" : shouldPreload ? "auto" : "none"}
         onClick={toggleMute}
       />
 

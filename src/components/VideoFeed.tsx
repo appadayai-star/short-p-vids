@@ -103,7 +103,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [preplayIndex, setPreplayIndex] = useState<number | null>(null); // Index to start playing early
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   
@@ -111,8 +110,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
   const cursorRef = useRef<FeedCursor | null>(null);
-  const lastScrollTop = useRef(0);
-  const scrollDirectionRef = useRef<'up' | 'down' | null>(null);
 
   // Preload next video's source
   const preloadNextVideo = useCallback((nextIndex: number) => {
@@ -297,89 +294,38 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     refetch();
   }, [searchQuery, categoryFilter]);
 
-  // Scroll direction detection - start preloading/preplaying based on direction
+  // Simple intersection observer - low threshold for fast activation
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
 
-    let scrollTimeout: number;
-    
-    const handleScroll = () => {
-      const currentScrollTop = container.scrollTop;
-      const delta = currentScrollTop - lastScrollTop.current;
-      
-      // Determine scroll direction
-      if (Math.abs(delta) > 5) {
-        const direction = delta > 0 ? 'down' : 'up';
-        scrollDirectionRef.current = direction;
-        
-        // Calculate which video to preplay based on direction
-        const targetPreplay = direction === 'down' ? activeIndex + 1 : activeIndex - 1;
-        
-        if (targetPreplay >= 0 && targetPreplay < videos.length && targetPreplay !== preplayIndex) {
-          setPreplayIndex(targetPreplay);
-          // Preload even further ahead
-          preloadNextVideo(direction === 'down' ? activeIndex + 2 : activeIndex - 2);
-        }
-      }
-      
-      lastScrollTop.current = currentScrollTop;
-      
-      // Clear preplay when scroll stops
-      clearTimeout(scrollTimeout);
-      scrollTimeout = window.setTimeout(() => {
-        scrollDirectionRef.current = null;
-      }, 150);
-    };
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      clearTimeout(scrollTimeout);
-    };
-  }, [videos.length, activeIndex, preplayIndex, preloadNextVideo]);
-
-  // Intersection observer for active detection - use low threshold
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || videos.length === 0) return;
-
-    const observers: IntersectionObserver[] = [];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
+            if (idx !== activeIndex) {
+              setActiveIndex(idx);
+              
+              // Track session view
+              if (videos[idx]) {
+                addSessionViewedId(videos[idx].id);
+              }
+              
+              // Preload adjacent videos
+              preloadNextVideo(idx + 1);
+              preloadNextVideo(idx + 2);
+            }
+          }
+        });
+      },
+      { threshold: [0.5], root: container }
+    );
     
     const items = container.querySelectorAll('[data-video-index]');
-    items.forEach((item) => {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            // Use very low threshold - 15% visibility triggers activation
-            if (entry.isIntersecting && entry.intersectionRatio >= 0.15) {
-              const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
-              if (idx !== activeIndex) {
-                setActiveIndex(idx);
-                setPreplayIndex(null); // Clear preplay since this is now active
-                
-                // Track session view
-                if (videos[idx]) {
-                  addSessionViewedId(videos[idx].id);
-                }
-                
-                // Preload next TWO videos immediately (both directions)
-                preloadNextVideo(idx + 1);
-                preloadNextVideo(idx + 2);
-                if (idx > 0) preloadNextVideo(idx - 1);
-              }
-            }
-          });
-        },
-        { threshold: [0.1, 0.15, 0.3, 0.5], root: container }
-      );
-      observer.observe(item);
-      observers.push(observer);
-    });
+    items.forEach((item) => observer.observe(item));
 
-    return () => {
-      observers.forEach(obs => obs.disconnect());
-    };
+    return () => observer.disconnect();
   }, [videos, activeIndex, preloadNextVideo]);
 
   // Load more - trigger earlier (within last 2 items instead of 3)
@@ -526,7 +472,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             video={video}
             index={index}
             isActive={index === activeIndex}
-            isPreplaying={index === preplayIndex}
             shouldPreload={Math.abs(index - activeIndex) <= 2}
             hasEntered={hasEntered}
             currentUserId={userId}
