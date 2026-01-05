@@ -348,7 +348,7 @@ export const FeedItem = memo(({
         loop
         playsInline
         muted={isMuted}
-        preload={isActive ? "auto" : shouldPreload ? "metadata" : "none"}
+        preload={isActive ? "auto" : shouldPreload ? "auto" : "none"}
         onClick={toggleMute}
       />
 
