@@ -47,32 +47,10 @@ async function updateVideoStatus(
   }
 }
 
-// Verify the asset exists on Cloudinary by checking the delivery URL
-async function verifyCloudinaryAsset(
-  cloudName: string,
-  publicId: string
-): Promise<{ exists: boolean; error?: string }> {
-  try {
-    // Build the delivery URL for the raw uploaded video
-    const deliveryUrl = `https://res.cloudinary.com/${cloudName}/video/upload/${publicId}`;
-    
-    console.log(`Verifying Cloudinary asset at: ${deliveryUrl}`);
-    
-    const response = await fetch(deliveryUrl, { method: "HEAD" });
-    
-    if (response.ok) {
-      console.log(`Cloudinary asset verified: ${publicId}`);
-      return { exists: true };
-    } else {
-      console.error(`Cloudinary asset not found: ${response.status} ${response.statusText}`);
-      return { exists: false, error: `Asset not found: HTTP ${response.status}` };
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error(`Failed to verify Cloudinary asset: ${errorMessage}`);
-    return { exists: false, error: errorMessage };
-  }
-}
+// NOTE: We removed HEAD verification because:
+// 1. HEAD requests can fail with 403/405 even when the asset is accessible via GET
+// 2. Cloudinary's API response is the authoritative source of truth
+// 3. If secure_url is returned, the asset exists
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -273,31 +251,25 @@ serve(async (req) => {
     const uploadedPublicId = cloudinaryResult.public_id as string;
     const secureUrl = cloudinaryResult.secure_url as string;
 
-    console.log(`Cloudinary upload successful!`);
+    // Enhanced logging for Cloudinary upload verification
+    console.log(`=== Cloudinary Upload Success ===`);
     console.log(`  public_id: ${uploadedPublicId}`);
     console.log(`  secure_url: ${secureUrl}`);
-    console.log(`  size: ${cloudinaryResult.bytes} bytes`);
+    console.log(`  type: ${cloudinaryResult.type}`);
+    console.log(`  resource_type: ${cloudinaryResult.resource_type}`);
+    console.log(`  format: ${cloudinaryResult.format}`);
+    console.log(`  bytes: ${cloudinaryResult.bytes}`);
     console.log(`  duration: ${cloudinaryResult.duration}s`);
-
-    // ============================================================
-    // STEP 3: Verify the asset actually exists on Cloudinary
-    // ============================================================
-    console.log("Step 3: Verifying asset exists on Cloudinary...");
-
-    const verification = await verifyCloudinaryAsset(CLOUDINARY_CLOUD_NAME, uploadedPublicId);
+    console.log(`  width: ${cloudinaryResult.width}`);
+    console.log(`  height: ${cloudinaryResult.height}`);
     
-    if (!verification.exists) {
-      console.error(`Asset verification failed: ${verification.error}`);
-      
-      await updateVideoStatus(supabase, videoId, "failed", {
-        processing_error: `Asset verification failed: ${verification.error}`,
-      });
-
-      return new Response(
-        JSON.stringify({ error: `Asset verification failed: ${verification.error}` }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Verify type is 'upload' (public delivery)
+    if (cloudinaryResult.type !== 'upload') {
+      console.warn(`WARNING: Cloudinary type is '${cloudinaryResult.type}', expected 'upload'. This may cause delivery issues.`);
     }
+
+    // NOTE: Skipping HEAD verification - Cloudinary's API response is authoritative
+    // HEAD requests can fail with 403/405 even when the asset is accessible via GET
 
     // ============================================================
     // STEP 4: Use Cloudinary's returned secure_url directly

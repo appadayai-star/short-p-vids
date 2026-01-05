@@ -11,16 +11,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Verify Cloudinary asset exists by HEADing the delivery URL
-async function verifyCloudinaryAsset(cloudName: string, publicId: string): Promise<boolean> {
-  try {
-    const deliveryUrl = `https://res.cloudinary.com/${cloudName}/video/upload/${publicId}`;
-    const response = await fetch(deliveryUrl, { method: "HEAD" });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
+// NOTE: Removed HEAD verification - Cloudinary's API response is authoritative
+// HEAD requests can fail with 403/405 even when the asset is accessible via GET
 
 // Process a single video - fetch bytes and upload to Cloudinary
 async function processVideo(
@@ -94,15 +86,23 @@ async function processVideo(
 
     const uploadedPublicId = cloudinaryResult.public_id as string;
     const secureUrl = cloudinaryResult.secure_url as string;
-    console.log(`    Uploaded to Cloudinary: ${uploadedPublicId}`);
-    console.log(`    Cloudinary secure_url: ${secureUrl}`);
-
-    // Step 3: Verify asset exists
-    console.log(`    Verifying asset exists...`);
-    const exists = await verifyCloudinaryAsset(cloudName, uploadedPublicId);
-    if (!exists) {
-      throw new Error("Asset verification failed - not found on Cloudinary");
+    
+    // Enhanced logging for Cloudinary fields to verify upload type
+    console.log(`    === Cloudinary Upload Success ===`);
+    console.log(`    public_id: ${uploadedPublicId}`);
+    console.log(`    secure_url: ${secureUrl}`);
+    console.log(`    type: ${cloudinaryResult.type}`);
+    console.log(`    resource_type: ${cloudinaryResult.resource_type}`);
+    console.log(`    format: ${cloudinaryResult.format}`);
+    console.log(`    bytes: ${cloudinaryResult.bytes}`);
+    console.log(`    duration: ${cloudinaryResult.duration}s`);
+    
+    // Verify type is 'upload' (public delivery)
+    if (cloudinaryResult.type !== 'upload') {
+      console.warn(`    WARNING: type is '${cloudinaryResult.type}', expected 'upload'`);
     }
+
+    // NOTE: Skipping HEAD verification - Cloudinary's API response is authoritative
 
     // Step 4: Use Cloudinary's returned secure_url directly (NOT constructed URLs)
     // Constructed URLs with transformations can fail with HTTP 400
