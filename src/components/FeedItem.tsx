@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, memo, useCallback } from "react";
+import { useState, useEffect, useRef, memo, useCallback, SyntheticEvent } from "react";
 import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { getBestVideoSource, getBestThumbnailUrl, DEFAULT_PLACEHOLDER } from "@/lib/cloudinary";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import {
   DropdownMenu,
@@ -333,6 +333,9 @@ export const FeedItem = memo(({
         alt="" 
         className="absolute inset-0 w-full h-full object-cover md:object-contain pointer-events-none"
         style={{ paddingBottom: navOffset }}
+        onError={(e: SyntheticEvent<HTMLImageElement>) => {
+          e.currentTarget.src = DEFAULT_PLACEHOLDER;
+        }}
       />
 
       {/* Video player - overlays poster */}
