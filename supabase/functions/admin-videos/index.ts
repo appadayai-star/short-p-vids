@@ -61,10 +61,15 @@ Deno.serve(async (req) => {
     const limit = parseInt(url.searchParams.get("limit") || "20");
     const startDate = url.searchParams.get("startDate");
     const endDate = url.searchParams.get("endDate");
+    const sortField = url.searchParams.get("sortField") || "created_at";
+    const sortOrder = url.searchParams.get("sortOrder") || "desc";
     const offset = (page - 1) * limit;
 
-    console.log(`Fetching videos: search="${search}", page=${page}, dates=${startDate}-${endDate}`);
+    console.log(`Fetching videos: search="${search}", page=${page}, sort=${sortField}:${sortOrder}`);
 
+    // For engagement sorting, we need to fetch all and sort in memory
+    const isEngagementSort = sortField === "engagement";
+    
     // Build query
     let query = serviceClient
       .from("videos")
@@ -82,8 +87,14 @@ Deno.serve(async (req) => {
           id,
           username
         )
-      `, { count: "exact" })
-      .order("created_at", { ascending: false });
+      `, { count: "exact" });
+
+    // Apply sorting for non-engagement fields
+    if (!isEngagementSort && ["created_at", "views_count", "likes_count"].includes(sortField)) {
+      query = query.order(sortField, { ascending: sortOrder === "asc" });
+    } else if (!isEngagementSort) {
+      query = query.order("created_at", { ascending: false });
+    }
 
     if (search) {
       query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%,id.eq.${search}`);
@@ -97,7 +108,12 @@ Deno.serve(async (req) => {
       query = query.lte("created_at", endDate);
     }
 
-    query = query.range(offset, offset + limit - 1);
+    // For engagement sort, fetch more data to sort properly
+    if (isEngagementSort) {
+      query = query.order("created_at", { ascending: false }).limit(1000);
+    } else {
+      query = query.range(offset, offset + limit - 1);
+    }
 
     const { data: videos, count, error } = await query;
 
@@ -125,18 +141,30 @@ Deno.serve(async (req) => {
       emailMap.set(u.id, u.email || "");
     });
 
-    const videosWithEmail = videos?.map((v) => {
+    let videosWithEmail = videos?.map((v) => {
       const profileData = v.profiles as unknown;
       const profile = profileData as { id: string; username: string } | null;
+      const savedCount = savedCountMap.get(v.id) || 0;
+      const engagement = v.views_count > 0 ? (v.likes_count / v.views_count) * 100 : 0;
       return {
         ...v,
-        saved_count: savedCountMap.get(v.id) || 0,
+        saved_count: savedCount,
+        engagement,
         uploader_email: emailMap.get(v.user_id) || "",
         uploader_username: profile?.username || `user_${v.user_id.slice(0, 8)}`,
       };
-    });
+    }) || [];
 
-    console.log(`Returning ${videos?.length} videos out of ${count} total`);
+    // Handle engagement sorting in memory
+    if (isEngagementSort) {
+      videosWithEmail.sort((a, b) => {
+        return sortOrder === "desc" ? b.engagement - a.engagement : a.engagement - b.engagement;
+      });
+      // Apply pagination after sorting
+      videosWithEmail = videosWithEmail.slice(offset, offset + limit);
+    }
+
+    console.log(`Returning ${videosWithEmail.length} videos out of ${count} total`);
 
     return new Response(
       JSON.stringify({
