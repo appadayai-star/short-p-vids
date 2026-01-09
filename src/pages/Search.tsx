@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadModal } from "@/components/UploadModal";
 import { VideoModal } from "@/components/VideoModal";
+import { VideoThumbnail } from "@/components/VideoThumbnail";
 import { SEO } from "@/components/SEO";
 import { Input } from "@/components/ui/input";
 import { Search as SearchIcon, TrendingUp, Clock } from "lucide-react";
@@ -247,10 +248,13 @@ const Search = () => {
                           }}
                           className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden relative group hover:opacity-80 transition-opacity"
                         >
-                          <video
-                            src={video.video_url}
+                          <VideoThumbnail
+                            cloudinaryPublicId={video.cloudinary_public_id || null}
+                            thumbnailUrl={video.thumbnail_url}
+                            videoUrl={video.video_url}
+                            title={video.title}
+                            videoId={video.id}
                             className="w-full h-full object-cover"
-                            preload="metadata"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
                             <div className="text-white text-xs">
