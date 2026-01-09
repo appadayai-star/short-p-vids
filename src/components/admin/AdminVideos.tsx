@@ -5,16 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent, ArrowUpDown, Video } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent, ArrowUpDown } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-
+import { VideoThumbnail } from "@/components/VideoThumbnail";
 interface VideoItem {
   id: string;
   title: string;
   description: string | null;
   video_url: string;
   thumbnail_url: string | null;
+  cloudinary_public_id: string | null;
   views_count: number;
   likes_count: number;
   saved_count: number;
@@ -32,21 +33,16 @@ const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
 
 const VideoThumbnailCell = ({ video }: { video: VideoItem }) => {
-  const [imgError, setImgError] = useState(false);
-  
   return (
     <div className="flex items-center gap-3">
       <div className="w-16 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
-        {video.thumbnail_url && !imgError ? (
-          <img 
-            src={video.thumbnail_url} 
-            alt="" 
-            className="w-full h-full object-cover"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <Video className="h-4 w-4 text-muted-foreground" />
-        )}
+        <VideoThumbnail
+          cloudinaryPublicId={video.cloudinary_public_id}
+          thumbnailUrl={video.thumbnail_url}
+          title={video.title}
+          videoId={video.id}
+          className="w-full h-full object-cover"
+        />
       </div>
       <div className="min-w-0">
         <div className="font-medium truncate max-w-[150px]">{video.title || "Untitled"}</div>

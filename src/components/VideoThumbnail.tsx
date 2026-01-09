@@ -5,7 +5,7 @@ import { AlertTriangle } from "lucide-react";
 interface VideoThumbnailProps {
   cloudinaryPublicId: string | null;
   thumbnailUrl: string | null;
-  videoUrl: string; // kept for API compatibility but NOT used
+  videoUrl?: string; // optional - kept for API compatibility but NOT used
   title: string;
   videoId?: string;
   className?: string;

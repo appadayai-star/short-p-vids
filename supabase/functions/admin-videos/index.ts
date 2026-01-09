@@ -79,6 +79,7 @@ Deno.serve(async (req) => {
         description,
         video_url,
         thumbnail_url,
+        cloudinary_public_id,
         views_count,
         likes_count,
         created_at,
