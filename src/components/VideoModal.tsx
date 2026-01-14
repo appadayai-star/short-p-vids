@@ -90,6 +90,17 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const isScrollingRef = useRef(false);
+  
+  // Double-tap like state
+  const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const lastTapTimeRef = useRef<number>(0);
+  const singleTapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Progress bar state
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const progressBarRef = useRef<HTMLDivElement>(null);
 
   // Sync with global mute
   useEffect(() => {
@@ -242,14 +253,150 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }
   }, [activeIndex, videos.length]);
 
+  // Unmute only (not toggle) - used for single tap
+  const unmute = useCallback(() => {
+    if (isMuted) {
+      setGlobalMuted(false);
+      setShowMuteIcon(true);
+      setTimeout(() => setShowMuteIcon(false), 500);
+    }
+  }, [isMuted]);
+
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
     setGlobalMuted(newMuted);
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
+  
+  // Trigger heart animation at position
+  const triggerHeartAnimation = useCallback((x: number, y: number) => {
+    const heartId = Date.now();
+    setDoubleTapHearts(prev => [...prev, { id: heartId, x, y }]);
+    setTimeout(() => {
+      setDoubleTapHearts(prev => prev.filter(h => h.id !== heartId));
+    }, 1000);
+  }, []);
 
-  const toggleLike = async (videoId: string) => {
+  // Handle video tap - single tap unmutes, double tap likes
+  const handleVideoTap = useCallback((e: React.MouseEvent<HTMLVideoElement>, videoId: string) => {
+    e.preventDefault();
+    
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapTimeRef.current;
+    
+    // Get tap position for heart animation
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Clear any pending single tap
+    if (singleTapTimeoutRef.current) {
+      clearTimeout(singleTapTimeoutRef.current);
+      singleTapTimeoutRef.current = null;
+    }
+    
+    // Double tap detection (within 300ms)
+    if (timeSinceLastTap > 50 && timeSinceLastTap < 300) {
+      // Double tap - like the video
+      lastTapTimeRef.current = 0;
+      triggerHeartAnimation(x, y);
+      
+      // Only like if not already liked
+      if (!likedVideos.has(videoId)) {
+        toggleLike(videoId);
+      }
+    } else {
+      // Potential single tap - wait to see if it's a double tap
+      lastTapTimeRef.current = now;
+      
+      singleTapTimeoutRef.current = setTimeout(() => {
+        // Single tap confirmed - unmute only
+        unmute();
+        singleTapTimeoutRef.current = null;
+      }, 300);
+    }
+  }, [unmute, triggerHeartAnimation, likedVideos]);
+
+  // Progress bar handlers
+  const handleTimeUpdate = useCallback(() => {
+    const activeVideo = videos[activeIndex];
+    if (!activeVideo || isScrubbing) return;
+    
+    const videoEl = videoRefs.current.get(activeVideo.id);
+    if (videoEl) {
+      setProgress(videoEl.currentTime);
+      setDuration(videoEl.duration || 0);
+    }
+  }, [activeIndex, videos, isScrubbing]);
+
+  const handleLoadedMetadata = useCallback(() => {
+    const activeVideo = videos[activeIndex];
+    if (!activeVideo) return;
+    
+    const videoEl = videoRefs.current.get(activeVideo.id);
+    if (videoEl) {
+      setDuration(videoEl.duration || 0);
+    }
+  }, [activeIndex, videos]);
+
+  const seekToPosition = useCallback((clientX: number) => {
+    const bar = progressBarRef.current;
+    const activeVideo = videos[activeIndex];
+    if (!bar || !activeVideo || !duration) return;
+    
+    const videoEl = videoRefs.current.get(activeVideo.id);
+    if (!videoEl) return;
+    
+    const rect = bar.getBoundingClientRect();
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    const percent = x / rect.width;
+    const newTime = percent * duration;
+    
+    videoEl.currentTime = newTime;
+    setProgress(newTime);
+  }, [activeIndex, videos, duration]);
+
+  const handleProgressMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsScrubbing(true);
+    seekToPosition(e.clientX);
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      seekToPosition(moveEvent.clientX);
+    };
+    
+    const handleMouseUp = () => {
+      setIsScrubbing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [seekToPosition]);
+
+  const handleProgressTouchStart = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation();
+    setIsScrubbing(true);
+    seekToPosition(e.touches[0].clientX);
+    
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      seekToPosition(moveEvent.touches[0].clientX);
+    };
+    
+    const handleTouchEnd = () => {
+      setIsScrubbing(false);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+    
+    document.addEventListener('touchmove', handleTouchMove);
+    document.addEventListener('touchend', handleTouchEnd);
+  }, [seekToPosition]);
+
+  const toggleLike = useCallback(async (videoId: string) => {
     const clientId = getGuestClientId();
     const wasLiked = likedVideos.has(videoId);
     
@@ -307,7 +454,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       }));
       toast.error("Failed to update like");
     }
-  };
+  }, [likedVideos, userId, onVideoLikeChange]);
 
   const toggleSave = async (videoId: string) => {
     if (!userId) {
@@ -429,9 +576,30 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                     muted={isMuted}
                     playsInline
                     preload={isActive ? "auto" : "metadata"}
-                    onClick={toggleMute}
+                    onClick={(e) => handleVideoTap(e, video.id)}
+                    onTimeUpdate={isActive ? handleTimeUpdate : undefined}
+                    onLoadedMetadata={isActive ? handleLoadedMetadata : undefined}
                   />
                 )}
+
+                {/* Double-tap heart animation */}
+                {isActive && doubleTapHearts.map(heart => (
+                  <div
+                    key={heart.id}
+                    className="absolute pointer-events-none z-30"
+                    style={{
+                      left: heart.x - 40,
+                      top: heart.y - 40,
+                    }}
+                  >
+                    <Heart 
+                      className="h-20 w-20 fill-primary text-primary animate-double-tap-heart"
+                      style={{
+                        filter: 'drop-shadow(0 0 10px rgba(255, 200, 0, 0.5))',
+                      }}
+                    />
+                  </div>
+                ))}
 
                 {/* Mute indicator flash */}
                 {showMuteIcon && isActive && (
@@ -536,6 +704,33 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
           })
         )}
       </div>
+
+      {/* Progress bar - fixed to viewport, above nav bar */}
+      {activeVideo && (
+        <div 
+          ref={progressBarRef}
+          className="fixed bottom-[64px] left-0 right-0 h-8 z-[60] cursor-pointer group"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+          onMouseDown={handleProgressMouseDown}
+          onTouchStart={handleProgressTouchStart}
+        >
+          {/* Track background */}
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/30 transition-all group-hover:h-1.5 group-active:h-1.5">
+            {/* Progress fill */}
+            <div 
+              className="absolute inset-y-0 left-0 bg-primary rounded-r-full"
+              style={{ width: duration > 0 ? `${(progress / duration) * 100}%` : '0%' }}
+            />
+            {/* Scrubber dot */}
+            {duration > 0 && (
+              <div 
+                className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg transition-transform opacity-0 group-hover:opacity-100 group-active:opacity-100 group-active:scale-125"
+                style={{ left: `calc(${(progress / duration) * 100}% - 8px)` }}
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {activeVideo && (
         <ShareDrawer 
