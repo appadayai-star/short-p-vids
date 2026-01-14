@@ -373,7 +373,7 @@ export const VideoCard = memo(({
   }, [isMuted]);
 
   // Handle double-tap like with heart animation
-  const handleDoubleTapLike = useCallback((x: number, y: number) => {
+  const triggerHeartAnimation = useCallback((x: number, y: number) => {
     // Add heart animation at tap position
     const heartId = Date.now();
     setDoubleTapHearts(prev => [...prev, { id: heartId, x, y }]);
@@ -382,75 +382,9 @@ export const VideoCard = memo(({
     setTimeout(() => {
       setDoubleTapHearts(prev => prev.filter(h => h.id !== heartId));
     }, 1000);
-    
-    // Only like if not already liked
-    if (!isLiked) {
-      toggleLike();
-    }
-  }, [isLiked]);
+  }, []);
 
-  const handleVideoTap = useCallback((e: React.MouseEvent<HTMLVideoElement | HTMLButtonElement>) => {
-    const now = Date.now();
-    const timeSinceLastTap = now - lastTapTimeRef.current;
-    
-    // Get tap position relative to the container
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    // Check if this is a double-tap (within 300ms and similar position)
-    const isDoubleTap = timeSinceLastTap < 300 && 
-      Math.abs(x - lastTapPositionRef.current.x) < 50 &&
-      Math.abs(y - lastTapPositionRef.current.y) < 50;
-    
-    if (isDoubleTap) {
-      // Clear any pending single-tap timeout
-      if (doubleTapTimeoutRef.current) {
-        clearTimeout(doubleTapTimeoutRef.current);
-        doubleTapTimeoutRef.current = null;
-      }
-      
-      // Handle double-tap like
-      handleDoubleTapLike(x, y);
-      lastTapTimeRef.current = 0; // Reset to prevent triple-tap
-    } else {
-      // Store tap info for potential double-tap detection
-      lastTapTimeRef.current = now;
-      lastTapPositionRef.current = { x, y };
-      
-      // Delay single-tap action to allow for double-tap detection
-      if (doubleTapTimeoutRef.current) {
-        clearTimeout(doubleTapTimeoutRef.current);
-      }
-      
-      doubleTapTimeoutRef.current = setTimeout(() => {
-        if (status === "needsInteraction") {
-          const videoEl = videoRef.current;
-          if (videoEl) {
-            videoEl.play().then(() => {
-              setStatus("ready");
-            }).catch(() => {
-              // Still blocked
-            });
-          }
-        } else {
-          toggleMute();
-        }
-        doubleTapTimeoutRef.current = null;
-      }, 300);
-    }
-  }, [status, toggleMute, handleDoubleTapLike]);
-
-  const handleRetry = useCallback(() => {
-    console.log(`[VideoCard ${index}] Manual retry`);
-    setAttempt(0);
-    setSrc(primarySrc);
-    setStatus("loading");
-  }, [primarySrc, index]);
-
-  const toggleLike = async () => {
+  const toggleLike = useCallback(async () => {
     const clientId = getGuestClientId();
     const wasLiked = isLiked;
     
@@ -485,7 +419,80 @@ export const VideoCard = memo(({
       setLikesCount(prev => wasLiked ? prev + 1 : prev - 1);
       toast.error("Failed to update like");
     }
-  };
+  }, [isLiked, video.id, currentUserId]);
+
+  const handleVideoTap = useCallback((e: React.MouseEvent<HTMLVideoElement | HTMLButtonElement>) => {
+    e.preventDefault();
+    
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapTimeRef.current;
+    
+    // Get tap position relative to the container
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Check if this is a double-tap (within 300ms and similar position)
+    const isDoubleTapDetected = timeSinceLastTap < 300 && 
+      timeSinceLastTap > 50 && // Ignore too-fast clicks (could be browser quirk)
+      Math.abs(x - lastTapPositionRef.current.x) < 100 &&
+      Math.abs(y - lastTapPositionRef.current.y) < 100;
+    
+    console.log(`[VideoCard] Tap detected: timeSince=${timeSinceLastTap}ms, isDouble=${isDoubleTapDetected}`);
+    
+    if (isDoubleTapDetected) {
+      // Clear any pending single-tap timeout
+      if (doubleTapTimeoutRef.current) {
+        clearTimeout(doubleTapTimeoutRef.current);
+        doubleTapTimeoutRef.current = null;
+      }
+      
+      // Show heart animation
+      triggerHeartAnimation(x, y);
+      
+      // Like the video if not already liked
+      if (!isLiked) {
+        toggleLike();
+      }
+      
+      lastTapTimeRef.current = 0; // Reset to prevent triple-tap
+    } else {
+      // Store tap info for potential double-tap detection
+      lastTapTimeRef.current = now;
+      lastTapPositionRef.current = { x, y };
+      
+      // Clear any existing timeout
+      if (doubleTapTimeoutRef.current) {
+        clearTimeout(doubleTapTimeoutRef.current);
+      }
+      
+      // Delay single-tap action to allow for double-tap detection
+      doubleTapTimeoutRef.current = setTimeout(() => {
+        if (status === "needsInteraction") {
+          const videoEl = videoRef.current;
+          if (videoEl) {
+            videoEl.play().then(() => {
+              setStatus("ready");
+            }).catch(() => {
+              // Still blocked
+            });
+          }
+        } else {
+          toggleMute();
+        }
+        doubleTapTimeoutRef.current = null;
+      }, 300);
+    }
+  }, [status, toggleMute, triggerHeartAnimation, isLiked, toggleLike]);
+
+  const handleRetry = useCallback(() => {
+    console.log(`[VideoCard ${index}] Manual retry`);
+    setAttempt(0);
+    setSrc(primarySrc);
+    setStatus("loading");
+  }, [primarySrc, index]);
 
   const toggleSave = async () => {
     if (!currentUserId) {
