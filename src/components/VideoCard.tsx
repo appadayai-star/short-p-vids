@@ -806,26 +806,29 @@ export const VideoCard = memo(({
 
       <ShareDrawer videoId={video.id} videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
 
-      {/* Progress bar - positioned above nav bar */}
-      {duration > 0 && isTrulyActive && (
+      {/* Progress bar - fixed to viewport, above nav bar */}
+      {isTrulyActive && (
         <div 
           ref={progressBarRef}
-          className="absolute bottom-[72px] left-0 right-0 h-6 z-30 cursor-pointer group"
+          className="fixed bottom-[64px] left-0 right-0 h-8 z-[60] cursor-pointer group"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
           onMouseDown={handleProgressMouseDown}
           onTouchStart={handleProgressTouchStart}
         >
           {/* Track background */}
-          <div className="absolute bottom-2 left-0 right-0 h-[3px] bg-white/30 rounded-full transition-all group-hover:h-[5px] group-active:h-[5px]">
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/30 transition-all group-hover:h-1.5 group-active:h-1.5">
             {/* Progress fill */}
             <div 
-              className="absolute inset-y-0 left-0 bg-yellow-primary rounded-full"
-              style={{ width: `${(progress / duration) * 100}%` }}
+              className="absolute inset-y-0 left-0 bg-primary rounded-r-full"
+              style={{ width: duration > 0 ? `${(progress / duration) * 100}%` : '0%' }}
             />
             {/* Scrubber dot */}
-            <div 
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-yellow-primary rounded-full shadow-md transition-transform scale-0 group-hover:scale-100 group-active:scale-125"
-              style={{ left: `calc(${(progress / duration) * 100}% - 6px)` }}
-            />
+            {duration > 0 && (
+              <div 
+                className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg transition-transform opacity-0 group-hover:opacity-100 group-active:opacity-100 group-active:scale-125"
+                style={{ left: `calc(${(progress / duration) * 100}% - 8px)` }}
+              />
+            )}
           </div>
         </div>
       )}
