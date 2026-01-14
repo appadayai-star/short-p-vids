@@ -91,6 +91,7 @@ export const FeedItem = memo(({
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const retryCountRef = useRef(0);
+  const progressBarRef = useRef<HTMLDivElement>(null);
 
   // Watch metrics tracking - hook handles TTFF and watch time via event listeners
   const {
@@ -114,6 +115,11 @@ export const FeedItem = memo(({
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
+  
+  // Progress bar state
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
 
   // Video sources - ALWAYS have a poster
   const videoSrc = getBestVideoSource(
@@ -238,6 +244,75 @@ export const FeedItem = memo(({
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
+  // Progress bar handlers
+  const handleTimeUpdate = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (videoEl && !isScrubbing) {
+      setProgress(videoEl.currentTime);
+      setDuration(videoEl.duration || 0);
+    }
+  }, [isScrubbing]);
+
+  const handleLoadedMetadata = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (videoEl) {
+      setDuration(videoEl.duration || 0);
+    }
+  }, []);
+
+  const seekToPosition = useCallback((clientX: number) => {
+    const bar = progressBarRef.current;
+    const videoEl = videoRef.current;
+    if (!bar || !videoEl || !duration) return;
+    
+    const rect = bar.getBoundingClientRect();
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    const percent = x / rect.width;
+    const newTime = percent * duration;
+    
+    videoEl.currentTime = newTime;
+    setProgress(newTime);
+  }, [duration]);
+
+  const handleProgressMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsScrubbing(true);
+    seekToPosition(e.clientX);
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      seekToPosition(moveEvent.clientX);
+    };
+    
+    const handleMouseUp = () => {
+      setIsScrubbing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [seekToPosition]);
+
+  const handleProgressTouchStart = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation();
+    setIsScrubbing(true);
+    seekToPosition(e.touches[0].clientX);
+    
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      seekToPosition(moveEvent.touches[0].clientX);
+    };
+    
+    const handleTouchEnd = () => {
+      setIsScrubbing(false);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+    
+    document.addEventListener('touchmove', handleTouchMove);
+    document.addEventListener('touchend', handleTouchEnd);
+  }, [seekToPosition]);
+
   const toggleLike = async () => {
     const clientId = getGuestClientId();
     const wasLiked = isLiked;
@@ -347,6 +422,8 @@ export const FeedItem = memo(({
         muted={isMuted}
         preload={isActive || shouldPreload ? "auto" : "none"}
         onClick={toggleMute}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
       />
 
       {/* Playback failed - retry UI - pointer-events only on button */}
@@ -459,6 +536,33 @@ export const FeedItem = memo(({
       </div>
 
       <ShareDrawer videoId={video.id} videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
+
+      {/* Progress bar - above nav bar */}
+      {isActive && (
+        <div 
+          ref={progressBarRef}
+          className="absolute left-0 right-0 h-6 z-50 cursor-pointer group"
+          style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
+          onMouseDown={handleProgressMouseDown}
+          onTouchStart={handleProgressTouchStart}
+        >
+          {/* Track background */}
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/30 transition-all group-hover:h-1.5 group-active:h-1.5">
+            {/* Progress fill */}
+            <div 
+              className="absolute inset-y-0 left-0 bg-primary rounded-r-full"
+              style={{ width: duration > 0 ? `${(progress / duration) * 100}%` : '0%' }}
+            />
+            {/* Scrubber dot */}
+            {duration > 0 && (
+              <div 
+                className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg transition-transform opacity-0 group-hover:opacity-100 group-active:opacity-100 group-active:scale-125"
+                style={{ left: `calc(${(progress / duration) * 100}% - 8px)` }}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 });
