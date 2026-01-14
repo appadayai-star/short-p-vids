@@ -120,6 +120,11 @@ export const FeedItem = memo(({
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
+  
+  // Double-tap like state
+  const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const lastTapTimeRef = useRef<number>(0);
+  const singleTapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Video sources - ALWAYS have a poster
   const videoSrc = getBestVideoSource(
@@ -237,12 +242,31 @@ export const FeedItem = memo(({
     fetchStates();
   }, [video.id, currentUserId]);
 
+  // Unmute only (not toggle) - used for single tap
+  const unmute = useCallback(() => {
+    if (isMuted) {
+      setGlobalMuted(false);
+      setShowMuteIcon(true);
+      setTimeout(() => setShowMuteIcon(false), 500);
+    }
+  }, [isMuted]);
+
+  // Toggle mute - used for the mute button
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
     setGlobalMuted(newMuted);
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
+  
+  // Trigger heart animation at position
+  const triggerHeartAnimation = useCallback((x: number, y: number) => {
+    const heartId = Date.now();
+    setDoubleTapHearts(prev => [...prev, { id: heartId, x, y }]);
+    setTimeout(() => {
+      setDoubleTapHearts(prev => prev.filter(h => h.id !== heartId));
+    }, 1000);
+  }, []);
 
   // Progress bar handlers
   const handleTimeUpdate = useCallback(() => {
@@ -313,7 +337,7 @@ export const FeedItem = memo(({
     document.addEventListener('touchend', handleTouchEnd);
   }, [seekToPosition]);
 
-  const toggleLike = async () => {
+  const toggleLike = useCallback(async () => {
     const clientId = getGuestClientId();
     const wasLiked = isLiked;
     
@@ -348,7 +372,47 @@ export const FeedItem = memo(({
       setLikesCount(prev => wasLiked ? prev + 1 : prev - 1);
       toast.error("Failed to update like");
     }
-  };
+  }, [isLiked, video.id, currentUserId]);
+
+  // Handle video tap - single tap unmutes, double tap likes
+  const handleVideoTap = useCallback((e: React.MouseEvent<HTMLVideoElement>) => {
+    e.preventDefault();
+    
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapTimeRef.current;
+    
+    // Get tap position for heart animation
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Clear any pending single tap
+    if (singleTapTimeoutRef.current) {
+      clearTimeout(singleTapTimeoutRef.current);
+      singleTapTimeoutRef.current = null;
+    }
+    
+    // Double tap detection (within 300ms)
+    if (timeSinceLastTap > 50 && timeSinceLastTap < 300) {
+      // Double tap - like the video
+      lastTapTimeRef.current = 0;
+      triggerHeartAnimation(x, y);
+      
+      // Only like if not already liked
+      if (!isLiked) {
+        toggleLike();
+      }
+    } else {
+      // Potential single tap - wait to see if it's a double tap
+      lastTapTimeRef.current = now;
+      
+      singleTapTimeoutRef.current = setTimeout(() => {
+        // Single tap confirmed - unmute only
+        unmute();
+        singleTapTimeoutRef.current = null;
+      }, 300);
+    }
+  }, [unmute, triggerHeartAnimation, isLiked, toggleLike]);
 
   const toggleSave = async () => {
     if (!currentUserId) {
@@ -421,10 +485,29 @@ export const FeedItem = memo(({
         playsInline
         muted={isMuted}
         preload={isActive || shouldPreload ? "auto" : "none"}
-        onClick={toggleMute}
+        onClick={handleVideoTap}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
       />
+
+      {/* Double-tap heart animation */}
+      {doubleTapHearts.map(heart => (
+        <div
+          key={heart.id}
+          className="absolute pointer-events-none z-30"
+          style={{
+            left: heart.x - 40,
+            top: heart.y - 40,
+          }}
+        >
+          <Heart 
+            className="h-20 w-20 fill-primary text-primary animate-double-tap-heart"
+            style={{
+              filter: 'drop-shadow(0 0 10px rgba(255, 200, 0, 0.5))',
+            }}
+          />
+        </div>
+      ))}
 
       {/* Playback failed - retry UI - pointer-events only on button */}
       {playbackFailed && (
