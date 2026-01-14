@@ -126,6 +126,12 @@ export const VideoCard = memo(({
   const [isShareOpen, setIsShareOpen] = useState(false);
   
   const [isMuted, setIsMuted] = useState(globalMuted);
+  
+  // Double-tap like animation state
+  const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const lastTapTimeRef = useRef<number>(0);
+  const lastTapPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const doubleTapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Compute truly active - only one video can be active at a time
   const isTrulyActive = index === activeIndex;
@@ -366,20 +372,76 @@ export const VideoCard = memo(({
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
-  const handleVideoTap = useCallback(() => {
-    if (status === "needsInteraction") {
-      const videoEl = videoRef.current;
-      if (videoEl) {
-        videoEl.play().then(() => {
-          setStatus("ready");
-        }).catch(() => {
-          // Still blocked
-        });
-      }
-    } else {
-      toggleMute();
+  // Handle double-tap like with heart animation
+  const handleDoubleTapLike = useCallback((x: number, y: number) => {
+    // Add heart animation at tap position
+    const heartId = Date.now();
+    setDoubleTapHearts(prev => [...prev, { id: heartId, x, y }]);
+    
+    // Remove heart after animation completes
+    setTimeout(() => {
+      setDoubleTapHearts(prev => prev.filter(h => h.id !== heartId));
+    }, 1000);
+    
+    // Only like if not already liked
+    if (!isLiked) {
+      toggleLike();
     }
-  }, [status, toggleMute]);
+  }, [isLiked]);
+
+  const handleVideoTap = useCallback((e: React.MouseEvent<HTMLVideoElement | HTMLButtonElement>) => {
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapTimeRef.current;
+    
+    // Get tap position relative to the container
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Check if this is a double-tap (within 300ms and similar position)
+    const isDoubleTap = timeSinceLastTap < 300 && 
+      Math.abs(x - lastTapPositionRef.current.x) < 50 &&
+      Math.abs(y - lastTapPositionRef.current.y) < 50;
+    
+    if (isDoubleTap) {
+      // Clear any pending single-tap timeout
+      if (doubleTapTimeoutRef.current) {
+        clearTimeout(doubleTapTimeoutRef.current);
+        doubleTapTimeoutRef.current = null;
+      }
+      
+      // Handle double-tap like
+      handleDoubleTapLike(x, y);
+      lastTapTimeRef.current = 0; // Reset to prevent triple-tap
+    } else {
+      // Store tap info for potential double-tap detection
+      lastTapTimeRef.current = now;
+      lastTapPositionRef.current = { x, y };
+      
+      // Delay single-tap action to allow for double-tap detection
+      if (doubleTapTimeoutRef.current) {
+        clearTimeout(doubleTapTimeoutRef.current);
+      }
+      
+      doubleTapTimeoutRef.current = setTimeout(() => {
+        if (status === "needsInteraction") {
+          const videoEl = videoRef.current;
+          if (videoEl) {
+            videoEl.play().then(() => {
+              setStatus("ready");
+            }).catch(() => {
+              // Still blocked
+            });
+          }
+        } else {
+          toggleMute();
+        }
+        doubleTapTimeoutRef.current = null;
+      }, 300);
+    }
+  }, [status, toggleMute, handleDoubleTapLike]);
 
   const handleRetry = useCallback(() => {
     console.log(`[VideoCard ${index}] Manual retry`);
@@ -557,6 +619,25 @@ export const VideoCard = memo(({
           </div>
         </div>
       )}
+
+      {/* Double-tap heart animation */}
+      {doubleTapHearts.map(heart => (
+        <div
+          key={heart.id}
+          className="absolute pointer-events-none z-30"
+          style={{
+            left: heart.x - 40,
+            top: heart.y - 40,
+          }}
+        >
+          <Heart 
+            className="h-20 w-20 fill-primary text-primary animate-double-tap-heart"
+            style={{
+              filter: 'drop-shadow(0 0 10px rgba(255, 0, 0, 0.5))',
+            }}
+          />
+        </div>
+      ))}
 
       {/* Mute indicator in corner */}
       <div className="absolute bottom-[120px] right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm pointer-events-none">
