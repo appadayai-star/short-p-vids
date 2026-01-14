@@ -132,6 +132,12 @@ export const VideoCard = memo(({
   const lastTapTimeRef = useRef<number>(0);
   const lastTapPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const doubleTapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Progress bar state
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const progressBarRef = useRef<HTMLDivElement>(null);
 
   // Compute truly active - only one video can be active at a time
   const isTrulyActive = index === activeIndex;
@@ -338,9 +344,6 @@ export const VideoCard = memo(({
     setStatus("ready");
   }, [clearLoadTimeout, index]);
 
-  const handleLoadedMetadata = useCallback(() => {
-    console.log(`[VideoCard ${index}] loadedmetadata`);
-  }, [index]);
 
   const handlePlaying = useCallback(() => {
     console.log(`[VideoCard ${index}] playing`);
@@ -363,6 +366,76 @@ export const VideoCard = memo(({
     clearLoadTimeout();
     retryOrFallback("error");
   }, [clearLoadTimeout, retryOrFallback, index]);
+
+  // Progress bar handlers
+  const handleTimeUpdate = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (videoEl && !isScrubbing) {
+      setProgress(videoEl.currentTime);
+      setDuration(videoEl.duration || 0);
+    }
+  }, [isScrubbing]);
+
+  const handleLoadedMetadataWithDuration = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (videoEl) {
+      setDuration(videoEl.duration || 0);
+    }
+    console.log(`[VideoCard ${index}] loadedmetadata`);
+  }, [index]);
+
+  const seekToPosition = useCallback((clientX: number) => {
+    const bar = progressBarRef.current;
+    const videoEl = videoRef.current;
+    if (!bar || !videoEl || !duration) return;
+    
+    const rect = bar.getBoundingClientRect();
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    const percent = x / rect.width;
+    const newTime = percent * duration;
+    
+    videoEl.currentTime = newTime;
+    setProgress(newTime);
+  }, [duration]);
+
+  const handleProgressMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsScrubbing(true);
+    seekToPosition(e.clientX);
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      seekToPosition(moveEvent.clientX);
+    };
+    
+    const handleMouseUp = () => {
+      setIsScrubbing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [seekToPosition]);
+
+  const handleProgressTouchStart = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation();
+    setIsScrubbing(true);
+    seekToPosition(e.touches[0].clientX);
+    
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      seekToPosition(moveEvent.touches[0].clientX);
+    };
+    
+    const handleTouchEnd = () => {
+      setIsScrubbing(false);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+    
+    document.addEventListener('touchmove', handleTouchMove);
+    document.addEventListener('touchend', handleTouchEnd);
+  }, [seekToPosition]);
 
   // User actions
   const toggleMute = useCallback(() => {
@@ -575,7 +648,8 @@ export const VideoCard = memo(({
           poster={posterSrc}
           onClick={handleVideoTap}
           onCanPlay={handleCanPlay}
-          onLoadedMetadata={handleLoadedMetadata}
+          onLoadedMetadata={handleLoadedMetadataWithDuration}
+          onTimeUpdate={handleTimeUpdate}
           onPlaying={handlePlaying}
           onWaiting={handleWaiting}
           onStalled={handleStalled}
@@ -731,6 +805,30 @@ export const VideoCard = memo(({
       </div>
 
       <ShareDrawer videoId={video.id} videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
+
+      {/* Progress bar - positioned above nav bar */}
+      {duration > 0 && isTrulyActive && (
+        <div 
+          ref={progressBarRef}
+          className="absolute bottom-[72px] left-0 right-0 h-6 z-30 cursor-pointer group"
+          onMouseDown={handleProgressMouseDown}
+          onTouchStart={handleProgressTouchStart}
+        >
+          {/* Track background */}
+          <div className="absolute bottom-2 left-0 right-0 h-[3px] bg-white/30 rounded-full transition-all group-hover:h-[5px] group-active:h-[5px]">
+            {/* Progress fill */}
+            <div 
+              className="absolute inset-y-0 left-0 bg-yellow-primary rounded-full"
+              style={{ width: `${(progress / duration) * 100}%` }}
+            />
+            {/* Scrubber dot */}
+            <div 
+              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-yellow-primary rounded-full shadow-md transition-transform scale-0 group-hover:scale-100 group-active:scale-125"
+              style={{ left: `calc(${(progress / duration) * 100}% - 6px)` }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 });
