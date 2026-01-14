@@ -541,7 +541,7 @@ export const FeedItem = memo(({
       {isActive && (
         <div 
           ref={progressBarRef}
-          className="absolute left-0 right-0 h-6 z-50 cursor-pointer group"
+          className="absolute left-0 right-0 h-6 z-[60] cursor-pointer group"
           style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
           onMouseDown={handleProgressMouseDown}
           onTouchStart={handleProgressTouchStart}
