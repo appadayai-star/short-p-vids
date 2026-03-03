@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Search, Loader2, ChevronLeft, ChevronRight, Trash2, Eye, Heart, Bookmark, Percent, ArrowUpDown } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { VideoThumbnail } from "@/components/VideoThumbnail";
+
 interface VideoItem {
   id: string;
   title: string;
@@ -32,25 +34,23 @@ type SortOrder = "asc" | "desc";
 const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
 
-const VideoThumbnailCell = ({ video }: { video: VideoItem }) => {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-16 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
-        <VideoThumbnail
-          cloudinaryPublicId={video.cloudinary_public_id}
-          thumbnailUrl={video.thumbnail_url}
-          title={video.title}
-          videoId={video.id}
-          className="w-full h-full object-cover"
-        />
-      </div>
-      <div className="min-w-0">
-        <div className="font-medium truncate max-w-[150px]">{video.title || "Untitled"}</div>
-        <div className="text-xs text-muted-foreground lg:hidden">{video.uploader_username}</div>
-      </div>
+const VideoThumbnailCell = ({ video }: { video: VideoItem }) => (
+  <div className="flex items-center gap-3">
+    <div className="w-16 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
+      <VideoThumbnail
+        cloudinaryPublicId={video.cloudinary_public_id}
+        thumbnailUrl={video.thumbnail_url}
+        title={video.title}
+        videoId={video.id}
+        className="w-full h-full object-cover"
+      />
     </div>
-  );
-};
+    <div className="min-w-0">
+      <div className="font-medium truncate max-w-[150px]">{video.title || "Untitled"}</div>
+      <div className="text-xs text-muted-foreground lg:hidden">{video.uploader_username}</div>
+    </div>
+  </div>
+);
 
 export const AdminVideos = () => {
   const { toast } = useToast();
@@ -64,114 +64,79 @@ export const AdminVideos = () => {
   const [deleting, setDeleting] = useState(false);
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
   const limit = 20;
-  
-  // Track current request to prevent race conditions
+
   const requestIdRef = useRef(0);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchVideos = useCallback(async (
-    requestId: number,
-    currentPage: number, 
-    currentSortField: SortField, 
-    currentSortOrder: SortOrder, 
-    currentSearch: string
+    requestId: number, currentPage: number, currentSortField: SortField, currentSortOrder: SortOrder, currentSearch: string
   ) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
       const params: Record<string, string> = {
-        page: currentPage.toString(),
-        limit: limit.toString(),
-        sortField: currentSortField,
-        sortOrder: currentSortOrder,
+        page: currentPage.toString(), limit: limit.toString(),
+        sortField: currentSortField, sortOrder: currentSortOrder,
       };
       if (currentSearch.trim()) params.q = currentSearch.trim();
 
-      const queryString = new URLSearchParams(params).toString();
-
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-videos?${queryString}`, {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: SUPABASE_ANON_KEY,
-        },
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-videos?${new URLSearchParams(params).toString()}`, {
+        headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY },
       });
 
-      // Check if this request is still the latest one
-      if (requestId !== requestIdRef.current) {
-        return; // Stale request, ignore results
-      }
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to fetch videos");
-      }
+      if (requestId !== requestIdRef.current) return;
+      if (!res.ok) { const errorData = await res.json(); throw new Error(errorData.error || "Failed to fetch videos"); }
 
       const data = await res.json();
       setVideos(data.videos || []);
       setTotal(data.total || 0);
       setError(null);
     } catch (err) {
-      // Only update error if this is still the current request
       if (requestId === requestIdRef.current) {
         console.error("Error fetching videos:", err);
         setError(err instanceof Error ? err.message : "Failed to load videos");
       }
     } finally {
-      // Only update loading if this is still the current request
-      if (requestId === requestIdRef.current) {
-        setLoading(false);
-      }
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, []);
 
-  // Effect for fetching data - handles all filter/sort/page changes
   useEffect(() => {
-    // Clear any pending search timeout
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-      searchTimeoutRef.current = null;
-    }
-
-    // Increment request ID to invalidate any in-flight requests
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     requestIdRef.current += 1;
     const currentRequestId = requestIdRef.current;
-    
     setLoading(true);
-
-    // Debounce only for search changes
-    const delay = search ? 300 : 0;
-    
     searchTimeoutRef.current = setTimeout(() => {
       fetchVideos(currentRequestId, page, sortField, sortOrder, search);
-    }, delay);
-
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
+    }, search ? 300 : 0);
+    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [search, page, sortField, sortOrder, fetchVideos]);
 
-  const handleSortFieldChange = (value: string) => {
-    setSortField(value as SortField);
-    setPage(1);
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
-  const handleSortOrderChange = (value: string) => {
-    setSortOrder(value as SortOrder);
-    setPage(1);
-  };
-
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearch(e.target.value);
-    setPage(1);
+  const toggleSelectAll = () => {
+    const ids = videos.map(v => v.id);
+    const allSelected = ids.every(id => selectedIds.has(id));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) ids.forEach(id => next.delete(id));
+      else ids.forEach(id => next.add(id));
+      return next;
+    });
   };
 
   const handleDelete = async () => {
     if (!deleteVideo) return;
-
     setDeleting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -179,45 +144,70 @@ export const AdminVideos = () => {
 
       const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-video`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: SUPABASE_ANON_KEY,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
         body: JSON.stringify({ videoId: deleteVideo.id }),
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to delete video");
-      }
+      if (!res.ok) { const errorData = await res.json(); throw new Error(errorData.error || "Failed to delete video"); }
 
-      toast({
-        title: "Video deleted",
-        description: "The video has been permanently deleted.",
-      });
-
-      setVideos((prev) => prev.filter((v) => v.id !== deleteVideo.id));
-      setTotal((prev) => prev - 1);
+      toast({ title: "Video deleted", description: "The video has been permanently deleted." });
+      setVideos(prev => prev.filter(v => v.id !== deleteVideo.id));
+      setTotal(prev => prev - 1);
+      setSelectedIds(prev => { const next = new Set(prev); next.delete(deleteVideo.id); return next; });
     } catch (err) {
       console.error("Error deleting video:", err);
-      toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to delete video",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Failed to delete video", variant: "destructive" });
     } finally {
       setDeleting(false);
       setDeleteVideo(null);
     }
   };
 
-  const getViewLikeRatio = (views: number, likes: number) => {
-    if (views === 0) return "0%";
-    const ratio = (likes / views) * 100;
-    return `${ratio.toFixed(1)}%`;
+  const handleBulkDelete = async () => {
+    setDeleting(true);
+    const ids = Array.from(selectedIds);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      for (const videoId of ids) {
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-video`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}`, apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ videoId }),
+          });
+          if (res.ok) successCount++; else failCount++;
+        } catch { failCount++; }
+      }
+
+      toast({
+        title: "Bulk delete complete",
+        description: `${successCount} video(s) deleted${failCount > 0 ? `, ${failCount} failed` : ""}.`,
+        variant: failCount > 0 ? "destructive" : "default",
+      });
+
+      setSelectedIds(new Set());
+      setShowBulkDelete(false);
+      setSearch(s => s + " ");
+      setTimeout(() => setSearch(s => s.trim()), 50);
+    } catch {
+      toast({ title: "Error", description: "Bulk delete failed", variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
   };
 
+  const getViewLikeRatio = (views: number, likes: number) => {
+    if (views === 0) return "0%";
+    return `${((likes / views) * 100).toFixed(1)}%`;
+  };
+
+  const allPageSelected = videos.length > 0 && videos.every(v => selectedIds.has(v.id));
+  const somePageSelected = videos.some(v => selectedIds.has(v.id));
   const totalPages = Math.ceil(total / limit);
 
   return (
@@ -225,19 +215,11 @@ export const AdminVideos = () => {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by title, description, or video ID..."
-            value={search}
-            onChange={handleSearchChange}
-            className="pl-10"
-          />
+          <Input placeholder="Search by title, description, or video ID..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-10" />
         </div>
         <div className="flex gap-2">
-          <Select value={sortField} onValueChange={handleSortFieldChange}>
-            <SelectTrigger className="w-[140px]">
-              <ArrowUpDown className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
+          <Select value={sortField} onValueChange={(v) => { setSortField(v as SortField); setPage(1); }}>
+            <SelectTrigger className="w-[140px]"><ArrowUpDown className="h-4 w-4 mr-2" /><SelectValue placeholder="Sort by" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="created_at">Date</SelectItem>
               <SelectItem value="views_count">Views</SelectItem>
@@ -245,10 +227,8 @@ export const AdminVideos = () => {
               <SelectItem value="engagement">Engagement %</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={sortOrder} onValueChange={handleSortOrderChange}>
-            <SelectTrigger className="w-[100px]">
-              <SelectValue />
-            </SelectTrigger>
+          <Select value={sortOrder} onValueChange={(v) => { setSortOrder(v as SortOrder); setPage(1); }}>
+            <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="desc">High → Low</SelectItem>
               <SelectItem value="asc">Low → High</SelectItem>
@@ -257,16 +237,30 @@ export const AdminVideos = () => {
         </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-destructive/10 text-destructive rounded-lg">
-          {error}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
+          <span className="text-sm font-medium">{selectedIds.size} video(s) selected</span>
+          <Button variant="destructive" size="sm" onClick={() => setShowBulkDelete(true)}>
+            <Trash2 className="h-4 w-4 mr-1" /> Delete selected
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Clear selection</Button>
         </div>
       )}
+
+      {error && <div className="p-4 bg-destructive/10 text-destructive rounded-lg">{error}</div>}
 
       <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[40px]">
+                <Checkbox
+                  checked={allPageSelected}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="Select all on page"
+                  {...(somePageSelected && !allPageSelected ? { "data-state": "indeterminate" } : {})}
+                />
+              </TableHead>
               <TableHead className="min-w-[200px]">Video</TableHead>
               <TableHead className="hidden lg:table-cell">Uploader</TableHead>
               <TableHead className="hidden md:table-cell">Date</TableHead>
@@ -279,43 +273,26 @@ export const AdminVideos = () => {
           </TableHeader>
           <TableBody>
             {loading && videos.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                </TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>
             ) : videos.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                  No videos found
-                </TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No videos found</TableCell></TableRow>
             ) : (
               videos.map((video) => (
                 <TableRow key={video.id} className={loading ? "opacity-50" : ""}>
                   <TableCell>
-                    <VideoThumbnailCell video={video} />
+                    <Checkbox checked={selectedIds.has(video.id)} onCheckedChange={() => toggleSelect(video.id)} aria-label={`Select ${video.title}`} />
                   </TableCell>
+                  <TableCell><VideoThumbnailCell video={video} /></TableCell>
                   <TableCell className="hidden lg:table-cell">
-                    <div>
-                      <div className="font-medium">{video.uploader_username}</div>
-                      <div className="text-xs text-muted-foreground">{video.uploader_email}</div>
-                    </div>
+                    <div><div className="font-medium">{video.uploader_username}</div><div className="text-xs text-muted-foreground">{video.uploader_email}</div></div>
                   </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {format(new Date(video.created_at), "MMM d, yyyy")}
-                  </TableCell>
+                  <TableCell className="hidden md:table-cell">{format(new Date(video.created_at), "MMM d, yyyy")}</TableCell>
                   <TableCell className="text-center">{video.views_count}</TableCell>
                   <TableCell className="text-center">{video.likes_count}</TableCell>
                   <TableCell className="text-center">{video.saved_count}</TableCell>
                   <TableCell className="text-center">{getViewLikeRatio(video.views_count, video.likes_count)}</TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteVideo(video)}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteVideo(video)} className="text-destructive hover:text-destructive hover:bg-destructive/10">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -328,34 +305,43 @@ export const AdminVideos = () => {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Page {page} of {totalPages} ({total} videos)
-          </div>
+          <div className="text-sm text-muted-foreground">Page {page} of {totalPages} ({total} videos)</div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1 || loading}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1 || loading}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading}><ChevronRight className="h-4 w-4" /></Button>
           </div>
         </div>
       )}
 
+      {/* Single delete dialog */}
       <AlertDialog open={!!deleteVideo} onOpenChange={(open) => { if (!open) setDeleteVideo(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Video</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this video? This action cannot be undone.
-              The video will be removed from the database and storage.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Are you sure you want to delete this video? This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Delete
+              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk delete dialog */}
+      <AlertDialog open={showBulkDelete} onOpenChange={(open) => { if (!open && !deleting) setShowBulkDelete(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} Videos</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{selectedIds.size}</strong> video(s)? This will permanently remove them from the database and storage. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <Button variant="destructive" onClick={handleBulkDelete} disabled={deleting}>
+              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Delete {selectedIds.size} Videos
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

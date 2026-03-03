@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
+import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Search, Loader2, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { format } from "date-fns";
@@ -36,6 +36,8 @@ export const AdminUsers = () => {
   const [total, setTotal] = useState(0);
   const [deleteUser, setDeleteUser] = useState<User | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
   const limit = 20;
 
   useEffect(() => {
@@ -83,9 +85,31 @@ export const AdminUsers = () => {
     return () => clearTimeout(debounce);
   }, [search, roleFilter, page]);
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const selectableOnPage = users.filter(u => u.role !== "admin").map(u => u.id);
+    const allSelected = selectableOnPage.every(id => selectedIds.has(id));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        selectableOnPage.forEach(id => next.delete(id));
+      } else {
+        selectableOnPage.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
   const handleDelete = async () => {
     if (!deleteUser) return;
-
     setDeleting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -106,26 +130,73 @@ export const AdminUsers = () => {
         throw new Error(errorData.error || "Failed to delete user");
       }
 
-      toast({
-        title: "User deleted",
-        description: "The user and all their data have been permanently deleted.",
-      });
-
-      setUsers((prev) => prev.filter((u) => u.id !== deleteUser.id));
-      setTotal((prev) => prev - 1);
+      toast({ title: "User deleted", description: "The user and all their data have been permanently deleted." });
+      setUsers(prev => prev.filter(u => u.id !== deleteUser.id));
+      setTotal(prev => prev - 1);
+      setSelectedIds(prev => { const next = new Set(prev); next.delete(deleteUser.id); return next; });
     } catch (err) {
       console.error("Error deleting user:", err);
-      toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to delete user",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: err instanceof Error ? err.message : "Failed to delete user", variant: "destructive" });
     } finally {
       setDeleting(false);
       setDeleteUser(null);
     }
   };
 
+  const handleBulkDelete = async () => {
+    setDeleting(true);
+    const ids = Array.from(selectedIds);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      for (const userId of ids) {
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-user`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              apikey: SUPABASE_ANON_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ userId }),
+          });
+          if (res.ok) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        } catch {
+          failCount++;
+        }
+      }
+
+      toast({
+        title: "Bulk delete complete",
+        description: `${successCount} user(s) deleted${failCount > 0 ? `, ${failCount} failed` : ""}.`,
+        variant: failCount > 0 ? "destructive" : "default",
+      });
+
+      setSelectedIds(new Set());
+      setShowBulkDelete(false);
+      // Refresh
+      setPage(p => p);
+      // Force re-fetch by toggling a value
+      setSearch(s => s + " ");
+      setTimeout(() => setSearch(s => s.trim()), 50);
+    } catch (err) {
+      toast({ title: "Error", description: "Bulk delete failed", variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const selectableOnPage = users.filter(u => u.role !== "admin").map(u => u.id);
+  const allPageSelected = selectableOnPage.length > 0 && selectableOnPage.every(id => selectedIds.has(id));
+  const somePageSelected = selectableOnPage.some(id => selectedIds.has(id));
   const totalPages = Math.ceil(total / limit);
 
   return (
@@ -136,10 +207,7 @@ export const AdminUsers = () => {
           <Input
             placeholder="Search by email or username..."
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="pl-10"
           />
         </div>
@@ -155,16 +223,34 @@ export const AdminUsers = () => {
         </Select>
       </div>
 
-      {error && (
-        <div className="p-4 bg-destructive/10 text-destructive rounded-lg">
-          {error}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
+          <span className="text-sm font-medium">{selectedIds.size} user(s) selected</span>
+          <Button variant="destructive" size="sm" onClick={() => setShowBulkDelete(true)}>
+            <Trash2 className="h-4 w-4 mr-1" /> Delete selected
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+            Clear selection
+          </Button>
         </div>
+      )}
+
+      {error && (
+        <div className="p-4 bg-destructive/10 text-destructive rounded-lg">{error}</div>
       )}
 
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[40px]">
+                <Checkbox
+                  checked={allPageSelected}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="Select all on page"
+                  {...(somePageSelected && !allPageSelected ? { "data-state": "indeterminate" } : {})}
+                />
+              </TableHead>
               <TableHead>User</TableHead>
               <TableHead className="hidden md:table-cell">Email</TableHead>
               <TableHead className="hidden sm:table-cell">Signup Date</TableHead>
@@ -176,49 +262,43 @@ export const AdminUsers = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
+                <TableCell colSpan={7} className="text-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                 </TableCell>
               </TableRow>
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  No users found
-                </TableCell>
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No users found</TableCell>
               </TableRow>
             ) : (
               users.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
+                    <Checkbox
+                      checked={selectedIds.has(user.id)}
+                      onCheckedChange={() => toggleSelect(user.id)}
+                      disabled={user.role === "admin"}
+                      aria-label={`Select ${user.username}`}
+                    />
+                  </TableCell>
+                  <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={user.avatar_url || undefined} />
-                        <AvatarFallback>
-                          {user.username?.charAt(0).toUpperCase() || "U"}
-                        </AvatarFallback>
+                        <AvatarFallback>{user.username?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
                       </Avatar>
                       <div>
                         <div className="font-medium">{user.username}</div>
-                        <div className="text-xs text-muted-foreground md:hidden">
-                          {user.email}
-                        </div>
+                        <div className="text-xs text-muted-foreground md:hidden">{user.email}</div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">{user.email}</TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                    {format(new Date(user.created_at), "MMM d, yyyy")}
-                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">{format(new Date(user.created_at), "MMM d, yyyy")}</TableCell>
                   <TableCell className="text-center">{user.video_count}</TableCell>
                   <TableCell className="text-center">{user.likes_made}</TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteUser(user)}
-                      disabled={user.role === "admin"}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10 disabled:opacity-30"
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteUser(user)} disabled={user.role === "admin"} className="text-destructive hover:text-destructive hover:bg-destructive/10 disabled:opacity-30">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -231,37 +311,26 @@ export const AdminUsers = () => {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Page {page} of {totalPages} ({total} users)
-          </div>
+          <div className="text-sm text-muted-foreground">Page {page} of {totalPages} ({total} users)</div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-            >
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
       )}
 
+      {/* Single delete dialog */}
       <AlertDialog open={!!deleteUser} onOpenChange={(open) => { if (!open) setDeleteUser(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete User</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete <strong>{deleteUser?.username}</strong> ({deleteUser?.email})? 
-              This will permanently delete their account, all videos, comments, and other data. 
+              Are you sure you want to delete <strong>{deleteUser?.username}</strong> ({deleteUser?.email})?
+              This will permanently delete their account, all videos, comments, and other data.
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -270,6 +339,27 @@ export const AdminUsers = () => {
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Delete User
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk delete dialog */}
+      <AlertDialog open={showBulkDelete} onOpenChange={(open) => { if (!open && !deleting) setShowBulkDelete(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} Users</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{selectedIds.size}</strong> user(s)?
+              This will permanently delete their accounts, all their videos, comments, and other data.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <Button variant="destructive" onClick={handleBulkDelete} disabled={deleting}>
+              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Delete {selectedIds.size} Users
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
