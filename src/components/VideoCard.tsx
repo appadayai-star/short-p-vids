@@ -99,7 +99,7 @@ export const VideoCard = memo(({
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Core video state - use dynamic Cloudinary URLs when available
   const primarySrc = getBestVideoSource(
@@ -131,7 +131,7 @@ export const VideoCard = memo(({
   const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const lastTapTimeRef = useRef<number>(0);
   const lastTapPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const doubleTapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const doubleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Progress bar state
   const [progress, setProgress] = useState(0);

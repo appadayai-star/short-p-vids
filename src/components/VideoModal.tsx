@@ -94,7 +94,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
   // Double-tap like state
   const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const lastTapTimeRef = useRef<number>(0);
-  const singleTapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Progress bar state
   const [progress, setProgress] = useState(0);

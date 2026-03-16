@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,51 @@ import { toast } from "sonner";
 import { Loader2, Video, X } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
 
+const TURNSTILE_SITE_KEY = "0x4AAAAAACrw7Rdj194r6bL9";
+
 const Auth = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [loginData, setLoginData] = useState({ emailOrUsername: "", password: "" });
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetId = useRef<string | null>(null);
+
+  // Load Turnstile script and render widget
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad";
+    script.async = true;
+
+    (window as any).onTurnstileLoad = () => {
+      if (turnstileRef.current && (window as any).turnstile) {
+        turnstileWidgetId.current = (window as any).turnstile.render(turnstileRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          callback: (token: string) => setTurnstileToken(token),
+          "expired-callback": () => setTurnstileToken(null),
+          theme: "dark",
+        });
+      }
+    };
+
+    document.head.appendChild(script);
+
+    return () => {
+      script.remove();
+      delete (window as any).onTurnstileLoad;
+      if (turnstileWidgetId.current && (window as any).turnstile) {
+        (window as any).turnstile.remove(turnstileWidgetId.current);
+      }
+    };
+  }, []);
+
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken(null);
+    if (turnstileWidgetId.current && (window as any).turnstile) {
+      (window as any).turnstile.reset(turnstileWidgetId.current);
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,9 +117,24 @@ const Auth = () => {
       return;
     }
 
+    if (!turnstileToken) {
+      toast.error("Please complete the captcha verification");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
+      // Verify turnstile token on backend
+      const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
+        body: { token: turnstileToken },
+      });
+
+      if (verifyError || !verifyData?.success) {
+        resetTurnstile();
+        throw new Error(verifyData?.error || "Captcha verification failed");
+      }
+
       const { error: signUpError, data } = await supabase.auth.signUp({
         email: signupData.email,
         password: signupData.password,
@@ -97,6 +152,7 @@ const Auth = () => {
       navigate("/feed");
     } catch (error: any) {
       toast.error(error.message || "Failed to create account");
+      resetTurnstile();
     } finally {
       setIsLoading(false);
     }
@@ -214,7 +270,8 @@ const Auth = () => {
                       minLength={6}
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
+                  <div ref={turnstileRef} className="flex justify-center" />
+                  <Button type="submit" className="w-full" disabled={isLoading || !turnstileToken}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Create Account
                   </Button>
