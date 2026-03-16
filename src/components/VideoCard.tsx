@@ -629,7 +629,7 @@ export const VideoCard = memo(({
           src={posterSrc} 
           alt="" 
           className={cn(
-            "absolute inset-0 w-full h-full object-cover md:object-contain",
+            "absolute inset-0 w-full h-full object-contain bg-black",
             showVideo && status === "ready" ? "opacity-0" : "opacity-100"
           )}
           loading={isFirstVideo ? "eager" : "lazy"}
@@ -640,7 +640,7 @@ export const VideoCard = memo(({
       {shouldLoadSrc && (
         <video
           ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover md:object-contain bg-black"
+          className="absolute inset-0 w-full h-full object-contain bg-black"
           loop
           playsInline
           muted={isMuted}

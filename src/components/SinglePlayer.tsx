@@ -282,7 +282,7 @@ export const SinglePlayer = memo(({
       {/* Video element with poster for instant display */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover md:object-contain pointer-events-none bg-black"
+        className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
         loop
         playsInline
         muted={isMuted}
