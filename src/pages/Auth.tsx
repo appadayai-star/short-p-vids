@@ -18,67 +18,43 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loginData, setLoginData] = useState({ emailOrUsername: "", password: "" });
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const [turnstileReady, setTurnstileReady] = useState(false);
-  const [turnstileError, setTurnstileError] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
-  const turnstileWidgetId = useRef<string | null>(null);
-  const isPreviewHost = typeof window !== "undefined" && window.location.hostname.includes("id-preview--");
 
-  // Load Turnstile script and render widget
   useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad";
-    script.async = true;
-
-    (window as any).onTurnstileLoad = () => {
-      if (turnstileRef.current && (window as any).turnstile) {
-        turnstileWidgetId.current = (window as any).turnstile.render(turnstileRef.current, {
-          sitekey: TURNSTILE_SITE_KEY,
-          callback: (token: string) => {
-            setTurnstileToken(token);
-            setTurnstileError(null);
-            setTurnstileReady(true);
-          },
-          "expired-callback": () => setTurnstileToken(null),
-          "error-callback": () => {
-            setTurnstileToken(null);
-            setTurnstileError("Turnstile could not connect for this domain.");
-            setTurnstileReady(isPreviewHost);
-          },
-          theme: "dark",
-        });
-      }
+    (window as any).onTurnstileSuccess = (token: string) => {
+      setTurnstileToken(token);
+    };
+    (window as any).onTurnstileExpired = () => {
+      setTurnstileToken("");
+    };
+    (window as any).onTurnstileError = () => {
+      setTurnstileToken("");
     };
 
-    script.onerror = () => {
-      setTurnstileError("Failed to load Turnstile script.");
-      setTurnstileReady(isPreviewHost);
-    };
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
+    );
 
-    const fallbackTimer = setTimeout(() => {
-      if (!turnstileWidgetId.current) {
-        setTurnstileError("Turnstile did not initialize.");
-        setTurnstileReady(isPreviewHost);
-      }
-    }, 5000);
-
-    document.head.appendChild(script);
+    if (!existingScript) {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
 
     return () => {
-      clearTimeout(fallbackTimer);
-      script.remove();
-      delete (window as any).onTurnstileLoad;
-      if (turnstileWidgetId.current && (window as any).turnstile) {
-        (window as any).turnstile.remove(turnstileWidgetId.current);
-      }
+      delete (window as any).onTurnstileSuccess;
+      delete (window as any).onTurnstileExpired;
+      delete (window as any).onTurnstileError;
     };
-  }, [isPreviewHost]);
+  }, []);
 
   const resetTurnstile = useCallback(() => {
-    setTurnstileToken(null);
-    if (turnstileWidgetId.current && (window as any).turnstile) {
-      (window as any).turnstile.reset(turnstileWidgetId.current);
+    setTurnstileToken("");
+    if ((window as any).turnstile) {
+      (window as any).turnstile.reset();
     }
   }, []);
 
