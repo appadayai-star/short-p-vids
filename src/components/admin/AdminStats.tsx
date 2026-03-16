@@ -852,48 +852,81 @@ export const AdminStats = () => {
         />
       </MetricSection>
 
-  // Fetch category clicks
-  useEffect(() => {
-    const fetchCategoryClicks = async () => {
-      setCategoryClicksLoading(true);
-      try {
-        let query = supabase.from("category_clicks").select("category, created_at");
-        
-        // Apply date filtering
-        if (datePreset !== "lifetime") {
-          const presetDates = getDateRangeForPreset(datePreset);
-          if (presetDates) {
-            query = query.gte("created_at", presetDates.startDate).lte("created_at", presetDates.endDate);
-          } else if (dateRange?.from && dateRange?.to) {
-            query = query.gte("created_at", toUTCStartOfDay(dateRange.from).toISOString())
-                         .lte("created_at", toUTCEndOfDay(dateRange.to).toISOString());
-          }
-        }
-
-        const { data, error } = await query;
-        if (error) throw error;
-
-        // Aggregate by category
-        const counts: Record<string, number> = {};
-        (data || []).forEach((row: any) => {
-          counts[row.category] = (counts[row.category] || 0) + 1;
-        });
-
-        const sorted = Object.entries(counts)
-          .map(([category, clicks]) => ({ category, clicks }))
-          .sort((a, b) => b.clicks - a.clicks);
-
-        setCategoryClicks(sorted);
-        setCategoryClicksTotal(sorted.reduce((sum, c) => sum + c.clicks, 0));
-      } catch (err) {
-        console.error("Error fetching category clicks:", err);
-      } finally {
-        setCategoryClicksLoading(false);
-      }
-    };
-
-    fetchCategoryClicks();
-  }, [fetchKey]);
+      {/* Category Clicks */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Category Clicks</h3>
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Grid3x3 className="h-4 w-4" />
+                Clicks by Category
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {categoryClicksLoading ? (
+                <div className="flex items-center justify-center h-[200px]">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : categoryClicks.length > 0 ? (
+                <div className="space-y-3">
+                  {categoryClicks.map((c) => (
+                    <div key={c.category} className="flex items-center justify-between">
+                      <span className="text-sm font-medium capitalize">{c.category}</span>
+                      <div className="flex items-center gap-3">
+                        <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full"
+                            style={{ width: `${categoryClicksTotal > 0 ? (c.clicks / categoryClicksTotal) * 100 : 0}%` }}
+                          />
+                        </div>
+                        <span className="text-sm font-bold w-12 text-right">{c.clicks}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="pt-2 border-t border-border flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Total</span>
+                    <span className="text-sm font-bold">{categoryClicksTotal}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">No category clicks recorded yet</p>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Category Click Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {categoryClicksLoading ? (
+                <div className="flex items-center justify-center h-[200px]">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : categoryClicks.length > 0 ? (
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={categoryClicks}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="category" className="text-xs capitalize" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                    <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                      }}
+                      labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    />
+                    <Bar dataKey="clicks" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">No data yet</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       {/* Trend Chart */}
       {datePreset !== "lifetime" && (
