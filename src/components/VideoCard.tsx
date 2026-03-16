@@ -99,7 +99,7 @@ export const VideoCard = memo(({
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Core video state - use dynamic Cloudinary URLs when available
   const primarySrc = getBestVideoSource(
