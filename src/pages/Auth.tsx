@@ -19,6 +19,7 @@ const Auth = () => {
   const [loginData, setLoginData] = useState({ emailOrUsername: "", password: "" });
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileReady, setTurnstileReady] = useState(false);
   const turnstileRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetId = useRef<string | null>(null);
 
@@ -32,16 +33,30 @@ const Auth = () => {
       if (turnstileRef.current && (window as any).turnstile) {
         turnstileWidgetId.current = (window as any).turnstile.render(turnstileRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
-          callback: (token: string) => setTurnstileToken(token),
+          callback: (token: string) => {
+            setTurnstileToken(token);
+            setTurnstileReady(true);
+          },
           "expired-callback": () => setTurnstileToken(null),
           theme: "dark",
         });
       }
     };
 
+    // If script fails to load (e.g. blocked by iframe), don't block signup
+    script.onerror = () => {
+      setTurnstileReady(true);
+    };
+
+    // Fallback: if turnstile doesn't load within 5s, unblock the button
+    const fallbackTimer = setTimeout(() => {
+      setTurnstileReady(true);
+    }, 5000);
+
     document.head.appendChild(script);
 
     return () => {
+      clearTimeout(fallbackTimer);
       script.remove();
       delete (window as any).onTurnstileLoad;
       if (turnstileWidgetId.current && (window as any).turnstile) {
@@ -117,7 +132,8 @@ const Auth = () => {
       return;
     }
 
-    if (!turnstileToken) {
+    // Only require turnstile token if widget loaded successfully
+    if (turnstileWidgetId.current && !turnstileToken) {
       toast.error("Please complete the captcha verification");
       return;
     }
@@ -125,14 +141,16 @@ const Auth = () => {
     setIsLoading(true);
 
     try {
-      // Verify turnstile token on backend
-      const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
-        body: { token: turnstileToken },
-      });
+      // Verify turnstile token on backend (skip if widget didn't load)
+      if (turnstileToken) {
+        const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
+          body: { token: turnstileToken },
+        });
 
-      if (verifyError || !verifyData?.success) {
-        resetTurnstile();
-        throw new Error(verifyData?.error || "Captcha verification failed");
+        if (verifyError || !verifyData?.success) {
+          resetTurnstile();
+          throw new Error(verifyData?.error || "Captcha verification failed");
+        }
       }
 
       const { error: signUpError, data } = await supabase.auth.signUp({
@@ -271,7 +289,7 @@ const Auth = () => {
                     />
                   </div>
                   <div ref={turnstileRef} className="flex justify-center" />
-                  <Button type="submit" className="w-full" disabled={isLoading || !turnstileToken}>
+                  <Button type="submit" className="w-full" disabled={isLoading || !turnstileReady}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Create Account
                   </Button>
