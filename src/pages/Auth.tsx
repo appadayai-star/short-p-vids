@@ -141,14 +141,16 @@ const Auth = () => {
     setIsLoading(true);
 
     try {
-      // Verify turnstile token on backend
-      const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
-        body: { token: turnstileToken },
-      });
+      // Verify turnstile token on backend (skip if widget didn't load)
+      if (turnstileToken) {
+        const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
+          body: { token: turnstileToken },
+        });
 
-      if (verifyError || !verifyData?.success) {
-        resetTurnstile();
-        throw new Error(verifyData?.error || "Captcha verification failed");
+        if (verifyError || !verifyData?.success) {
+          resetTurnstile();
+          throw new Error(verifyData?.error || "Captcha verification failed");
+        }
       }
 
       const { error: signUpError, data } = await supabase.auth.signUp({
