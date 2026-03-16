@@ -142,17 +142,17 @@ const Auth = () => {
       return;
     }
 
-    // Only require turnstile token if widget loaded successfully
-    if (turnstileWidgetId.current && !turnstileToken) {
-      toast.error("Please complete the captcha verification");
+    const shouldEnforceCaptcha = !isPreviewHost;
+
+    if (shouldEnforceCaptcha && !turnstileToken) {
+      toast.error(turnstileError || "Captcha verification failed");
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Verify turnstile token on backend (skip if widget didn't load)
-      if (turnstileToken) {
+      if (shouldEnforceCaptcha) {
         const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
           body: { token: turnstileToken },
         });
