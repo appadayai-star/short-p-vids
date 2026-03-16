@@ -470,7 +470,7 @@ export const FeedItem = memo(({
       <img 
         src={posterSrc} 
         alt="" 
-        className="absolute inset-0 w-full h-full object-cover md:object-contain pointer-events-none"
+        className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
         style={{ paddingBottom: navOffset }}
       />
 
