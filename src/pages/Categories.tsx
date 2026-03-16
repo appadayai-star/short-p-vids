@@ -58,16 +58,16 @@ const Categories = () => {
           {categories.map((category) => (
             <button
               key={category.id}
-              onClick={() => {
+              onClick={async () => {
                 // Track category click
                 const sessionId = sessionStorage.getItem("session_id") || crypto.randomUUID();
                 sessionStorage.setItem("session_id", sessionId);
-                supabase.from("category_clicks").insert({
+                await supabase.from("category_clicks").insert({
                   category: category.id,
                   user_id: user?.id || null,
                   session_id: sessionId,
-                }).then(() => {});
-                window.location.href = `/?category=${encodeURIComponent(category.id)}`;
+                });
+                navigate(`/?category=${encodeURIComponent(category.id)}`);
               }}
               className="aspect-square bg-white/5 rounded-2xl border-2 border-white/10 hover:border-primary transition-colors flex items-center justify-center group"
             >
