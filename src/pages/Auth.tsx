@@ -19,61 +19,90 @@ const Auth = () => {
   const [loginData, setLoginData] = useState({ emailOrUsername: "", password: "" });
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [activeTab, setActiveTab] = useState<"login" | "signup">("login");
+  const [turnstileScriptReady, setTurnstileScriptReady] = useState(false);
+  const [turnstileError, setTurnstileError] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
 
   const renderTurnstileWidget = useCallback(() => {
     const turnstile = (window as any).turnstile;
-    if (!turnstile || !turnstileRef.current) return;
+    if (!turnstile || !turnstileRef.current || turnstileWidgetIdRef.current) return;
 
-    if (turnstileWidgetIdRef.current) {
-      turnstile.remove(turnstileWidgetIdRef.current);
-      turnstileWidgetIdRef.current = null;
+    try {
+      turnstileWidgetIdRef.current = turnstile.render(turnstileRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: "dark",
+        callback: (token: string) => {
+          setTurnstileToken(token);
+          setTurnstileError("");
+        },
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => {
+          setTurnstileToken("");
+          setTurnstileError("Captcha failed to load. Please refresh and try again.");
+        },
+      });
+    } catch (error) {
+      console.error("Turnstile render error", error);
+      setTurnstileError("Captcha failed to render. Please refresh and try again.");
     }
-
-    turnstileWidgetIdRef.current = turnstile.render(turnstileRef.current, {
-      sitekey: TURNSTILE_SITE_KEY,
-      theme: "dark",
-      callback: (token: string) => setTurnstileToken(token),
-      "expired-callback": () => setTurnstileToken(""),
-      "error-callback": () => setTurnstileToken(""),
-    });
   }, []);
 
   useEffect(() => {
-    const handleScriptLoad = () => renderTurnstileWidget();
-
     if ((window as any).turnstile) {
-      renderTurnstileWidget();
-    } else {
-      const existingScript = document.querySelector<HTMLScriptElement>(
-        'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
-      );
-
-      if (existingScript) {
-        existingScript.addEventListener("load", handleScriptLoad);
-      } else {
-        const script = document.createElement("script");
-        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-        script.async = true;
-        script.defer = true;
-        script.addEventListener("load", handleScriptLoad);
-        document.head.appendChild(script);
-      }
+      setTurnstileScriptReady(true);
+      return;
     }
 
-    return () => {
-      const existingScript = document.querySelector<HTMLScriptElement>(
-        'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
-      );
-      existingScript?.removeEventListener("load", handleScriptLoad);
+    const scriptId = "cf-turnstile-script";
+    const existingScript = document.getElementById(scriptId) as HTMLScriptElement | null;
 
+    const handleLoad = () => setTurnstileScriptReady(true);
+    const handleError = () => setTurnstileError("Captcha failed to load. Please refresh and try again.");
+
+    if (existingScript) {
+      existingScript.addEventListener("load", handleLoad);
+      existingScript.addEventListener("error", handleError);
+      return () => {
+        existingScript.removeEventListener("load", handleLoad);
+        existingScript.removeEventListener("error", handleError);
+      };
+    }
+
+    const script = document.createElement("script");
+    script.id = scriptId;
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    script.async = true;
+    script.defer = true;
+    script.addEventListener("load", handleLoad);
+    script.addEventListener("error", handleError);
+    document.head.appendChild(script);
+
+    return () => {
+      script.removeEventListener("load", handleLoad);
+      script.removeEventListener("error", handleError);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "signup" || !turnstileScriptReady) return;
+
+    const rafId = requestAnimationFrame(() => {
+      renderTurnstileWidget();
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [activeTab, turnstileScriptReady, renderTurnstileWidget]);
+
+  useEffect(() => {
+    return () => {
       if (turnstileWidgetIdRef.current && (window as any).turnstile) {
         (window as any).turnstile.remove(turnstileWidgetIdRef.current);
         turnstileWidgetIdRef.current = null;
       }
     };
-  }, [renderTurnstileWidget]);
+  }, []);
 
   const resetTurnstile = useCallback(() => {
     setTurnstileToken("");
@@ -210,7 +239,7 @@ const Auth = () => {
           </h1>
         </div>
 
-        <Tabs defaultValue="login" className="w-full">
+        <Tabs defaultValue="login" value={activeTab} onValueChange={(value) => setActiveTab(value as "login" | "signup")} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="login">Login</TabsTrigger>
             <TabsTrigger value="signup">Sign Up</TabsTrigger>
@@ -300,6 +329,7 @@ const Auth = () => {
                     />
                   </div>
                   <div ref={turnstileRef} className="flex justify-center min-h-[66px]" />
+                  {turnstileError && <p className="text-sm text-destructive">{turnstileError}</p>}
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Create Account
