@@ -226,6 +226,9 @@ export const AdminStats = () => {
     to: new Date(),
   });
   const [fetchKey, setFetchKey] = useState(0);
+  const [categoryClicks, setCategoryClicks] = useState<{ category: string; clicks: number }[]>([]);
+  const [categoryClicksTotal, setCategoryClicksTotal] = useState(0);
+  const [categoryClicksLoading, setCategoryClicksLoading] = useState(true);
 
   const toUTCStartOfDay = (date: Date) => {
     const d = new Date(date);
