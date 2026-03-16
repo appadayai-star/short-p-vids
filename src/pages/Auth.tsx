@@ -18,67 +18,43 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loginData, setLoginData] = useState({ emailOrUsername: "", password: "" });
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const [turnstileReady, setTurnstileReady] = useState(false);
-  const [turnstileError, setTurnstileError] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
-  const turnstileWidgetId = useRef<string | null>(null);
-  const isPreviewHost = typeof window !== "undefined" && window.location.hostname.includes("id-preview--");
 
-  // Load Turnstile script and render widget
   useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad";
-    script.async = true;
-
-    (window as any).onTurnstileLoad = () => {
-      if (turnstileRef.current && (window as any).turnstile) {
-        turnstileWidgetId.current = (window as any).turnstile.render(turnstileRef.current, {
-          sitekey: TURNSTILE_SITE_KEY,
-          callback: (token: string) => {
-            setTurnstileToken(token);
-            setTurnstileError(null);
-            setTurnstileReady(true);
-          },
-          "expired-callback": () => setTurnstileToken(null),
-          "error-callback": () => {
-            setTurnstileToken(null);
-            setTurnstileError("Turnstile could not connect for this domain.");
-            setTurnstileReady(isPreviewHost);
-          },
-          theme: "dark",
-        });
-      }
+    (window as any).onTurnstileSuccess = (token: string) => {
+      setTurnstileToken(token);
+    };
+    (window as any).onTurnstileExpired = () => {
+      setTurnstileToken("");
+    };
+    (window as any).onTurnstileError = () => {
+      setTurnstileToken("");
     };
 
-    script.onerror = () => {
-      setTurnstileError("Failed to load Turnstile script.");
-      setTurnstileReady(isPreviewHost);
-    };
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
+    );
 
-    const fallbackTimer = setTimeout(() => {
-      if (!turnstileWidgetId.current) {
-        setTurnstileError("Turnstile did not initialize.");
-        setTurnstileReady(isPreviewHost);
-      }
-    }, 5000);
-
-    document.head.appendChild(script);
+    if (!existingScript) {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
 
     return () => {
-      clearTimeout(fallbackTimer);
-      script.remove();
-      delete (window as any).onTurnstileLoad;
-      if (turnstileWidgetId.current && (window as any).turnstile) {
-        (window as any).turnstile.remove(turnstileWidgetId.current);
-      }
+      delete (window as any).onTurnstileSuccess;
+      delete (window as any).onTurnstileExpired;
+      delete (window as any).onTurnstileError;
     };
-  }, [isPreviewHost]);
+  }, []);
 
   const resetTurnstile = useCallback(() => {
-    setTurnstileToken(null);
-    if (turnstileWidgetId.current && (window as any).turnstile) {
-      (window as any).turnstile.reset(turnstileWidgetId.current);
+    setTurnstileToken("");
+    if ((window as any).turnstile) {
+      (window as any).turnstile.reset();
     }
   }, []);
 
@@ -142,25 +118,26 @@ const Auth = () => {
       return;
     }
 
-    const shouldEnforceCaptcha = !isPreviewHost;
+    const tokenFromInput = (
+      document.querySelector("input[name='cf-turnstile-response']") as HTMLInputElement | null
+    )?.value;
+    const captchaToken = turnstileToken || tokenFromInput || "";
 
-    if (shouldEnforceCaptcha && !turnstileToken) {
-      toast.error(turnstileError || "Captcha verification failed");
+    if (!captchaToken) {
+      toast.error("Captcha verification failed");
       return;
     }
 
     setIsLoading(true);
 
     try {
-      if (shouldEnforceCaptcha) {
-        const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
-          body: { token: turnstileToken },
-        });
+      const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
+        body: { token: captchaToken },
+      });
 
-        if (verifyError || !verifyData?.success) {
-          resetTurnstile();
-          throw new Error(verifyData?.error || "Captcha verification failed");
-        }
+      if (verifyError || !verifyData?.success) {
+        resetTurnstile();
+        throw new Error("Captcha verification failed");
       }
 
       const { error: signUpError, data } = await supabase.auth.signUp({
@@ -298,15 +275,16 @@ const Auth = () => {
                       minLength={6}
                     />
                   </div>
-                  <div ref={turnstileRef} className="flex justify-center" />
-                  {turnstileError && (
-                    <p className="text-sm text-destructive">
-                      {isPreviewHost
-                        ? "Turnstile may fail in preview. It will be enforced on non-preview domains."
-                        : "Turnstile failed to load. Check your Turnstile allowed hostnames."}
-                    </p>
-                  )}
-                  <Button type="submit" className="w-full" disabled={isLoading || (!isPreviewHost && !turnstileReady)}>
+                  <div
+                    ref={turnstileRef}
+                    className="cf-turnstile flex justify-center"
+                    data-sitekey={TURNSTILE_SITE_KEY}
+                    data-callback="onTurnstileSuccess"
+                    data-expired-callback="onTurnstileExpired"
+                    data-error-callback="onTurnstileError"
+                    data-theme="dark"
+                  />
+                  <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Create Account
                   </Button>
