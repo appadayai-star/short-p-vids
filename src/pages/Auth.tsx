@@ -269,7 +269,8 @@ const Auth = () => {
                       minLength={6}
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
+                  <div ref={turnstileRef} className="flex justify-center" />
+                  <Button type="submit" className="w-full" disabled={isLoading || !turnstileToken}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Create Account
                   </Button>
