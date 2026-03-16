@@ -20,8 +20,10 @@ const Auth = () => {
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileReady, setTurnstileReady] = useState(false);
+  const [turnstileError, setTurnstileError] = useState<string | null>(null);
   const turnstileRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetId = useRef<string | null>(null);
+  const isPreviewHost = typeof window !== "undefined" && window.location.hostname.includes("id-preview--");
 
   // Load Turnstile script and render widget
   useEffect(() => {
@@ -35,22 +37,30 @@ const Auth = () => {
           sitekey: TURNSTILE_SITE_KEY,
           callback: (token: string) => {
             setTurnstileToken(token);
+            setTurnstileError(null);
             setTurnstileReady(true);
           },
           "expired-callback": () => setTurnstileToken(null),
+          "error-callback": () => {
+            setTurnstileToken(null);
+            setTurnstileError("Turnstile could not connect for this domain.");
+            setTurnstileReady(isPreviewHost);
+          },
           theme: "dark",
         });
       }
     };
 
-    // If script fails to load (e.g. blocked by iframe), don't block signup
     script.onerror = () => {
-      setTurnstileReady(true);
+      setTurnstileError("Failed to load Turnstile script.");
+      setTurnstileReady(isPreviewHost);
     };
 
-    // Fallback: if turnstile doesn't load within 5s, unblock the button
     const fallbackTimer = setTimeout(() => {
-      setTurnstileReady(true);
+      if (!turnstileWidgetId.current) {
+        setTurnstileError("Turnstile did not initialize.");
+        setTurnstileReady(isPreviewHost);
+      }
     }, 5000);
 
     document.head.appendChild(script);
@@ -63,7 +73,7 @@ const Auth = () => {
         (window as any).turnstile.remove(turnstileWidgetId.current);
       }
     };
-  }, []);
+  }, [isPreviewHost]);
 
   const resetTurnstile = useCallback(() => {
     setTurnstileToken(null);
