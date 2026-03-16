@@ -570,7 +570,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                     }}
                     src={videoSrc}
                     poster={posterSrc || undefined}
-                    className="absolute inset-0 w-full h-full object-cover md:object-contain"
+                    className="absolute inset-0 w-full h-full object-contain bg-black"
                     style={{ paddingBottom: navOffset }}
                     loop
                     muted={isMuted}
