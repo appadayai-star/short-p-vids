@@ -118,25 +118,26 @@ const Auth = () => {
       return;
     }
 
-    const shouldEnforceCaptcha = !isPreviewHost;
+    const tokenFromInput = (
+      document.querySelector("input[name='cf-turnstile-response']") as HTMLInputElement | null
+    )?.value;
+    const captchaToken = turnstileToken || tokenFromInput || "";
 
-    if (shouldEnforceCaptcha && !turnstileToken) {
-      toast.error(turnstileError || "Captcha verification failed");
+    if (!captchaToken) {
+      toast.error("Captcha verification failed");
       return;
     }
 
     setIsLoading(true);
 
     try {
-      if (shouldEnforceCaptcha) {
-        const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
-          body: { token: turnstileToken },
-        });
+      const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
+        body: { token: captchaToken },
+      });
 
-        if (verifyError || !verifyData?.success) {
-          resetTurnstile();
-          throw new Error(verifyData?.error || "Captcha verification failed");
-        }
+      if (verifyError || !verifyData?.success) {
+        resetTurnstile();
+        throw new Error("Captcha verification failed");
       }
 
       const { error: signUpError, data } = await supabase.auth.signUp({
