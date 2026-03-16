@@ -124,7 +124,7 @@ export const FeedItem = memo(({
   // Double-tap like state
   const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const lastTapTimeRef = useRef<number>(0);
-  const singleTapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Video sources - ALWAYS have a poster
   const videoSrc = getBestVideoSource(

@@ -39,7 +39,7 @@ export const SinglePlayer = memo(({
   onViewTracked 
 }: SinglePlayerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trackedViewsRef = useRef<Set<string>>(new Set());
   
   const [status, setStatus] = useState<VideoStatus>("idle");

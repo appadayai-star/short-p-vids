@@ -69,7 +69,7 @@ export const AdminVideos = () => {
   const limit = 20;
 
   const requestIdRef = useRef(0);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchVideos = useCallback(async (
     requestId: number, currentPage: number, currentSortField: SortField, currentSortOrder: SortOrder, currentSearch: string
