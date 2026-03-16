@@ -20,41 +20,65 @@ const Auth = () => {
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+
+  const renderTurnstileWidget = useCallback(() => {
+    const turnstile = (window as any).turnstile;
+    if (!turnstile || !turnstileRef.current) return;
+
+    if (turnstileWidgetIdRef.current) {
+      turnstile.remove(turnstileWidgetIdRef.current);
+      turnstileWidgetIdRef.current = null;
+    }
+
+    turnstileWidgetIdRef.current = turnstile.render(turnstileRef.current, {
+      sitekey: TURNSTILE_SITE_KEY,
+      theme: "dark",
+      callback: (token: string) => setTurnstileToken(token),
+      "expired-callback": () => setTurnstileToken(""),
+      "error-callback": () => setTurnstileToken(""),
+    });
+  }, []);
 
   useEffect(() => {
-    (window as any).onTurnstileSuccess = (token: string) => {
-      setTurnstileToken(token);
-    };
-    (window as any).onTurnstileExpired = () => {
-      setTurnstileToken("");
-    };
-    (window as any).onTurnstileError = () => {
-      setTurnstileToken("");
-    };
+    const handleScriptLoad = () => renderTurnstileWidget();
 
-    const existingScript = document.querySelector<HTMLScriptElement>(
-      'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
-    );
+    if ((window as any).turnstile) {
+      renderTurnstileWidget();
+    } else {
+      const existingScript = document.querySelector<HTMLScriptElement>(
+        'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
+      );
 
-    if (!existingScript) {
-      const script = document.createElement("script");
-      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
+      if (existingScript) {
+        existingScript.addEventListener("load", handleScriptLoad);
+      } else {
+        const script = document.createElement("script");
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        script.async = true;
+        script.defer = true;
+        script.addEventListener("load", handleScriptLoad);
+        document.head.appendChild(script);
+      }
     }
 
     return () => {
-      delete (window as any).onTurnstileSuccess;
-      delete (window as any).onTurnstileExpired;
-      delete (window as any).onTurnstileError;
+      const existingScript = document.querySelector<HTMLScriptElement>(
+        'script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
+      );
+      existingScript?.removeEventListener("load", handleScriptLoad);
+
+      if (turnstileWidgetIdRef.current && (window as any).turnstile) {
+        (window as any).turnstile.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+      }
     };
-  }, []);
+  }, [renderTurnstileWidget]);
 
   const resetTurnstile = useCallback(() => {
     setTurnstileToken("");
-    if ((window as any).turnstile) {
-      (window as any).turnstile.reset();
+    if (turnstileWidgetIdRef.current && (window as any).turnstile) {
+      (window as any).turnstile.reset(turnstileWidgetIdRef.current);
     }
   }, []);
 
@@ -275,15 +299,7 @@ const Auth = () => {
                       minLength={6}
                     />
                   </div>
-                  <div
-                    ref={turnstileRef}
-                    className="cf-turnstile flex justify-center"
-                    data-sitekey={TURNSTILE_SITE_KEY}
-                    data-callback="onTurnstileSuccess"
-                    data-expired-callback="onTurnstileExpired"
-                    data-error-callback="onTurnstileError"
-                    data-theme="dark"
-                  />
+                  <div ref={turnstileRef} className="flex justify-center min-h-[66px]" />
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Create Account
