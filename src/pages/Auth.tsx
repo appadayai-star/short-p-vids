@@ -132,7 +132,8 @@ const Auth = () => {
       return;
     }
 
-    if (!turnstileToken) {
+    // Only require turnstile token if widget loaded successfully
+    if (turnstileWidgetId.current && !turnstileToken) {
       toast.error("Please complete the captcha verification");
       return;
     }
