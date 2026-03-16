@@ -275,15 +275,16 @@ const Auth = () => {
                       minLength={6}
                     />
                   </div>
-                  <div ref={turnstileRef} className="flex justify-center" />
-                  {turnstileError && (
-                    <p className="text-sm text-destructive">
-                      {isPreviewHost
-                        ? "Turnstile may fail in preview. It will be enforced on non-preview domains."
-                        : "Turnstile failed to load. Check your Turnstile allowed hostnames."}
-                    </p>
-                  )}
-                  <Button type="submit" className="w-full" disabled={isLoading || (!isPreviewHost && !turnstileReady)}>
+                  <div
+                    ref={turnstileRef}
+                    className="cf-turnstile flex justify-center"
+                    data-sitekey={TURNSTILE_SITE_KEY}
+                    data-callback="onTurnstileSuccess"
+                    data-expired-callback="onTurnstileExpired"
+                    data-error-callback="onTurnstileError"
+                    data-theme="dark"
+                  />
+                  <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Create Account
                   </Button>
