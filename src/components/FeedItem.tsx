@@ -477,7 +477,7 @@ export const FeedItem = memo(({
       {/* Video player - overlays poster */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover md:object-contain"
+        className="absolute inset-0 w-full h-full object-contain bg-black"
         style={{ paddingBottom: navOffset }}
         src={isActive || shouldPreload ? videoSrc : undefined}
         poster={posterSrc}
