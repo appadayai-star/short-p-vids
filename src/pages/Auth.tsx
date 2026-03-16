@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { SEO } from "@/components/SEO";
 import { toast } from "sonner";
 import { Loader2, Video, X } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
+
+const TURNSTILE_SITE_KEY = "0x4AAAAAACrw7Rdj194r6bL9";
 
 const Auth = () => {
   const navigate = useNavigate();
