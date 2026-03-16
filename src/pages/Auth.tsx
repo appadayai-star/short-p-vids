@@ -152,6 +152,7 @@ const Auth = () => {
       navigate("/feed");
     } catch (error: any) {
       toast.error(error.message || "Failed to create account");
+      resetTurnstile();
     } finally {
       setIsLoading(false);
     }
