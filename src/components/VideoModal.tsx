@@ -557,7 +557,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                   <img 
                     src={posterSrc} 
                     alt="" 
-                    className="absolute inset-0 w-full h-full object-cover md:object-contain"
+                    className="absolute inset-0 w-full h-full object-contain bg-black"
                     style={{ paddingBottom: navOffset, opacity: isActive ? 0 : 1 }}
                   />
                 )}
