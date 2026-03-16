@@ -372,6 +372,47 @@ export const AdminStats = () => {
     };
   }, [fetchKey]);
 
+  // Fetch category clicks
+  useEffect(() => {
+    const fetchCategoryClicks = async () => {
+      setCategoryClicksLoading(true);
+      try {
+        let query = supabase.from("category_clicks").select("category, created_at");
+        
+        if (datePreset !== "lifetime") {
+          const presetDates = getDateRangeForPreset(datePreset);
+          if (presetDates) {
+            query = query.gte("created_at", presetDates.startDate).lte("created_at", presetDates.endDate);
+          } else if (dateRange?.from && dateRange?.to) {
+            query = query.gte("created_at", toUTCStartOfDay(dateRange.from).toISOString())
+                         .lte("created_at", toUTCEndOfDay(dateRange.to).toISOString());
+          }
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const counts: Record<string, number> = {};
+        (data || []).forEach((row: any) => {
+          counts[row.category] = (counts[row.category] || 0) + 1;
+        });
+
+        const sorted = Object.entries(counts)
+          .map(([category, clicks]) => ({ category, clicks }))
+          .sort((a, b) => b.clicks - a.clicks);
+
+        setCategoryClicks(sorted);
+        setCategoryClicksTotal(sorted.reduce((sum, c) => sum + c.clicks, 0));
+      } catch (err) {
+        console.error("Error fetching category clicks:", err);
+      } finally {
+        setCategoryClicksLoading(false);
+      }
+    };
+
+    fetchCategoryClicks();
+  }, [fetchKey]);
+
   const chartData = stats?.daily?.map(d => ({
     ...d,
     date: stats?.isHourlyBreakdown 
