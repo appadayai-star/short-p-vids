@@ -18,6 +18,44 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loginData, setLoginData] = useState({ emailOrUsername: "", password: "" });
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetId = useRef<string | null>(null);
+
+  // Load Turnstile script and render widget
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad";
+    script.async = true;
+
+    (window as any).onTurnstileLoad = () => {
+      if (turnstileRef.current && (window as any).turnstile) {
+        turnstileWidgetId.current = (window as any).turnstile.render(turnstileRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          callback: (token: string) => setTurnstileToken(token),
+          "expired-callback": () => setTurnstileToken(null),
+          theme: "dark",
+        });
+      }
+    };
+
+    document.head.appendChild(script);
+
+    return () => {
+      script.remove();
+      delete (window as any).onTurnstileLoad;
+      if (turnstileWidgetId.current && (window as any).turnstile) {
+        (window as any).turnstile.remove(turnstileWidgetId.current);
+      }
+    };
+  }, []);
+
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken(null);
+    if (turnstileWidgetId.current && (window as any).turnstile) {
+      (window as any).turnstile.reset(turnstileWidgetId.current);
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
