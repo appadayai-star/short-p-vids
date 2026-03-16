@@ -19,6 +19,7 @@ const Auth = () => {
   const [loginData, setLoginData] = useState({ emailOrUsername: "", password: "" });
   const [signupData, setSignupData] = useState({ username: "", email: "", password: "" });
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileReady, setTurnstileReady] = useState(false);
   const turnstileRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetId = useRef<string | null>(null);
 
@@ -32,16 +33,30 @@ const Auth = () => {
       if (turnstileRef.current && (window as any).turnstile) {
         turnstileWidgetId.current = (window as any).turnstile.render(turnstileRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
-          callback: (token: string) => setTurnstileToken(token),
+          callback: (token: string) => {
+            setTurnstileToken(token);
+            setTurnstileReady(true);
+          },
           "expired-callback": () => setTurnstileToken(null),
           theme: "dark",
         });
       }
     };
 
+    // If script fails to load (e.g. blocked by iframe), don't block signup
+    script.onerror = () => {
+      setTurnstileReady(true);
+    };
+
+    // Fallback: if turnstile doesn't load within 5s, unblock the button
+    const fallbackTimer = setTimeout(() => {
+      setTurnstileReady(true);
+    }, 5000);
+
     document.head.appendChild(script);
 
     return () => {
+      clearTimeout(fallbackTimer);
       script.remove();
       delete (window as any).onTurnstileLoad;
       if (turnstileWidgetId.current && (window as any).turnstile) {
