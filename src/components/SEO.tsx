@@ -21,6 +21,7 @@ interface SEOProps {
   type?: "website" | "video.other" | "profile";
   noIndex?: boolean;
   videoData?: VideoStructuredData;
+  videoUrl?: string;
 }
 
 const defaults = {
