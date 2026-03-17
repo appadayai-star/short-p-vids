@@ -128,7 +128,8 @@ serve(async (req) => {
       sessionId,     // Session ID from client
       cursor,        // Cursor for pagination: { score: number, id: string } or null
       limit = 10, 
-      sessionViewedIds = [] 
+      sessionViewedIds = [],
+      categoryFilter = null  // Optional category tag to filter by
     } = await req.json();
 
     const supabaseClient = createClient(
@@ -152,7 +153,7 @@ serve(async (req) => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const { data: recentVideos, error } = await supabaseClient
+    let query = supabaseClient
       .from("videos")
       .select(`
         id, title, description, video_url, optimized_video_url, stream_url,
@@ -163,6 +164,14 @@ serve(async (req) => {
       .gte("created_at", thirtyDaysAgo.toISOString())
       .order("created_at", { ascending: false })
       .limit(500);
+
+    // Apply category filter if provided
+    if (categoryFilter) {
+      query = query.contains("tags", [categoryFilter]);
+      console.log(`[get-for-you-feed] Filtering by category: ${categoryFilter}`);
+    }
+
+    const { data: recentVideos, error } = await query;
 
     if (error) throw error;
 
