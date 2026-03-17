@@ -128,7 +128,8 @@ serve(async (req) => {
       sessionId,     // Session ID from client
       cursor,        // Cursor for pagination: { score: number, id: string } or null
       limit = 10, 
-      sessionViewedIds = [] 
+      sessionViewedIds = [],
+      categoryFilter = null  // Optional category tag to filter by
     } = await req.json();
 
     const supabaseClient = createClient(
