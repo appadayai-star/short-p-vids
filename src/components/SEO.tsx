@@ -174,6 +174,7 @@ export const generateVideoSEO = (video: {
   image: video.thumbnail_url || defaults.image,
   url: `${defaults.url}/video/${video.id}`,
   type: "video.other" as const,
+  videoUrl: video.video_url,
   videoData: {
     name: video.title,
     description: video.description || `Watch ${video.title}`,
