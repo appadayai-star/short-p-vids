@@ -21,7 +21,6 @@ interface SEOProps {
   type?: "website" | "video.other" | "profile";
   noIndex?: boolean;
   videoData?: VideoStructuredData;
-  videoUrl?: string;
 }
 
 const defaults = {
@@ -94,7 +93,6 @@ export const SEO = ({
   type = "website",
   noIndex = false,
   videoData,
-  videoUrl,
 }: SEOProps) => {
   const fullTitle = title ? `${title} | ${defaults.siteName}` : defaults.title;
   const structuredData = videoData
@@ -120,17 +118,6 @@ export const SEO = ({
       <meta property="og:image" content={image} />
       <meta property="og:site_name" content={defaults.siteName} />
       <meta property="og:locale" content="en_US" />
-
-      {/* OG Video tags for video pages */}
-      {videoUrl && (
-        <>
-          <meta property="og:video" content={videoUrl} />
-          <meta property="og:video:secure_url" content={videoUrl} />
-          <meta property="og:video:type" content="video/mp4" />
-          <meta property="og:video:width" content="720" />
-          <meta property="og:video:height" content="1280" />
-        </>
-      )}
 
       {/* Twitter */}
       <meta name="twitter:card" content="summary_large_image" />
@@ -174,7 +161,6 @@ export const generateVideoSEO = (video: {
   image: video.thumbnail_url || defaults.image,
   url: `${defaults.url}/video/${video.id}`,
   type: "video.other" as const,
-  videoUrl: video.video_url,
   videoData: {
     name: video.title,
     description: video.description || `Watch ${video.title}`,
