@@ -362,13 +362,11 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       setIsLoadingMore(true);
       
       try {
-        if (searchQuery || categoryFilter) {
-          // Direct query for filtered views (keep offset-based for search)
+        if (searchQuery) {
+          // Direct query for search only (keep offset-based)
           const offset = videos.length;
           let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&offset=${offset}&limit=${PAGE_SIZE}`;
-          
-          if (categoryFilter) url += `&tags=cs.{${categoryFilter}}`;
-          if (searchQuery) url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
+          url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
 
           const response = await fetch(url, {
             headers: {
@@ -387,7 +385,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setVideos(prev => [...prev, ...newVideos]);
           setHasMore(newVideos.length > 0);
         } else {
-          // Use edge function with cursor-based pagination
+          // Use edge function with cursor-based pagination (main feed + categories)
           const viewerId = getOrCreateViewerId();
           const sessionId = getOrCreateSessionId();
           const sessionViewedIds = getSessionViewedIds();
@@ -399,7 +397,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
               sessionId,
               cursor: cursorRef.current, 
               limit: PAGE_SIZE, 
-              sessionViewedIds 
+              sessionViewedIds,
+              categoryFilter: categoryFilter || null
             }
           });
 
