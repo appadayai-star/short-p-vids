@@ -23,6 +23,7 @@ const CATEGORIES = [
   { id: "big_ass", name: "Big Ass" },
   { id: "big_tits", name: "Big Tits" },
   { id: "lesbian", name: "Lesbian" },
+  { id: "blonde", name: "Blonde" },
 ];
 
 interface UploadModalProps {
