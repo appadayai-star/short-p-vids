@@ -155,17 +155,11 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       console.log("[VideoFeed] Starting fetch...");
       
       try {
-        // For search/category, use direct query; for main feed, use recommendation algorithm
-        if (searchQuery || categoryFilter) {
-          // Direct query for filtered views
+        if (searchQuery) {
+          // Direct query for search only
           let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE * 2}`;
           
-          if (categoryFilter) {
-            url += `&tags=cs.{${categoryFilter}}`;
-          }
-          if (searchQuery) {
-            url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
-          }
+          url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
 
           const response = await fetch(url, {
             headers: {
@@ -179,21 +173,19 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
           let results = await response.json() || [];
           
-          if (searchQuery) {
-            const q = searchQuery.toLowerCase();
-            results = results.filter((v: Video) =>
-              v.title?.toLowerCase().includes(q) ||
-              v.description?.toLowerCase().includes(q) ||
-              v.profiles?.username?.toLowerCase().includes(q) ||
-              v.tags?.some(t => t.toLowerCase().includes(q))
-            );
-          }
+          const q = searchQuery.toLowerCase();
+          results = results.filter((v: Video) =>
+            v.title?.toLowerCase().includes(q) ||
+            v.description?.toLowerCase().includes(q) ||
+            v.profiles?.username?.toLowerCase().includes(q) ||
+            v.tags?.some(t => t.toLowerCase().includes(q))
+          );
 
           results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(results.slice(0, PAGE_SIZE));
           setHasMore(results.length >= PAGE_SIZE);
         } else {
-          // Use recommendation edge function for main feed
+          // Use recommendation edge function for main feed AND category feeds
           const viewerId = getOrCreateViewerId();
           const sessionId = getOrCreateSessionId();
           const sessionViewedIds = getSessionViewedIds();
@@ -203,9 +195,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
               userId, 
               viewerId,
               sessionId,
-              cursor: null, // First page
+              cursor: null,
               limit: PAGE_SIZE, 
-              sessionViewedIds 
+              sessionViewedIds,
+              categoryFilter: categoryFilter || null
             }
           });
 
