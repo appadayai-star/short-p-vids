@@ -16,6 +16,13 @@ const CATEGORIES = [
   { id: "homemade", name: "Homemade" },
   { id: "pov", name: "POV" },
   { id: "mom", name: "Mom" },
+  { id: "milf", name: "MILF" },
+  { id: "amateur", name: "Amateur" },
+  { id: "latina", name: "Latina" },
+  { id: "asian", name: "Asian" },
+  { id: "big_ass", name: "Big Ass" },
+  { id: "big_tits", name: "Big Tits" },
+  { id: "lesbian", name: "Lesbian" },
 ];
 
 interface UploadModalProps {
