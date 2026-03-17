@@ -247,24 +247,22 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       }
 
       try {
-        let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE}`;
-        
-        if (categoryFilter) url += `&tags=cs.{${categoryFilter}}`;
-        if (searchQuery) url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
-
-        const response = await fetch(url, {
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-
-        let results = await response.json() || [];
-        
         if (searchQuery) {
+          // Direct query for search
+          let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE}`;
+          url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
+
+          const response = await fetch(url, {
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+
+          let results = await response.json() || [];
           const q = searchQuery.toLowerCase();
           results = results.filter((v: Video) =>
             v.title?.toLowerCase().includes(q) ||
@@ -272,11 +270,36 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             v.profiles?.username?.toLowerCase().includes(q) ||
             v.tags?.some(t => t.toLowerCase().includes(q))
           );
-        }
 
-        results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
-        setVideos(results);
-        setHasMore(results.length >= PAGE_SIZE);
+          results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
+          setVideos(results);
+          setHasMore(results.length >= PAGE_SIZE);
+        } else if (categoryFilter) {
+          // Use algorithm for category feeds
+          const viewerId = getOrCreateViewerId();
+          const sessionId = getOrCreateSessionId();
+          const sessionViewedIds = getSessionViewedIds();
+          
+          const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
+            body: { 
+              userId, 
+              viewerId,
+              sessionId,
+              cursor: null,
+              limit: PAGE_SIZE, 
+              sessionViewedIds,
+              categoryFilter
+            }
+          });
+
+          if (error) throw error;
+
+          const resultVideos = data?.videos || [];
+          cursorRef.current = data?.nextCursor || null;
+          resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
+          setVideos(resultVideos);
+          setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load videos");
       } finally {
