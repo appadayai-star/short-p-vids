@@ -6,11 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { 
   Plus, Loader2, Trash2, ExternalLink, Eye, MousePointer, 
-  Upload, Radio, TrendingUp
+  Upload, Radio, TrendingUp, Play
 } from "lucide-react";
+import { LivestreamAdItem } from "@/components/LivestreamAdItem";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +44,7 @@ export const AdminAds = () => {
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [uploading, setUploading] = useState(false);
-  
+  const [previewAd, setPreviewAd] = useState<Ad | null>(null);
   // Form state
   const [title, setTitle] = useState("");
   const [externalLink, setExternalLink] = useState("");
@@ -318,14 +320,20 @@ export const AdminAds = () => {
             <Card key={ad.id} className={!ad.is_active ? "opacity-60" : ""}>
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
-                  {/* Video Preview */}
-                  <div className="relative w-24 h-36 rounded-lg overflow-hidden bg-muted flex-shrink-0">
+                  {/* Video Preview - clickable */}
+                  <div 
+                    className="relative w-24 h-36 rounded-lg overflow-hidden bg-muted flex-shrink-0 cursor-pointer group"
+                    onClick={() => setPreviewAd(ad)}
+                  >
                     <video
                       src={ad.video_url}
                       className="w-full h-full object-cover"
                       muted
                       preload="metadata"
                     />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Play className="h-8 w-8 text-white fill-white" />
+                    </div>
                     {ad.is_active && (
                       <div className="absolute top-1 left-1">
                         <Badge className="bg-red-500 text-white text-[10px] px-1.5 py-0 border-0 animate-pulse">
@@ -407,6 +415,26 @@ export const AdminAds = () => {
           ))}
         </div>
       )}
+
+      {/* Preview Modal */}
+      <Dialog open={!!previewAd} onOpenChange={(open) => !open && setPreviewAd(null)}>
+        <DialogContent className="max-w-sm p-0 overflow-hidden bg-black border-border rounded-2xl h-[80vh] max-h-[700px]">
+          {previewAd && (
+            <div className="relative w-full h-full">
+              <LivestreamAdItem
+                ad={previewAd}
+                index={0}
+                isActive={true}
+                currentUserId={null}
+              />
+              {/* "Preview" watermark */}
+              <div className="absolute top-16 right-4 z-[60] bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full">
+                <span className="text-white/80 text-xs font-medium">Preview Mode</span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
