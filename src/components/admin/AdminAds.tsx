@@ -415,6 +415,26 @@ export const AdminAds = () => {
           ))}
         </div>
       )}
+
+      {/* Preview Modal */}
+      <Dialog open={!!previewAd} onOpenChange={(open) => !open && setPreviewAd(null)}>
+        <DialogContent className="max-w-sm p-0 overflow-hidden bg-black border-border rounded-2xl h-[80vh] max-h-[700px]">
+          {previewAd && (
+            <div className="relative w-full h-full">
+              <LivestreamAdItem
+                ad={previewAd}
+                index={0}
+                isActive={true}
+                currentUserId={null}
+              />
+              {/* "Preview" watermark */}
+              <div className="absolute top-16 right-4 z-[60] bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full">
+                <span className="text-white/80 text-xs font-medium">Preview Mode</span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
