@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { username: trimmedUsername },
+      user_metadata: { username: trimmedUsername, signup_source: "verified" },
     });
 
     if (authError) {
