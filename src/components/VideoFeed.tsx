@@ -469,7 +469,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
 
     loadMore();
-  }, [activeIndex, videos.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
+  }, [activeIndex, feedEntries.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
 
   // Track view locally to prevent duplicate fetches - actual metrics are handled by useWatchMetrics
   const handleViewTracked = useCallback((videoId: string) => {
