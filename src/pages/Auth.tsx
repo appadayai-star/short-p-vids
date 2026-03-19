@@ -160,26 +160,20 @@ const Auth = () => {
       return;
     }
     
-    // Validate username format
-    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-      toast.error("Username can only contain letters, numbers, and underscores");
+    // Explicitly block underscores in usernames
+    if (username.includes("_")) {
+      toast.error("Username cannot contain underscores");
+      return;
+    }
+
+    // Validate username format (letters and numbers only)
+    if (!/^[a-zA-Z0-9]+$/.test(username)) {
+      toast.error("Username can only contain letters and numbers");
       return;
     }
 
     if (username.length < 3) {
       toast.error("Username must be at least 3 characters");
-      return;
-    }
-
-    // Block bot-like username patterns (e.g. u_kqu2yQ_7628)
-    if (/^u_[a-zA-Z0-9]{4,8}_\d{4}$/.test(username)) {
-      toast.error("This username format is not allowed");
-      return;
-    }
-
-    // Block usernames that are mostly random characters (low entropy human names)
-    if (/^[a-z]_[a-zA-Z0-9]+_\d+$/.test(username)) {
-      toast.error("Please choose a more descriptive username");
       return;
     }
 
