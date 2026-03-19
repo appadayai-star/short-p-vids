@@ -422,6 +422,68 @@ export const AdminStats = () => {
     fetchCategoryClicks();
   }, [fetchKey]);
 
+  // Fetch ad analytics
+  useEffect(() => {
+    const fetchAdStats = async () => {
+      setAdStatsLoading(true);
+      try {
+        const { data: adsData } = await supabase.from("ads").select("id, title, external_link");
+        if (!adsData || adsData.length === 0) {
+          setAdStats({ totalViews: 0, totalClicks: 0, ctr: 0, perAd: [] });
+          setAdStatsLoading(false);
+          return;
+        }
+
+        const perAd = await Promise.all(
+          adsData.map(async (ad: any) => {
+            let viewsQuery = supabase.from("ad_views").select("id", { count: "exact", head: true }).eq("ad_id", ad.id);
+            let clicksQuery = supabase.from("ad_clicks").select("id", { count: "exact", head: true }).eq("ad_id", ad.id);
+
+            if (datePreset !== "lifetime") {
+              const presetDates = getDateRangeForPreset(datePreset);
+              if (presetDates) {
+                viewsQuery = viewsQuery.gte("viewed_at", presetDates.startDate).lte("viewed_at", presetDates.endDate);
+                clicksQuery = clicksQuery.gte("clicked_at", presetDates.startDate).lte("clicked_at", presetDates.endDate);
+              } else if (dateRange?.from && dateRange?.to) {
+                viewsQuery = viewsQuery.gte("viewed_at", toUTCStartOfDay(dateRange.from).toISOString()).lte("viewed_at", toUTCEndOfDay(dateRange.to).toISOString());
+                clicksQuery = clicksQuery.gte("clicked_at", toUTCStartOfDay(dateRange.from).toISOString()).lte("clicked_at", toUTCEndOfDay(dateRange.to).toISOString());
+              }
+            }
+
+            const [viewsRes, clicksRes] = await Promise.all([viewsQuery, clicksQuery]);
+            const views = viewsRes.count || 0;
+            const clicks = clicksRes.count || 0;
+
+            return {
+              id: ad.id,
+              title: ad.title,
+              link: ad.external_link,
+              views,
+              clicks,
+              ctr: views > 0 ? Math.round((clicks / views) * 10000) / 100 : 0,
+            };
+          })
+        );
+
+        const totalViews = perAd.reduce((s, a) => s + a.views, 0);
+        const totalClicks = perAd.reduce((s, a) => s + a.clicks, 0);
+
+        setAdStats({
+          totalViews,
+          totalClicks,
+          ctr: totalViews > 0 ? Math.round((totalClicks / totalViews) * 10000) / 100 : 0,
+          perAd: perAd.sort((a, b) => b.views - a.views),
+        });
+      } catch (err) {
+        console.error("Error fetching ad stats:", err);
+      } finally {
+        setAdStatsLoading(false);
+      }
+    };
+
+    fetchAdStats();
+  }, [fetchKey]);
+
   const chartData = stats?.daily?.map(d => ({
     ...d,
     date: stats?.isHourlyBreakdown 
