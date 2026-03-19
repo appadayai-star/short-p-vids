@@ -171,6 +171,18 @@ const Auth = () => {
       return;
     }
 
+    // Block bot-like username patterns (e.g. u_kqu2yQ_7628)
+    if (/^u_[a-zA-Z0-9]{4,8}_\d{4}$/.test(username)) {
+      toast.error("This username format is not allowed");
+      return;
+    }
+
+    // Block usernames that are mostly random characters (low entropy human names)
+    if (/^[a-z]_[a-zA-Z0-9]+_\d+$/.test(username)) {
+      toast.error("Please choose a more descriptive username");
+      return;
+    }
+
     const tokenFromInput = (
       document.querySelector("input[name='cf-turnstile-response']") as HTMLInputElement | null
     )?.value;

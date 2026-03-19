@@ -144,13 +144,33 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.type.startsWith("video/")) {
-        setVideoFile(file);
-        const previewUrl = URL.createObjectURL(file);
-        setVideoPreview(previewUrl);
-      } else {
+      if (!file.type.startsWith("video/")) {
         toast.error("Please select a valid video file");
+        return;
       }
+
+      // Check video duration - must be at least 10 seconds
+      const tempVideo = document.createElement("video");
+      tempVideo.preload = "metadata";
+      const objectUrl = URL.createObjectURL(file);
+      tempVideo.src = objectUrl;
+
+      tempVideo.onloadedmetadata = () => {
+        if (tempVideo.duration < 10) {
+          toast.error("Video must be at least 10 seconds long");
+          URL.revokeObjectURL(objectUrl);
+          // Reset the input
+          if (e.target) e.target.value = "";
+          return;
+        }
+        setVideoFile(file);
+        setVideoPreview(objectUrl);
+      };
+
+      tempVideo.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        toast.error("Could not read video file");
+      };
     }
   };
 

@@ -83,6 +83,9 @@ serve(async (req) => {
 
     console.log(`Original URL: ${videoUrl}`);
 
+    // Server-side duration check will happen after Cloudinary upload
+    // (duration comes back from Cloudinary response)
+
     // Update status to processing
     await supabase
       .from("videos")
