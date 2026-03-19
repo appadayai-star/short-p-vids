@@ -153,27 +153,15 @@ const Auth = () => {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate username - no spaces allowed
     const username = signupData.username.trim();
-    if (username.includes(" ")) {
-      toast.error("Username cannot contain spaces");
-      return;
-    }
     
-    // Explicitly block underscores in usernames
-    if (username.includes("_")) {
-      toast.error("Username cannot contain underscores");
-      return;
-    }
-
-    // Validate username format (letters and numbers only)
-    if (!/^[a-zA-Z0-9]+$/.test(username)) {
-      toast.error("Username can only contain letters and numbers");
-      return;
-    }
-
     if (username.length < 3) {
       toast.error("Username must be at least 3 characters");
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      toast.error("Username can only contain letters, numbers, and underscores");
       return;
     }
 
@@ -190,27 +178,26 @@ const Auth = () => {
     setIsLoading(true);
 
     try {
-      const { data: verifyData, error: verifyError } = await supabase.functions.invoke("verify-turnstile", {
-        body: { token: captchaToken },
-      });
-
-      if (verifyError || !verifyData?.success) {
-        resetTurnstile();
-        throw new Error("Captcha verification failed");
-      }
-
-      const { error: signUpError, data } = await supabase.auth.signUp({
-        email: signupData.email,
-        password: signupData.password,
-        options: {
-          data: {
-            username: username,
-          },
-          emailRedirectTo: `${window.location.origin}/feed`,
+      const { data, error } = await supabase.functions.invoke("signup", {
+        body: {
+          email: signupData.email,
+          password: signupData.password,
+          username,
+          captchaToken,
         },
       });
 
-      if (signUpError) throw signUpError;
+      if (error || !data?.success) {
+        resetTurnstile();
+        throw new Error(data?.error || error?.message || "Failed to create account");
+      }
+
+      if (data.session) {
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+      }
 
       toast.success("Account created! Logging you in...");
       navigate("/feed");
