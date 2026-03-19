@@ -95,7 +95,7 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, currentUserId }: Li
       {/* Video */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-contain bg-black"
         style={{ paddingBottom: navOffset }}
         src={isActive ? ad.video_url : undefined}
         loop
