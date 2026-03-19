@@ -229,6 +229,15 @@ export const AdminStats = () => {
   const [categoryClicks, setCategoryClicks] = useState<{ category: string; clicks: number }[]>([]);
   const [categoryClicksTotal, setCategoryClicksTotal] = useState(0);
   const [categoryClicksLoading, setCategoryClicksLoading] = useState(true);
+  
+  // Ad analytics state
+  const [adStats, setAdStats] = useState<{
+    totalViews: number;
+    totalClicks: number;
+    ctr: number;
+    perAd: { id: string; title: string; link: string; views: number; clicks: number; ctr: number }[];
+  } | null>(null);
+  const [adStatsLoading, setAdStatsLoading] = useState(true);
 
   const toUTCStartOfDay = (date: Date) => {
     const d = new Date(date);
