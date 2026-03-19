@@ -113,6 +113,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const { hasEntered } = useEntryGate();
   
   const [videos, setVideos] = useState<Video[]>([]);
+  const [ads, setAds] = useState<Ad[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -123,6 +124,42 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
   const cursorRef = useRef<FeedCursor | null>(null);
+
+  // Fetch active ads
+  useEffect(() => {
+    const fetchAds = async () => {
+      try {
+        const { data } = await supabase
+          .from("ads")
+          .select("id, title, video_url, thumbnail_url, external_link")
+          .eq("is_active", true);
+        setAds(data || []);
+      } catch (err) {
+        console.error("[VideoFeed] Failed to fetch ads:", err);
+      }
+    };
+    fetchAds();
+  }, []);
+
+  // Build interleaved feed entries (insert ad every ~10 videos)
+  const feedEntries: FeedEntry[] = useMemo(() => {
+    if (ads.length === 0) return videos.map(v => ({ type: 'video' as const, data: v }));
+    
+    const entries: FeedEntry[] = [];
+    let adIndex = 0;
+    
+    for (let i = 0; i < videos.length; i++) {
+      entries.push({ type: 'video', data: videos[i] });
+      
+      // Insert ad after every 10th video
+      if ((i + 1) % 10 === 0 && ads.length > 0) {
+        entries.push({ type: 'ad', data: ads[adIndex % ads.length] });
+        adIndex++;
+      }
+    }
+    
+    return entries;
+  }, [videos, ads]);
 
   // Preload next video's source
   const preloadNextVideo = useCallback((nextIndex: number) => {
