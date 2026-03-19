@@ -83,6 +83,9 @@ serve(async (req) => {
 
     console.log(`Original URL: ${videoUrl}`);
 
+    // Server-side duration check will happen after Cloudinary upload
+    // (duration comes back from Cloudinary response)
+
     // Update status to processing
     await supabase
       .from("videos")
@@ -150,8 +153,31 @@ serve(async (req) => {
 
     console.log("Cloudinary public_id:", publicId);
 
-    // Update the video record with cloudinary_public_id
-    // URLs are now generated dynamically on the frontend for flexibility
+    // Server-side: reject videos shorter than 10 seconds
+    if (cloudinaryResult.duration && cloudinaryResult.duration < 10) {
+      console.error(`Video too short: ${cloudinaryResult.duration}s (minimum 10s)`);
+      
+      // Delete from Cloudinary
+      const deleteTimestamp = Math.floor(Date.now() / 1000);
+      const deleteSignString = `public_id=${publicId}&timestamp=${deleteTimestamp}${CLOUDINARY_API_SECRET}`;
+      const deleteData = new TextEncoder().encode(deleteSignString);
+      const deleteHash = await crypto.subtle.digest("SHA-1", deleteData);
+      const deleteSignature = Array.from(new Uint8Array(deleteHash)).map(b => b.toString(16).padStart(2, "0")).join("");
+      
+      await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/destroy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_id: publicId, api_key: CLOUDINARY_API_KEY, timestamp: deleteTimestamp, signature: deleteSignature }),
+      }).catch(() => {});
+
+      // Delete the video record
+      await supabase.from("videos").delete().eq("id", videoId);
+
+      return new Response(
+        JSON.stringify({ error: "Video must be at least 10 seconds long" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     const { error: updateError } = await supabase
       .from("videos")
       .update({
