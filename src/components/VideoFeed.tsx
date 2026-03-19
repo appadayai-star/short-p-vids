@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { FeedItem } from "./FeedItem";
+import { LivestreamAdItem } from "./LivestreamAdItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 import { getBestThumbnailUrl, preloadImage, getBestVideoSource } from "@/lib/cloudinary";
