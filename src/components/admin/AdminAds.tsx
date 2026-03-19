@@ -125,9 +125,6 @@ export const AdminAds = () => {
 
       setUploading(false);
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
 
       // Create ad record
       const { error: insertError } = await supabase.from("ads").insert({
