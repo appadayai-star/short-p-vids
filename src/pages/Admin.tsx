@@ -61,7 +61,7 @@ const Admin = () => {
 
       <main className="container mx-auto px-4 py-6">
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full max-w-lg grid-cols-4">
+          <TabsList className="grid w-full max-w-2xl grid-cols-5">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <LayoutDashboard className="h-4 w-4" />
               <span className="hidden sm:inline">Overview</span>
@@ -73,6 +73,10 @@ const Admin = () => {
             <TabsTrigger value="videos" className="flex items-center gap-2">
               <Video className="h-4 w-4" />
               <span className="hidden sm:inline">Videos</span>
+            </TabsTrigger>
+            <TabsTrigger value="ads" className="flex items-center gap-2">
+              <Radio className="h-4 w-4" />
+              <span className="hidden sm:inline">Ads</span>
             </TabsTrigger>
             <TabsTrigger value="reprocess" className="flex items-center gap-2">
               <RefreshCw className="h-4 w-4" />
@@ -90,6 +94,10 @@ const Admin = () => {
 
           <TabsContent value="videos">
             <AdminVideos />
+          </TabsContent>
+
+          <TabsContent value="ads">
+            <AdminAds />
           </TabsContent>
 
           <TabsContent value="reprocess">
