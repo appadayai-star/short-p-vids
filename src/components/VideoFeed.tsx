@@ -30,6 +30,18 @@ interface Video {
   };
 }
 
+interface Ad {
+  id: string;
+  title: string;
+  video_url: string;
+  thumbnail_url: string | null;
+  external_link: string;
+}
+
+type FeedEntry = 
+  | { type: 'video'; data: Video }
+  | { type: 'ad'; data: Ad };
+
 interface VideoFeedProps {
   searchQuery: string;
   categoryFilter: string;
