@@ -104,10 +104,14 @@ export const AdminAds = () => {
     setUploading(true);
 
     try {
-      // Upload video to storage
+      // Get current user first (needed for storage path and ad record)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      // Upload video to storage using user's folder (matches RLS policies)
       const fileExt = videoFile.name.split(".").pop();
       const fileName = `ad_${Date.now()}.${fileExt}`;
-      const filePath = `ads/${fileName}`;
+      const filePath = `${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from("videos")
@@ -121,9 +125,6 @@ export const AdminAds = () => {
 
       setUploading(false);
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
 
       // Create ad record
       const { error: insertError } = await supabase.from("ads").insert({
