@@ -999,6 +999,62 @@ export const AdminStats = () => {
         </div>
       </div>
 
+      {/* Ad Analytics */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Ad Performance</h3>
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
+          <StatCard
+            title="Total Ad Views"
+            value={adStats?.totalViews ?? 0}
+            icon={Eye}
+            color="text-blue-500"
+            bgColor="bg-blue-500/10"
+            loading={adStatsLoading}
+          />
+          <StatCard
+            title="Total Ad Clicks"
+            value={adStats?.totalClicks ?? 0}
+            icon={UserCheck}
+            color="text-green-500"
+            bgColor="bg-green-500/10"
+            loading={adStatsLoading}
+          />
+          <StatCard
+            title="Overall CTR"
+            value={`${adStats?.ctr ?? 0}%`}
+            subtitle="clicks / views"
+            icon={TrendingUp}
+            color="text-orange-500"
+            bgColor="bg-orange-500/10"
+            loading={adStatsLoading}
+          />
+        </div>
+        {adStats && adStats.perAd.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Per-Ad Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {adStats.perAd.map((ad) => (
+                  <div key={ad.id} className="flex items-center justify-between border-b border-border pb-2 last:border-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{ad.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{ad.link}</p>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm flex-shrink-0 ml-4">
+                      <span className="text-muted-foreground">{ad.views.toLocaleString()} views</span>
+                      <span className="text-muted-foreground">{ad.clicks.toLocaleString()} clicks</span>
+                      <span className="font-semibold">{ad.ctr}% CTR</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       {/* Trend Chart */}
       {datePreset !== "lifetime" && (
         <Card>
