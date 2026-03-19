@@ -402,7 +402,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   // Load more - trigger earlier (within last 2 items instead of 3)
   useEffect(() => {
     if (!hasMore || isLoadingMore || loading || videos.length === 0) return;
-    if (activeIndex < videos.length - 2) return; // Changed from -3 to -2 for earlier trigger
+    if (activeIndex < feedEntries.length - 3) return;
     
     if (DEBUG_SCROLL) {
       console.log('[Pagination] Triggering load more:', { activeIndex, videosLength: videos.length, hasMore });
