@@ -10,8 +10,9 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { 
   Plus, Loader2, Trash2, ExternalLink, Eye, MousePointer, 
-  Upload, Radio, TrendingUp
+  Upload, Radio, TrendingUp, Play
 } from "lucide-react";
+import { LivestreamAdItem } from "@/components/LivestreamAdItem";
 import {
   AlertDialog,
   AlertDialogAction,
