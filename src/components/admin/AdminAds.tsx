@@ -44,7 +44,7 @@ export const AdminAds = () => {
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [uploading, setUploading] = useState(false);
-  
+  const [previewAd, setPreviewAd] = useState<Ad | null>(null);
   // Form state
   const [title, setTitle] = useState("");
   const [externalLink, setExternalLink] = useState("");
