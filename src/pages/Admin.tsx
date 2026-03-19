@@ -5,9 +5,10 @@ import { AdminStats } from "@/components/admin/AdminStats";
 import { AdminUsers } from "@/components/admin/AdminUsers";
 import { AdminVideos } from "@/components/admin/AdminVideos";
 import { AdminReprocess } from "@/components/admin/AdminReprocess";
+import { AdminAds } from "@/components/admin/AdminAds";
 import { SEO } from "@/components/SEO";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, RefreshCw } from "lucide-react";
+import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, RefreshCw, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const Admin = () => {
