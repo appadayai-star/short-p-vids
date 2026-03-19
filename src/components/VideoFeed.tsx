@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { FeedItem } from "./FeedItem";
+import { LivestreamAdItem } from "./LivestreamAdItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 import { getBestThumbnailUrl, preloadImage, getBestVideoSource } from "@/lib/cloudinary";
@@ -28,6 +29,18 @@ interface Video {
     avatar_url: string | null;
   };
 }
+
+interface Ad {
+  id: string;
+  title: string;
+  video_url: string;
+  thumbnail_url: string | null;
+  external_link: string;
+}
+
+type FeedEntry = 
+  | { type: 'video'; data: Video }
+  | { type: 'ad'; data: Ad };
 
 interface VideoFeedProps {
   searchQuery: string;
@@ -100,6 +113,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const { hasEntered } = useEntryGate();
   
   const [videos, setVideos] = useState<Video[]>([]);
+  const [ads, setAds] = useState<Ad[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -110,6 +124,42 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
   const cursorRef = useRef<FeedCursor | null>(null);
+
+  // Fetch active ads
+  useEffect(() => {
+    const fetchAds = async () => {
+      try {
+        const { data } = await supabase
+          .from("ads")
+          .select("id, title, video_url, thumbnail_url, external_link")
+          .eq("is_active", true);
+        setAds(data || []);
+      } catch (err) {
+        console.error("[VideoFeed] Failed to fetch ads:", err);
+      }
+    };
+    fetchAds();
+  }, []);
+
+  // Build interleaved feed entries (insert ad every ~10 videos)
+  const feedEntries: FeedEntry[] = useMemo(() => {
+    if (ads.length === 0) return videos.map(v => ({ type: 'video' as const, data: v }));
+    
+    const entries: FeedEntry[] = [];
+    let adIndex = 0;
+    
+    for (let i = 0; i < videos.length; i++) {
+      entries.push({ type: 'video', data: videos[i] });
+      
+      // Insert ad after every 10th video
+      if ((i + 1) % 10 === 0 && ads.length > 0) {
+        entries.push({ type: 'ad', data: ads[adIndex % ads.length] });
+        adIndex++;
+      }
+    }
+    
+    return entries;
+  }, [videos, ads]);
 
   // Preload next video's source
   const preloadNextVideo = useCallback((nextIndex: number) => {
@@ -352,7 +402,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   // Load more - trigger earlier (within last 2 items instead of 3)
   useEffect(() => {
     if (!hasMore || isLoadingMore || loading || videos.length === 0) return;
-    if (activeIndex < videos.length - 2) return; // Changed from -3 to -2 for earlier trigger
+    if (activeIndex < feedEntries.length - 3) return;
     
     if (DEBUG_SCROLL) {
       console.log('[Pagination] Triggering load more:', { activeIndex, videosLength: videos.length, hasMore });
@@ -419,7 +469,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
 
     loadMore();
-  }, [activeIndex, videos.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
+  }, [activeIndex, feedEntries.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
 
   // Track view locally to prevent duplicate fetches - actual metrics are handled by useWatchMetrics
   const handleViewTracked = useCallback((videoId: string) => {
@@ -472,24 +522,37 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         scrollSnapType: 'y mandatory',
       }}
     >
-      {videos.map((video, index) => {
-        // Virtualization: only render videos within range
+      {feedEntries.map((entry, index) => {
+        // Virtualization: only render items within range
         const isInRange = Math.abs(index - activeIndex) <= 3;
+        const key = entry.type === 'ad' ? `ad-${entry.data.id}-${index}` : entry.data.id;
+        
         if (!isInRange) {
-          // Placeholder for virtualized items
           return (
             <div
-              key={video.id}
+              key={key}
               data-video-index={index}
               className="w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
             />
           );
         }
         
+        if (entry.type === 'ad') {
+          return (
+            <LivestreamAdItem
+              key={key}
+              ad={entry.data}
+              index={index}
+              isActive={index === activeIndex}
+              currentUserId={userId}
+            />
+          );
+        }
+
         return (
           <FeedItem
-            key={video.id}
-            video={video}
+            key={key}
+            video={entry.data}
             index={index}
             isActive={index === activeIndex}
             shouldPreload={Math.abs(index - activeIndex) <= 1}

@@ -229,6 +229,15 @@ export const AdminStats = () => {
   const [categoryClicks, setCategoryClicks] = useState<{ category: string; clicks: number }[]>([]);
   const [categoryClicksTotal, setCategoryClicksTotal] = useState(0);
   const [categoryClicksLoading, setCategoryClicksLoading] = useState(true);
+  
+  // Ad analytics state
+  const [adStats, setAdStats] = useState<{
+    totalViews: number;
+    totalClicks: number;
+    ctr: number;
+    perAd: { id: string; title: string; link: string; views: number; clicks: number; ctr: number }[];
+  } | null>(null);
+  const [adStatsLoading, setAdStatsLoading] = useState(true);
 
   const toUTCStartOfDay = (date: Date) => {
     const d = new Date(date);
@@ -411,6 +420,68 @@ export const AdminStats = () => {
     };
 
     fetchCategoryClicks();
+  }, [fetchKey]);
+
+  // Fetch ad analytics
+  useEffect(() => {
+    const fetchAdStats = async () => {
+      setAdStatsLoading(true);
+      try {
+        const { data: adsData } = await supabase.from("ads").select("id, title, external_link");
+        if (!adsData || adsData.length === 0) {
+          setAdStats({ totalViews: 0, totalClicks: 0, ctr: 0, perAd: [] });
+          setAdStatsLoading(false);
+          return;
+        }
+
+        const perAd = await Promise.all(
+          adsData.map(async (ad: any) => {
+            let viewsQuery = supabase.from("ad_views").select("id", { count: "exact", head: true }).eq("ad_id", ad.id);
+            let clicksQuery = supabase.from("ad_clicks").select("id", { count: "exact", head: true }).eq("ad_id", ad.id);
+
+            if (datePreset !== "lifetime") {
+              const presetDates = getDateRangeForPreset(datePreset);
+              if (presetDates) {
+                viewsQuery = viewsQuery.gte("viewed_at", presetDates.startDate).lte("viewed_at", presetDates.endDate);
+                clicksQuery = clicksQuery.gte("clicked_at", presetDates.startDate).lte("clicked_at", presetDates.endDate);
+              } else if (dateRange?.from && dateRange?.to) {
+                viewsQuery = viewsQuery.gte("viewed_at", toUTCStartOfDay(dateRange.from).toISOString()).lte("viewed_at", toUTCEndOfDay(dateRange.to).toISOString());
+                clicksQuery = clicksQuery.gte("clicked_at", toUTCStartOfDay(dateRange.from).toISOString()).lte("clicked_at", toUTCEndOfDay(dateRange.to).toISOString());
+              }
+            }
+
+            const [viewsRes, clicksRes] = await Promise.all([viewsQuery, clicksQuery]);
+            const views = viewsRes.count || 0;
+            const clicks = clicksRes.count || 0;
+
+            return {
+              id: ad.id,
+              title: ad.title,
+              link: ad.external_link,
+              views,
+              clicks,
+              ctr: views > 0 ? Math.round((clicks / views) * 10000) / 100 : 0,
+            };
+          })
+        );
+
+        const totalViews = perAd.reduce((s, a) => s + a.views, 0);
+        const totalClicks = perAd.reduce((s, a) => s + a.clicks, 0);
+
+        setAdStats({
+          totalViews,
+          totalClicks,
+          ctr: totalViews > 0 ? Math.round((totalClicks / totalViews) * 10000) / 100 : 0,
+          perAd: perAd.sort((a, b) => b.views - a.views),
+        });
+      } catch (err) {
+        console.error("Error fetching ad stats:", err);
+      } finally {
+        setAdStatsLoading(false);
+      }
+    };
+
+    fetchAdStats();
   }, [fetchKey]);
 
   const chartData = stats?.daily?.map(d => ({
@@ -926,6 +997,62 @@ export const AdminStats = () => {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Ad Analytics */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Ad Performance</h3>
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
+          <StatCard
+            title="Total Ad Views"
+            value={adStats?.totalViews ?? 0}
+            icon={Eye}
+            color="text-blue-500"
+            bgColor="bg-blue-500/10"
+            loading={adStatsLoading}
+          />
+          <StatCard
+            title="Total Ad Clicks"
+            value={adStats?.totalClicks ?? 0}
+            icon={UserCheck}
+            color="text-green-500"
+            bgColor="bg-green-500/10"
+            loading={adStatsLoading}
+          />
+          <StatCard
+            title="Overall CTR"
+            value={`${adStats?.ctr ?? 0}%`}
+            subtitle="clicks / views"
+            icon={TrendingUp}
+            color="text-orange-500"
+            bgColor="bg-orange-500/10"
+            loading={adStatsLoading}
+          />
+        </div>
+        {adStats && adStats.perAd.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Per-Ad Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {adStats.perAd.map((ad) => (
+                  <div key={ad.id} className="flex items-center justify-between border-b border-border pb-2 last:border-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{ad.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{ad.link}</p>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm flex-shrink-0 ml-4">
+                      <span className="text-muted-foreground">{ad.views.toLocaleString()} views</span>
+                      <span className="text-muted-foreground">{ad.clicks.toLocaleString()} clicks</span>
+                      <span className="font-semibold">{ad.ctr}% CTR</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Trend Chart */}
