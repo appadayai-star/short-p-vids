@@ -320,14 +320,20 @@ export const AdminAds = () => {
             <Card key={ad.id} className={!ad.is_active ? "opacity-60" : ""}>
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
-                  {/* Video Preview */}
-                  <div className="relative w-24 h-36 rounded-lg overflow-hidden bg-muted flex-shrink-0">
+                  {/* Video Preview - clickable */}
+                  <div 
+                    className="relative w-24 h-36 rounded-lg overflow-hidden bg-muted flex-shrink-0 cursor-pointer group"
+                    onClick={() => setPreviewAd(ad)}
+                  >
                     <video
                       src={ad.video_url}
                       className="w-full h-full object-cover"
                       muted
                       preload="metadata"
                     />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Play className="h-8 w-8 text-white fill-white" />
+                    </div>
                     {ad.is_active && (
                       <div className="absolute top-1 left-1">
                         <Badge className="bg-red-500 text-white text-[10px] px-1.5 py-0 border-0 animate-pulse">
