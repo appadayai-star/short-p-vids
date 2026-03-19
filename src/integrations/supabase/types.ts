@@ -14,6 +14,112 @@ export type Database = {
   }
   public: {
     Tables: {
+      ad_clicks: {
+        Row: {
+          ad_id: string
+          clicked_at: string
+          id: string
+          session_id: string | null
+          user_id: string | null
+          viewer_id: string | null
+        }
+        Insert: {
+          ad_id: string
+          clicked_at?: string
+          id?: string
+          session_id?: string | null
+          user_id?: string | null
+          viewer_id?: string | null
+        }
+        Update: {
+          ad_id?: string
+          clicked_at?: string
+          id?: string
+          session_id?: string | null
+          user_id?: string | null
+          viewer_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_clicks_ad_id_fkey"
+            columns: ["ad_id"]
+            isOneToOne: false
+            referencedRelation: "ads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_views: {
+        Row: {
+          ad_id: string
+          id: string
+          session_id: string | null
+          user_id: string | null
+          viewed_at: string
+          viewer_id: string | null
+        }
+        Insert: {
+          ad_id: string
+          id?: string
+          session_id?: string | null
+          user_id?: string | null
+          viewed_at?: string
+          viewer_id?: string | null
+        }
+        Update: {
+          ad_id?: string
+          id?: string
+          session_id?: string | null
+          user_id?: string | null
+          viewed_at?: string
+          viewer_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_views_ad_id_fkey"
+            columns: ["ad_id"]
+            isOneToOne: false
+            referencedRelation: "ads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ads: {
+        Row: {
+          created_at: string
+          created_by: string
+          external_link: string
+          id: string
+          is_active: boolean
+          thumbnail_url: string | null
+          title: string
+          updated_at: string
+          video_url: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          external_link: string
+          id?: string
+          is_active?: boolean
+          thumbnail_url?: string | null
+          title: string
+          updated_at?: string
+          video_url: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          external_link?: string
+          id?: string
+          is_active?: boolean
+          thumbnail_url?: string | null
+          title?: string
+          updated_at?: string
+          video_url?: string
+        }
+        Relationships: []
+      }
       category_clicks: {
         Row: {
           category: string
