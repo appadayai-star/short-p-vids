@@ -369,7 +369,7 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
                     Click to upload video
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    MP4, MOV, AVI (max 100MB)
+                    MP4, MOV, AVI (min 10s, max 100MB)
                   </p>
                 </label>
               </div>
