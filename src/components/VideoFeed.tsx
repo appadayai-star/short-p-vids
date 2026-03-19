@@ -522,24 +522,37 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         scrollSnapType: 'y mandatory',
       }}
     >
-      {videos.map((video, index) => {
-        // Virtualization: only render videos within range
+      {feedEntries.map((entry, index) => {
+        // Virtualization: only render items within range
         const isInRange = Math.abs(index - activeIndex) <= 3;
+        const key = entry.type === 'ad' ? `ad-${entry.data.id}-${index}` : entry.data.id;
+        
         if (!isInRange) {
-          // Placeholder for virtualized items
           return (
             <div
-              key={video.id}
+              key={key}
               data-video-index={index}
               className="w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
             />
           );
         }
         
+        if (entry.type === 'ad') {
+          return (
+            <LivestreamAdItem
+              key={key}
+              ad={entry.data}
+              index={index}
+              isActive={index === activeIndex}
+              currentUserId={userId}
+            />
+          );
+        }
+
         return (
           <FeedItem
-            key={video.id}
-            video={video}
+            key={key}
+            video={entry.data}
             index={index}
             isActive={index === activeIndex}
             shouldPreload={Math.abs(index - activeIndex) <= 1}
