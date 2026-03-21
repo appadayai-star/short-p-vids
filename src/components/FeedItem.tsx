@@ -523,13 +523,15 @@ export const FeedItem = memo(({
       className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
       data-video-index={index}
     >
-      {/* Poster image as background - ALWAYS visible until video plays */}
-      <img 
-        src={posterSrc} 
-        alt="" 
-        className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
-        style={{ paddingBottom: navOffset }}
-      />
+      {/* Poster image as background - hidden once video is playing */}
+      {(!isActive || !hasStartedPlaying) && (
+        <img 
+          src={posterSrc} 
+          alt="" 
+          className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
+          style={{ paddingBottom: navOffset }}
+        />
+      )}
 
       {/* Video player - overlays poster */}
       {/* Loading strategy:
