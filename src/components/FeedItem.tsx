@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, memo, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, memo, useCallback } from "react";
 import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getVideoSourceCandidates, getBestThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { getBestVideoSource, getBestThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import {
   DropdownMenu,
@@ -122,7 +122,6 @@ export const FeedItem = memo(({
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
-  const [activeSourceIndex, setActiveSourceIndex] = useState(0);
   
   // Progress bar state
   const [progress, setProgress] = useState(0);
@@ -133,84 +132,28 @@ export const FeedItem = memo(({
   const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startupCycleInitializedRef = useRef(false);
-  const startupSettledRef = useRef(false);
-  const startupStartTimeRef = useRef(0);
-  const startupRetriesRef = useRef(0);
-  const startupStallsRef = useRef(0);
-  const startupWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startupWaitingFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const sourceCandidates = useMemo(
-    () => getVideoSourceCandidates(
-      video.cloudinary_public_id || null,
-      video.optimized_video_url || null,
-      video.stream_url || null,
-      video.video_url
-    ),
-    [video.cloudinary_public_id, video.optimized_video_url, video.stream_url, video.video_url]
+  const videoSrc = getBestVideoSource(
+    video.cloudinary_public_id || null,
+    video.optimized_video_url || null,
+    video.stream_url || null,
+    video.video_url
   );
-
-  const activeSource = sourceCandidates[Math.min(activeSourceIndex, sourceCandidates.length - 1)] || sourceCandidates[0];
-  const videoSrc = activeSource?.url || video.video_url;
-  const sourceType = activeSource?.type || 'original';
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
 
-  const isDebugPlaybackEnabled = import.meta.env.DEV ||
-    (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('algoDebug') === '1');
-
-  const clearStartupTimers = useCallback(() => {
-    if (startupWatchdogRef.current) {
-      clearTimeout(startupWatchdogRef.current);
-      startupWatchdogRef.current = null;
-    }
-    if (startupWaitingFallbackRef.current) {
-      clearTimeout(startupWaitingFallbackRef.current);
-      startupWaitingFallbackRef.current = null;
+  const clearStartupTimeout = useCallback(() => {
+    if (startupTimeoutRef.current) {
+      clearTimeout(startupTimeoutRef.current);
+      startupTimeoutRef.current = null;
     }
   }, []);
 
-  const logStartupSample = useCallback((status: 'success' | 'failure', ttffMs: number | null) => {
-    if (!isDebugPlaybackEnabled) return;
-    console.log('[Startup]', {
-      videoId: video.id,
-      status,
-      sourceType,
-      optimized: sourceType !== 'original',
-      ttffMs,
-      retries: startupRetriesRef.current,
-      stalls: startupStallsRef.current,
-      fastStart: ttffMs !== null ? ttffMs <= 2000 : false,
-    });
-  }, [isDebugPlaybackEnabled, video.id, sourceType]);
-
-  const tryNextSource = useCallback((reason: string) => {
-    if (startupSettledRef.current) return false;
-    if (activeSourceIndex >= sourceCandidates.length - 1) return false;
-
-    startupRetriesRef.current += 1;
-    setActiveSourceIndex((prev) => Math.min(prev + 1, sourceCandidates.length - 1));
-
-    if (isDebugPlaybackEnabled) {
-      console.log('[Startup] Switching source', {
-        videoId: video.id,
-        reason,
-        fromIndex: activeSourceIndex,
-        toIndex: Math.min(activeSourceIndex + 1, sourceCandidates.length - 1),
-      });
-    }
-    return true;
-  }, [activeSourceIndex, sourceCandidates.length, isDebugPlaybackEnabled, video.id]);
-
   useEffect(() => {
-    setActiveSourceIndex(0);
     retryCountRef.current = 0;
-    startupCycleInitializedRef.current = false;
-    startupSettledRef.current = false;
-    startupRetriesRef.current = 0;
-    startupStallsRef.current = 0;
-    clearStartupTimers();
-  }, [video.id, clearStartupTimers]);
+    clearStartupTimeout();
+    setPlaybackFailed(false);
+  }, [video.id, clearStartupTimeout]);
 
 
   // Sync with global mute state
