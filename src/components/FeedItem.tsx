@@ -527,27 +527,19 @@ export const FeedItem = memo(({
       className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
       data-video-index={index}
     >
-      {/* Poster image as background - hidden once video is playing */}
-      {(!isActive || !hasStartedPlaying) && (
-        <img 
-          src={posterSrc} 
-          alt="" 
-          className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
-          style={{ paddingBottom: navOffset }}
-        />
-      )}
+      {/* Poster image as background - always present to prevent black flashes */}
+      <img 
+        src={posterSrc} 
+        alt="" 
+        className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
+        style={{ paddingBottom: navOffset }}
+      />
 
-      {/* Video player - overlays poster */}
-      {/* Loading strategy:
-           active = src set + preload="auto" (full buffer + play)
-           shouldPreload (next) = src set + preload="auto" (aggressive buffer)
-           shouldPreloadMeta (next+1) = src set + preload="metadata" (headers only)
-           everything else = no src (poster only) */}
+      {/* Video player - fades in over poster once playing */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-contain transition-opacity duration-150"
+        className="absolute inset-0 w-full h-full object-contain bg-black"
         src={shouldAttachSource ? videoSrc : undefined}
-        poster={posterSrc}
         loop
         playsInline
         muted={isMuted}
@@ -555,7 +547,8 @@ export const FeedItem = memo(({
         aria-hidden={!isActive}
         style={{
           paddingBottom: navOffset,
-          opacity: isActive ? 1 : 0,
+          opacity: isActive && hasStartedPlaying ? 1 : 0,
+          transition: 'opacity 150ms ease',
         }}
         onClick={handleVideoTap}
         onTimeUpdate={handleTimeUpdate}
