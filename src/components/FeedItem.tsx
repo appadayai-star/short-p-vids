@@ -559,10 +559,12 @@ export const FeedItem = memo(({
               opacity: isActive && hasStartedPlaying ? 1 : 0,
               transition: 'opacity 150ms ease',
             }}
-        onClick={handleVideoTap}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-      />
+            onClick={handleVideoTap}
+            onTimeUpdate={handleTimeUpdate}
+            onLoadedMetadata={handleLoadedMetadata}
+          />
+        </div>
+      </div>
 
       {/* Double-tap heart animation */}
       {doubleTapHearts.map(heart => (
