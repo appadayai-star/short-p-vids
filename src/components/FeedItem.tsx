@@ -199,18 +199,21 @@ export const FeedItem = memo(({
     if (!(isActive && hasEntered)) {
       clearStartupTimeout();
       setPlaybackFailed(false);
+      setHasStartedPlaying(false);
       stopWatching();
       videoEl.pause();
       return;
     }
 
     setPlaybackFailed(false);
+    setHasStartedPlaying(false);
     markLoadStart();
     retryCountRef.current = 0;
 
     const handlePlaying = () => {
       clearStartupTimeout();
       setPlaybackFailed(false);
+      setHasStartedPlaying(true);
     };
 
     const handleError = () => {
