@@ -96,28 +96,38 @@ const Categories = () => {
           Most Popular 🔥
         </h2>
 
-        <div className="grid grid-cols-2 gap-4">
-          {categories.map((category) => (
-            <button
-              key={category.id}
-              onClick={async () => {
-                // Track category click
-                const sessionId = sessionStorage.getItem("session_id") || crypto.randomUUID();
-                sessionStorage.setItem("session_id", sessionId);
-                await supabase.from("category_clicks").insert({
-                  category: category.id,
-                  user_id: user?.id || null,
-                  session_id: sessionId,
-                });
-                navigate(`/?category=${encodeURIComponent(category.id)}`);
-              }}
-              className="aspect-square bg-white/5 rounded-2xl border-2 border-white/10 hover:border-primary transition-colors flex items-center justify-center group"
-            >
-              <span className="text-xl font-semibold text-white group-hover:text-primary transition-colors">
-                {category.name}
-              </span>
-            </button>
-          ))}
+        {loading ? (
+          <div className="grid grid-cols-2 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="aspect-square bg-white/5 rounded-2xl border-2 border-white/10 animate-pulse" />
+            ))}
+          </div>
+        ) : categories.length === 0 ? (
+          <p className="text-white/50 text-center py-8">No categories available yet.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={async () => {
+                  const sessionId = sessionStorage.getItem("session_id") || crypto.randomUUID();
+                  sessionStorage.setItem("session_id", sessionId);
+                  await supabase.from("category_clicks").insert({
+                    category: category.id,
+                    user_id: user?.id || null,
+                    session_id: sessionId,
+                  });
+                  navigate(`/?category=${encodeURIComponent(category.id)}`);
+                }}
+                className="aspect-square bg-white/5 rounded-2xl border-2 border-white/10 hover:border-primary transition-colors flex items-center justify-center group"
+              >
+                <span className="text-xl font-semibold text-white group-hover:text-primary transition-colors">
+                  {category.name}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         </div>
       </div>
 
