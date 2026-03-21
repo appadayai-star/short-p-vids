@@ -539,14 +539,19 @@ export const FeedItem = memo(({
            everything else = no src (poster only) */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-contain bg-black"
+        className="absolute inset-0 w-full h-full object-contain transition-opacity duration-150"
         style={{ paddingBottom: navOffset }}
-        src={isActive || shouldPreload || shouldPreloadMeta ? videoSrc : undefined}
+        src={shouldAttachSource ? videoSrc : undefined}
         poster={posterSrc}
         loop
         playsInline
         muted={isMuted}
         preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
+        aria-hidden={!isActive}
+        style={{
+          paddingBottom: navOffset,
+          opacity: isActive ? 1 : 0,
+        }}
         onClick={handleVideoTap}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
@@ -572,7 +577,7 @@ export const FeedItem = memo(({
       ))}
 
       {/* Playback failed - retry UI - pointer-events only on button */}
-      {playbackFailed && (
+      {playbackFailed && isActive && (
         <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30 pointer-events-none">
           <button 
             onClick={handleRetry}
