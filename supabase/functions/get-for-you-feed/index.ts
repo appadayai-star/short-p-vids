@@ -167,7 +167,7 @@ serve(async (req) => {
     const [watchResult, shareResult] = await Promise.all([
       supabaseClient
         .from("video_views")
-        .select("video_id, watch_completion_percent, watch_duration_seconds")
+        .select("video_id, watch_completion_percent, watch_duration_seconds, time_to_first_frame_ms")
         .in("video_id", videoIds)
         .gte("viewed_at", sevenDaysAgo.toISOString()),
       supabaseClient
@@ -181,14 +181,30 @@ serve(async (req) => {
     interface WatchBucket {
       completions: number[];
       durations: number[];
+      ttffMs: number[];
       earlySkips: number;     // watched ≤2s
       hookPasses: number;     // watched >2s
+      fastStarts: number;     // TTFF <= 2000ms
+      slowStarts: number;     // TTFF > 2000ms
+      stallStarts: number;    // TTFF > 8000ms
+      retryProxyStarts: number; // proxy for retry-heavy starts
       totalViews: number;
     }
     const watchByVideo = new Map<string, WatchBucket>();
     for (const row of (watchResult.data || [])) {
       if (!watchByVideo.has(row.video_id)) {
-        watchByVideo.set(row.video_id, { completions: [], durations: [], earlySkips: 0, hookPasses: 0, totalViews: 0 });
+        watchByVideo.set(row.video_id, {
+          completions: [],
+          durations: [],
+          ttffMs: [],
+          earlySkips: 0,
+          hookPasses: 0,
+          fastStarts: 0,
+          slowStarts: 0,
+          stallStarts: 0,
+          retryProxyStarts: 0,
+          totalViews: 0,
+        });
       }
       const entry = watchByVideo.get(row.video_id)!;
       entry.totalViews++;
@@ -206,6 +222,15 @@ serve(async (req) => {
           entry.durations.push(row.watch_duration_seconds);
         }
       }
+
+      if (row.time_to_first_frame_ms != null && row.time_to_first_frame_ms > 0) {
+        const ttff = row.time_to_first_frame_ms;
+        entry.ttffMs.push(ttff);
+        if (ttff <= 2000) entry.fastStarts++;
+        if (ttff > 2000) entry.slowStarts++;
+        if (ttff > 3500) entry.retryProxyStarts++;
+        if (ttff > 8000) entry.stallStarts++;
+      }
     }
 
     const sharesByVideo = new Map<string, number>();
@@ -222,6 +247,12 @@ serve(async (req) => {
       early_skip_rate: number;
       hook_rate: number;         // % of viewers who watch past 2s
       rewatch_signal: number;
+      avg_ttff_ms: number;
+      fast_start_rate: number;
+      slow_start_rate: number;
+      stall_rate: number;
+      retry_rate: number;
+      startup_samples: number;
       is_top_performer: boolean; // top ~15% by retention
     }
 
@@ -244,6 +275,14 @@ serve(async (req) => {
       const hookRate = wd && wd.totalViews >= 3
         ? wd.hookPasses / wd.totalViews : -1; // -1 = no data
 
+      const startupSamples = wd?.ttffMs.length || 0;
+      const avgTtffMs = startupSamples > 0
+        ? wd!.ttffMs.reduce((a, b) => a + b, 0) / startupSamples : -1;
+      const fastStartRate = startupSamples >= 3 ? wd!.fastStarts / startupSamples : -1;
+      const slowStartRate = startupSamples >= 3 ? wd!.slowStarts / startupSamples : 0;
+      const stallRate = startupSamples >= 3 ? wd!.stallStarts / startupSamples : 0;
+      const retryRate = startupSamples >= 3 ? wd!.retryProxyStarts / startupSamples : 0;
+
       const rewatchSignal = avgCompletion > 80 ? Math.min((avgCompletion - 80) / 50, 1) : 0;
 
       metricsMap.set(videoId, {
@@ -254,6 +293,12 @@ serve(async (req) => {
         early_skip_rate: earlySkipRate,
         hook_rate: hookRate,
         rewatch_signal: rewatchSignal,
+        avg_ttff_ms: avgTtffMs,
+        fast_start_rate: fastStartRate,
+        slow_start_rate: slowStartRate,
+        stall_rate: stallRate,
+        retry_rate: retryRate,
+        startup_samples: startupSamples,
         is_top_performer: false, // set below
       });
 
@@ -378,6 +423,20 @@ serve(async (req) => {
         sharesScore = metrics.share_count / maxShares;
       }
 
+      // Startup reliability score from TTFF and stall proxies
+      let startupReliabilityScore = 0.5;
+      if (metrics && metrics.startup_samples >= 3) {
+        const fastRate = Math.max(metrics.fast_start_rate, 0);
+        const slowPenalty = metrics.slow_start_rate * 0.55;
+        const stallPenalty = metrics.stall_rate * 1.1;
+        const retryPenalty = metrics.retry_rate * 0.35;
+        startupReliabilityScore = Math.max(0, Math.min(1.25, fastRate + 0.25 - slowPenalty - stallPenalty - retryPenalty));
+
+        if (metrics.avg_ttff_ms > 0 && metrics.avg_ttff_ms < 900) {
+          startupReliabilityScore = Math.min(startupReliabilityScore + 0.12, 1.25);
+        }
+      }
+
       // === TOP PERFORMER BOOST (Goal #1: concentrate impressions on winners) ===
       let topPerformerBoost = 0;
       if (metrics?.is_top_performer) {
@@ -466,14 +525,37 @@ serve(async (req) => {
 
       // Quality bonus: strongly prefer videos with optimized assets (faster loading)
       let qualityBonus = 0;
+      const sourceType = video.optimized_video_url
+        ? 'optimized'
+        : video.cloudinary_public_id
+          ? 'cloudinary'
+          : 'original';
+
       if (video.optimized_video_url) {
-        qualityBonus = 0.08; // strong bonus for pre-processed video
+        qualityBonus = 0.1; // strong bonus for pre-processed video
       } else if (video.cloudinary_public_id) {
-        qualityBonus = 0.05; // decent bonus for Cloudinary-available
+        qualityBonus = 0.03; // neutral/slight boost for Cloudinary fallback
       }
       // Penalty for completely unprocessed videos
       if (!video.optimized_video_url && !video.cloudinary_public_id) {
-        qualityBonus = -0.05; // downrank unprocessed content
+        qualityBonus = -0.2; // downrank unprocessed content hard
+      }
+
+      // Penalize assets with consistently poor startup behavior
+      let startupPenalty = 0;
+      if (metrics && metrics.startup_samples >= 3) {
+        if (metrics.fast_start_rate >= 0 && metrics.fast_start_rate < 0.45) {
+          startupPenalty -= 0.12;
+        }
+        if (metrics.avg_ttff_ms >= 2500) {
+          startupPenalty -= 0.14;
+        }
+        if (metrics.avg_ttff_ms >= 5000) {
+          startupPenalty -= 0.2;
+        }
+        if (metrics.stall_rate > 0.18) {
+          startupPenalty -= 0.22;
+        }
       }
 
       // === VIEWED PENALTY (Goal #2: reduce for top performers) ===
@@ -492,6 +574,7 @@ serve(async (req) => {
       // Completion:  28% — primary retention signal
       // Watch time:  22% — engagement depth
       // Hook:        15% — first impression quality (NEW)
+      // Startup:     10% — playback reliability under 2s
       // Affinity:    10% — personalization
       // Likes:        8% — social proof
       // Shares:       6% — viral signal
@@ -502,6 +585,7 @@ serve(async (req) => {
       const wCompletion  = 0.28 * completionScore;
       const wWatchTime   = 0.22 * watchTimeScore;
       const wHook        = 0.15 * hookScore;
+      const wStartup     = 0.10 * startupReliabilityScore;
       const wAffinity    = 0.10 * Math.min(affinityScore, 1);
       const wLikes       = 0.08 * normalizedLikes;
       const wShares      = 0.06 * sharesScore;
@@ -512,6 +596,7 @@ serve(async (req) => {
         wCompletion +
         wWatchTime +
         wHook +
+        wStartup +
         wAffinity +
         wLikes +
         wShares +
@@ -523,6 +608,7 @@ serve(async (req) => {
         loopBoost +
         categoryBoost +
         sessionBoost +
+        startupPenalty +
         earlySkipPenalty +
         lowQualityPenalty +
         viewedPenalty;
@@ -533,6 +619,7 @@ serve(async (req) => {
           completionScore: wCompletion,
           watchTimeScore: wWatchTime,
           hookScore: wHook,
+          startupScore: wStartup,
           affinityScore: wAffinity,
           likesScore: wLikes,
           sharesScore: wShares,
@@ -544,9 +631,11 @@ serve(async (req) => {
           loopBoost,
           categoryBoost,
           sessionBoost,
+          startupPenalty,
           earlySkipPenalty,
           lowQualityPenalty,
           viewedPenalty,
+          sourceType,
         }
       };
     };
@@ -596,6 +685,15 @@ serve(async (req) => {
     const filteredVideos = scoredVideos.filter(v => {
       const m = metricsMap.get(v.id);
       if (!m || m.view_count < 10) return true; // not enough data, keep
+
+      // Remove startup-unreliable videos from distribution until they are reprocessed
+      if (m.startup_samples >= 8) {
+        if ((m.fast_start_rate >= 0 && m.fast_start_rate < 0.3) || m.stall_rate > 0.2 || m.avg_ttff_ms > 6000) {
+          console.log(`[feed] Filtered startup-unreliable video: ${v.id}`);
+          return false;
+        }
+      }
+
       // Remove if avg watch <2.5s AND skip rate >50% AND completion <12%
       if (m.avg_watch_duration >= 0 && m.avg_watch_duration < 2.5 &&
           m.early_skip_rate > 0.5 &&
@@ -695,8 +793,17 @@ serve(async (req) => {
         finalScore: Math.round(v.score * 1000) / 1000,
         isTopPerformer: metricsMap.get(v.id)?.is_top_performer || false,
         hookRate: metricsMap.get(v.id)?.hook_rate ?? -1,
+        avgTtffMs: metricsMap.get(v.id)?.avg_ttff_ms ?? -1,
+        fastStartRate: metricsMap.get(v.id)?.fast_start_rate ?? -1,
+        stallRate: metricsMap.get(v.id)?.stall_rate ?? -1,
+        retryRate: metricsMap.get(v.id)?.retry_rate ?? -1,
+        sourceType: v.breakdown?.sourceType,
+        optimized: !!v.optimized_video_url,
         components: Object.fromEntries(
-          Object.entries(v.breakdown).map(([k, val]) => [k, Math.round((val as number) * 1000) / 1000])
+          Object.entries(v.breakdown).map(([k, val]) => [
+            k,
+            typeof val === 'number' ? Math.round(val * 1000) / 1000 : val
+          ])
         ),
         isViewed: v.isViewed
       }));

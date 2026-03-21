@@ -138,6 +138,13 @@ export const useWatchMetrics = ({
     ttffRecordedRef.current = false;
   }, []);
 
+  // Record startup failure as synthetic slow TTFF so reliability scoring can downrank bad assets
+  const markStartupFailure = useCallback((fallbackTtffMs: number = 10000) => {
+    if (ttffRecordedRef.current) return;
+    ttffRef.current = fallbackTtffMs;
+    ttffRecordedRef.current = true;
+  }, []);
+
   // Setup video event listeners for accurate tracking
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -462,6 +469,7 @@ export const useWatchMetrics = ({
 
   return {
     markLoadStart,
+    markStartupFailure,
     stopWatching,
     sendMetrics,
     getMetrics,

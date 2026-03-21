@@ -78,6 +78,8 @@ Deno.serve(async (req) => {
         title,
         description,
         video_url,
+        optimized_video_url,
+        processing_status,
         thumbnail_url,
         cloudinary_public_id,
         views_count,
@@ -134,6 +136,54 @@ Deno.serve(async (req) => {
       savedCountMap.set(s.video_id, (savedCountMap.get(s.video_id) || 0) + 1);
     });
 
+    // Startup reliability metrics (last 14 days)
+    const startupMetricsMap = new Map<string, {
+      avg_ttff_ms: number;
+      fast_start_rate: number;
+      slow_start_rate: number;
+      stall_rate: number;
+      retry_rate: number;
+      startup_samples: number;
+    }>();
+
+    if (videoIds.length > 0) {
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: startupViews } = await serviceClient
+        .from("video_views")
+        .select("video_id, time_to_first_frame_ms")
+        .in("video_id", videoIds)
+        .gte("viewed_at", fourteenDaysAgo)
+        .not("time_to_first_frame_ms", "is", null);
+
+      const grouped = new Map<string, number[]>();
+      startupViews?.forEach((row) => {
+        if (row.time_to_first_frame_ms == null) return;
+        const values = grouped.get(row.video_id) || [];
+        values.push(row.time_to_first_frame_ms);
+        grouped.set(row.video_id, values);
+      });
+
+      for (const [videoId, ttffValues] of grouped.entries()) {
+        const sampleCount = ttffValues.length;
+        const avg = sampleCount > 0
+          ? Math.round(ttffValues.reduce((sum, n) => sum + n, 0) / sampleCount)
+          : -1;
+        const fast = sampleCount > 0 ? ttffValues.filter((n) => n <= 2000).length / sampleCount : 0;
+        const slow = sampleCount > 0 ? ttffValues.filter((n) => n > 2000).length / sampleCount : 0;
+        const stall = sampleCount > 0 ? ttffValues.filter((n) => n > 8000).length / sampleCount : 0;
+        const retryProxy = sampleCount > 0 ? ttffValues.filter((n) => n > 3500).length / sampleCount : 0;
+
+        startupMetricsMap.set(videoId, {
+          avg_ttff_ms: avg,
+          fast_start_rate: fast,
+          slow_start_rate: slow,
+          stall_rate: stall,
+          retry_rate: retryProxy,
+          startup_samples: sampleCount,
+        });
+      }
+    }
+
     // Get uploader emails from auth
     const { data: authUsers } = await serviceClient.auth.admin.listUsers();
     
@@ -147,12 +197,26 @@ Deno.serve(async (req) => {
       const profile = profileData as { id: string; username: string } | null;
       const savedCount = savedCountMap.get(v.id) || 0;
       const engagement = v.views_count > 0 ? (v.likes_count / v.views_count) * 100 : 0;
+      const startup = startupMetricsMap.get(v.id);
+      const sourceType = v.optimized_video_url
+        ? "optimized"
+        : v.cloudinary_public_id
+          ? "cloudinary"
+          : "original";
+
       return {
         ...v,
         saved_count: savedCount,
         engagement,
         uploader_email: emailMap.get(v.user_id) || "",
         uploader_username: profile?.username || `user_${v.user_id.slice(0, 8)}`,
+        source_type: sourceType,
+        startup_avg_ttff_ms: startup?.avg_ttff_ms ?? -1,
+        startup_fast_start_rate: startup?.fast_start_rate ?? -1,
+        startup_slow_start_rate: startup?.slow_start_rate ?? -1,
+        startup_stall_rate: startup?.stall_rate ?? -1,
+        startup_retry_rate: startup?.retry_rate ?? -1,
+        startup_samples: startup?.startup_samples ?? 0,
       };
     }) || [];
 

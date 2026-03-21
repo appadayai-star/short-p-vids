@@ -43,16 +43,60 @@ export function getBestVideoSource(
   streamUrl: string | null,
   originalVideoUrl: string
 ): string {
+  const looksDynamicCloudinary = (url: string) => {
+    if (!url.includes('res.cloudinary.com')) return false;
+    return url.includes('f_auto') || url.includes('q_auto') || /\/upload\/[a-z0-9_,:]+\//i.test(url);
+  };
+
   // 1. Pre-generated optimized URL (fastest, CDN-cached)
-  if (optimizedVideoUrl) {
+  // If URL looks like on-the-fly transform, prefer canonical public_id URL instead.
+  if (optimizedVideoUrl && !looksDynamicCloudinary(optimizedVideoUrl)) {
     return optimizedVideoUrl;
   }
   // 2. Cloudinary public ID — generate canonical MP4 URL
   if (cloudinaryPublicId) {
     return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${cloudinaryPublicId}.mp4`;
   }
+  // 2b. Dynamic optimized URL fallback if no public id is available
+  if (optimizedVideoUrl) {
+    return optimizedVideoUrl;
+  }
   // 3. Fallback to original (slowest, unoptimized)
   return originalVideoUrl;
+}
+
+export type VideoSourceType = 'optimized' | 'cloudinary' | 'original';
+
+export function getVideoSourceCandidates(
+  cloudinaryPublicId: string | null,
+  optimizedVideoUrl: string | null,
+  streamUrl: string | null,
+  originalVideoUrl: string
+): Array<{ url: string; type: VideoSourceType }> {
+  const seen = new Set<string>();
+  const candidates: Array<{ url: string; type: VideoSourceType }> = [];
+
+  const addCandidate = (url: string | null | undefined, type: VideoSourceType) => {
+    if (!url) return;
+    if (seen.has(url)) return;
+    seen.add(url);
+    candidates.push({ url, type });
+  };
+
+  const primary = getBestVideoSource(cloudinaryPublicId, optimizedVideoUrl, streamUrl, originalVideoUrl);
+  const canonicalCloudinary = cloudinaryPublicId
+    ? `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${cloudinaryPublicId}.mp4`
+    : null;
+
+  addCandidate(
+    primary,
+    primary === originalVideoUrl ? 'original' : primary === canonicalCloudinary ? 'cloudinary' : 'optimized'
+  );
+  addCandidate(canonicalCloudinary, 'cloudinary');
+  addCandidate(optimizedVideoUrl, 'optimized');
+  addCandidate(originalVideoUrl, 'original');
+
+  return candidates;
 }
 
 // Get best thumbnail - ALWAYS returns a valid image URL, never undefined

@@ -16,12 +16,21 @@ interface VideoItem {
   title: string;
   description: string | null;
   video_url: string;
+  optimized_video_url: string | null;
+  processing_status: string | null;
   thumbnail_url: string | null;
   cloudinary_public_id: string | null;
   views_count: number;
   likes_count: number;
   saved_count: number;
   engagement: number;
+  source_type: "optimized" | "cloudinary" | "original";
+  startup_avg_ttff_ms: number;
+  startup_fast_start_rate: number;
+  startup_slow_start_rate: number;
+  startup_stall_rate: number;
+  startup_retry_rate: number;
+  startup_samples: number;
   created_at: string;
   user_id: string;
   uploader_email: string;
@@ -206,6 +215,11 @@ export const AdminVideos = () => {
     return `${((likes / views) * 100).toFixed(1)}%`;
   };
 
+  const formatPercent = (value: number) => {
+    if (value < 0) return "—";
+    return `${Math.round(value * 100)}%`;
+  };
+
   const allPageSelected = videos.length > 0 && videos.every(v => selectedIds.has(v.id));
   const somePageSelected = videos.some(v => selectedIds.has(v.id));
   const totalPages = Math.ceil(total / limit);
@@ -268,14 +282,18 @@ export const AdminVideos = () => {
               <TableHead className="text-center"><Heart className="h-4 w-4 mx-auto" /></TableHead>
               <TableHead className="text-center"><Bookmark className="h-4 w-4 mx-auto" /></TableHead>
               <TableHead className="text-center"><Percent className="h-4 w-4 mx-auto" /></TableHead>
+              <TableHead className="hidden xl:table-cell text-center">Source</TableHead>
+              <TableHead className="hidden xl:table-cell text-center">TTFF</TableHead>
+              <TableHead className="hidden 2xl:table-cell text-center">Fast&lt;2s</TableHead>
+              <TableHead className="hidden 2xl:table-cell text-center">Stall</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && videos.length === 0 ? (
-              <TableRow><TableCell colSpan={9} className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>
+              <TableRow><TableCell colSpan={13} className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>
             ) : videos.length === 0 ? (
-              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No videos found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">No videos found</TableCell></TableRow>
             ) : (
               videos.map((video) => (
                 <TableRow key={video.id} className={loading ? "opacity-50" : ""}>
@@ -291,6 +309,14 @@ export const AdminVideos = () => {
                   <TableCell className="text-center">{video.likes_count}</TableCell>
                   <TableCell className="text-center">{video.saved_count}</TableCell>
                   <TableCell className="text-center">{getViewLikeRatio(video.views_count, video.likes_count)}</TableCell>
+                  <TableCell className="hidden xl:table-cell text-center">
+                    <span className="text-xs capitalize">{video.source_type}</span>
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell text-center">
+                    {video.startup_samples > 0 ? `${video.startup_avg_ttff_ms}ms` : "—"}
+                  </TableCell>
+                  <TableCell className="hidden 2xl:table-cell text-center">{formatPercent(video.startup_fast_start_rate)}</TableCell>
+                  <TableCell className="hidden 2xl:table-cell text-center">{formatPercent(video.startup_stall_rate)}</TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" onClick={() => setDeleteVideo(video)} className="text-destructive hover:text-destructive hover:bg-destructive/10">
                       <Trash2 className="h-4 w-4" />
