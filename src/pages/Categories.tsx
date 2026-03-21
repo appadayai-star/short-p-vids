@@ -128,7 +128,6 @@ const Categories = () => {
             ))}
           </div>
         )}
-        </div>
       </div>
 
       <BottomNav 
