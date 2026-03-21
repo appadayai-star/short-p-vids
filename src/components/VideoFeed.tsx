@@ -370,7 +370,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
               cursor: null,
               limit: PAGE_SIZE, 
               sessionViewedIds,
-              categoryFilter
+              categoryFilter,
+              sessionWatchData: getSessionWatchData()
             }
           });
 
