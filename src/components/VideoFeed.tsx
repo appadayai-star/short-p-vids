@@ -286,7 +286,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.25) {
               const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
               const jumped = Math.abs(idx - lastActiveIndexRef.current);
               lastActiveIndexRef.current = idx;
@@ -313,13 +313,54 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             }
           });
         },
-        { threshold: [0.4, 0.6, 0.8], root: container }
+        { threshold: [0.25, 0.5, 0.75], root: container }
       );
       observer.observe(item);
       observers.push(observer);
     });
 
-    return () => { observers.forEach(obs => obs.disconnect()); };
+    // Scroll-settle fallback: after scroll ends, check which item is most visible
+    // This catches edge cases where IntersectionObserver misses the final position
+    const detectActiveFromScroll = () => {
+      const containerRect = container.getBoundingClientRect();
+      const containerCenter = containerRect.top + containerRect.height / 2;
+      let bestIdx = -1;
+      let bestDist = Infinity;
+
+      items.forEach((item) => {
+        const rect = item.getBoundingClientRect();
+        const itemCenter = rect.top + rect.height / 2;
+        const dist = Math.abs(itemCenter - containerCenter);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = parseInt((item as HTMLElement).dataset.videoIndex || '0', 10);
+        }
+      });
+
+      if (bestIdx >= 0 && bestIdx !== lastActiveIndexRef.current) {
+        lastActiveIndexRef.current = bestIdx;
+        setActiveIndex(bestIdx);
+        setIsScrollSettled(true);
+        if (videos[bestIdx]) addSessionViewedId(videos[bestIdx].id);
+      } else if (bestIdx >= 0) {
+        // Same index but ensure it's settled & playing
+        setIsScrollSettled(true);
+      }
+    };
+
+    let scrollEndTimer: ReturnType<typeof setTimeout> | null = null;
+    const handleScroll = () => {
+      if (scrollEndTimer) clearTimeout(scrollEndTimer);
+      scrollEndTimer = setTimeout(detectActiveFromScroll, 150);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      observers.forEach(obs => obs.disconnect());
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollEndTimer) clearTimeout(scrollEndTimer);
+    };
   }, [videos]);
 
   // Load more
