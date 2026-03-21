@@ -103,9 +103,40 @@ const addSessionViewedId = (videoId: string) => {
   try {
     const viewed = new Set(getSessionViewedIds());
     viewed.add(videoId);
-    // Keep only last 100 to prevent storage bloat
     const arr = Array.from(viewed).slice(-100);
     sessionStorage.setItem('session_viewed_videos', JSON.stringify(arr));
+  } catch {}
+};
+
+// Session watch data for mid-session adaptation
+interface SessionWatchEntry {
+  videoId: string;
+  watchDuration: number;
+  tags: string[];
+}
+
+const getSessionWatchData = (): SessionWatchEntry[] => {
+  try {
+    const data = sessionStorage.getItem('session_watch_data');
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+};
+
+const addSessionWatchData = (entry: SessionWatchEntry) => {
+  try {
+    const data = getSessionWatchData();
+    // Update existing or add new
+    const existing = data.findIndex(e => e.videoId === entry.videoId);
+    if (existing >= 0) {
+      data[existing] = entry;
+    } else {
+      data.push(entry);
+    }
+    // Keep last 30 entries
+    const trimmed = data.slice(-30);
+    sessionStorage.setItem('session_watch_data', JSON.stringify(trimmed));
   } catch {}
 };
 
@@ -248,7 +279,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
               cursor: null,
               limit: PAGE_SIZE, 
               sessionViewedIds,
-              categoryFilter: categoryFilter || null
+              categoryFilter: categoryFilter || null,
+              sessionWatchData: getSessionWatchData()
             }
           });
 
@@ -338,7 +370,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
               cursor: null,
               limit: PAGE_SIZE, 
               sessionViewedIds,
-              categoryFilter
+              categoryFilter,
+              sessionWatchData: getSessionWatchData()
             }
           });
 
@@ -382,8 +415,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
                   addSessionViewedId(videos[idx].id);
                 }
                 
-                // Preload next video immediately
+                // Preload next 2 videos immediately
                 preloadNextVideo(idx + 1);
+                preloadNextVideo(idx + 2);
               }
             }
           });
@@ -448,7 +482,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
               cursor: cursorRef.current, 
               limit: PAGE_SIZE, 
               sessionViewedIds,
-              categoryFilter: categoryFilter || null
+              categoryFilter: categoryFilter || null,
+              sessionWatchData: getSessionWatchData()
             }
           });
 
@@ -471,10 +506,20 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     loadMore();
   }, [activeIndex, feedEntries.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
 
-  // Track view locally to prevent duplicate fetches - actual metrics are handled by useWatchMetrics
-  const handleViewTracked = useCallback((videoId: string) => {
+  // Track view locally and record session watch data for mid-session adaptation
+  const handleViewTracked = useCallback((videoId: string, watchDuration?: number) => {
     addSessionViewedId(videoId);
-  }, []);
+    
+    // Record watch data for session adaptation
+    const video = videos.find(v => v.id === videoId);
+    if (video && watchDuration !== undefined) {
+      addSessionWatchData({
+        videoId,
+        watchDuration,
+        tags: video.tags || [],
+      });
+    }
+  }, [videos]);
 
   const handleRetry = () => {
     window.location.reload();
@@ -555,7 +600,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             video={entry.data}
             index={index}
             isActive={index === activeIndex}
-            shouldPreload={Math.abs(index - activeIndex) <= 1}
+            shouldPreload={Math.abs(index - activeIndex) <= 2}
             hasEntered={hasEntered}
             currentUserId={userId}
             onViewTracked={handleViewTracked}
