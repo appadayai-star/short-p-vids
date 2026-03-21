@@ -395,6 +395,10 @@ serve(async (req) => {
           // Normalize relative to video duration — a 7s video watched 6s = great
           const relativeWatch = metrics.avg_watch_duration / videoDuration;
           watchTimeScore = Math.min(relativeWatch, 1.5); // allow >1 for loops
+          // Extra bonus for high % watched on short videos (fairness)
+          if (videoDuration <= 12 && relativeWatch > 0.7) {
+            watchTimeScore = Math.min(watchTimeScore * 1.2, 1.6);
+          }
         } else {
           // Fallback: absolute, but cap at 20s
           watchTimeScore = Math.min(metrics.avg_watch_duration / 20, 1);
