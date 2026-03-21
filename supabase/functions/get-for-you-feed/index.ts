@@ -574,26 +574,25 @@ serve(async (req) => {
         }
       }
 
-      // === WEIGHT DISTRIBUTION v2 (retention-maximized) ===
-      // Completion:  28% — primary retention signal
+      // === WEIGHT DISTRIBUTION v2.1 (retention-maximized, hook-boosted) ===
+      // Completion:  26% — primary retention signal
       // Watch time:  22% — engagement depth
-      // Hook:        15% — first impression quality (NEW)
-      // Startup:     10% — playback reliability under 2s
+      // Hook:        18% — first impression quality (increased)
+      // Startup:      9% — playback reliability
       // Affinity:    10% — personalization
-      // Likes:        8% — social proof
+      // Likes:        7% — social proof
       // Shares:       6% — viral signal
-      // Recency:      6% — freshness
+      // Recency:      5% — freshness
       // Views:        2% — popularity
-      // Remaining ~3%: quality/exploration
 
-      const wCompletion  = 0.28 * completionScore;
+      const wCompletion  = 0.26 * completionScore;
       const wWatchTime   = 0.22 * watchTimeScore;
-      const wHook        = 0.15 * hookScore;
-      const wStartup     = 0.10 * startupReliabilityScore;
+      const wHook        = 0.18 * hookScore;
+      const wStartup     = 0.09 * startupReliabilityScore;
       const wAffinity    = 0.10 * Math.min(affinityScore, 1);
-      const wLikes       = 0.08 * normalizedLikes;
+      const wLikes       = 0.07 * normalizedLikes;
       const wShares      = 0.06 * sharesScore;
-      const wRecency     = 0.06 * recencyScore;
+      const wRecency     = 0.05 * recencyScore;
       const wViews       = 0.02 * normalizedViews;
 
       const score =
