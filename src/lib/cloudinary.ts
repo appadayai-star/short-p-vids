@@ -18,8 +18,8 @@ export function getStreamUrl(publicId: string): string {
 }
 
 export function getThumbnailUrl(publicId: string): string {
-  // Optimized thumbnail from Cloudinary
-  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_fill,g_auto,f_auto,q_auto,so_0/${publicId}.jpg`;
+  // 9:16 letterboxed thumbnail (no crop) so poster matches video framing exactly
+  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_pad,b_black,f_auto,q_auto,so_0/${publicId}.jpg`;
   // Debug: log the first generated URL
   if (typeof window !== 'undefined' && !(window as any).__thumbnailLogged) {
     console.log('[Cloudinary] Generated thumbnail URL:', url);

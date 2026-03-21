@@ -527,33 +527,44 @@ export const FeedItem = memo(({
       className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
       data-video-index={index}
     >
-      {/* Poster image as background - always present to prevent black flashes */}
-      <img 
-        src={posterSrc} 
-        alt="" 
-        className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
+      {/* Fixed 9:16 media stage so thumbnail and video are always identical framing */}
+      <div
+        className="absolute inset-0 flex items-center justify-center bg-black"
         style={{ paddingBottom: navOffset }}
-      />
+      >
+        <div
+          className="relative overflow-hidden bg-black"
+          style={{
+            width: `min(100%, calc((100dvh - ${navOffset}) * 9 / 16))`,
+            aspectRatio: "9 / 16",
+          }}
+        >
+          <img
+            src={posterSrc}
+            alt=""
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
+          />
 
-      {/* Video player - fades in over poster once playing */}
-      <video
-        ref={videoRef}
-        className="absolute inset-0 w-full h-full object-contain bg-black"
-        src={shouldAttachSource ? videoSrc : undefined}
-        loop
-        playsInline
-        muted={isMuted}
-        preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
-        aria-hidden={!isActive}
-        style={{
-          paddingBottom: navOffset,
-          opacity: isActive && hasStartedPlaying ? 1 : 0,
-          transition: 'opacity 150ms ease',
-        }}
-        onClick={handleVideoTap}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-      />
+          {/* Video player - fades in over poster once playing */}
+          <video
+            ref={videoRef}
+            className="absolute inset-0 w-full h-full object-contain bg-black"
+            src={shouldAttachSource ? videoSrc : undefined}
+            loop
+            playsInline
+            muted={isMuted}
+            preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
+            aria-hidden={!isActive}
+            style={{
+              opacity: isActive && hasStartedPlaying ? 1 : 0,
+              transition: 'opacity 150ms ease',
+            }}
+            onClick={handleVideoTap}
+            onTimeUpdate={handleTimeUpdate}
+            onLoadedMetadata={handleLoadedMetadata}
+          />
+        </div>
+      </div>
 
       {/* Double-tap heart animation */}
       {doubleTapHearts.map(heart => (
