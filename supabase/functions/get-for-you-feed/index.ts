@@ -800,7 +800,10 @@ serve(async (req) => {
         sourceType: v.breakdown?.sourceType,
         optimized: !!v.optimized_video_url,
         components: Object.fromEntries(
-          Object.entries(v.breakdown).map(([k, val]) => [k, Math.round((val as number) * 1000) / 1000])
+          Object.entries(v.breakdown).map(([k, val]) => [
+            k,
+            typeof val === 'number' ? Math.round(val * 1000) / 1000 : val
+          ])
         ),
         isViewed: v.isViewed
       }));
