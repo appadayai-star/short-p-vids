@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, memo, useCallback } from "react";
+import { useState, useEffect, useRef, memo, useCallback, useMemo } from "react";
 import { Heart, Share2, Bookmark, MoreVertical, Trash2, Volume2, VolumeX, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { getVideoSourceCandidates, getBestThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import {
   DropdownMenu,
@@ -98,6 +98,7 @@ export const FeedItem = memo(({
   // Watch metrics tracking - hook handles TTFF and watch time via event listeners
   const {
     markLoadStart,
+    markStartupFailure,
     stopWatching,
     getMetrics,
   } = useWatchMetrics({
@@ -121,6 +122,7 @@ export const FeedItem = memo(({
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
+  const [activeSourceIndex, setActiveSourceIndex] = useState(0);
   
   // Progress bar state
   const [progress, setProgress] = useState(0);
@@ -131,15 +133,84 @@ export const FeedItem = memo(({
   const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startupCycleInitializedRef = useRef(false);
+  const startupSettledRef = useRef(false);
+  const startupStartTimeRef = useRef(0);
+  const startupRetriesRef = useRef(0);
+  const startupStallsRef = useRef(0);
+  const startupWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startupWaitingFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Video sources - ALWAYS have a poster
-  const videoSrc = getBestVideoSource(
-    video.cloudinary_public_id || null,
-    video.optimized_video_url || null,
-    video.stream_url || null,
-    video.video_url
+  const sourceCandidates = useMemo(
+    () => getVideoSourceCandidates(
+      video.cloudinary_public_id || null,
+      video.optimized_video_url || null,
+      video.stream_url || null,
+      video.video_url
+    ),
+    [video.cloudinary_public_id, video.optimized_video_url, video.stream_url, video.video_url]
   );
+
+  const activeSource = sourceCandidates[Math.min(activeSourceIndex, sourceCandidates.length - 1)] || sourceCandidates[0];
+  const videoSrc = activeSource?.url || video.video_url;
+  const sourceType = activeSource?.type || 'original';
   const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+
+  const isDebugPlaybackEnabled = import.meta.env.DEV ||
+    (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('algoDebug') === '1');
+
+  const clearStartupTimers = useCallback(() => {
+    if (startupWatchdogRef.current) {
+      clearTimeout(startupWatchdogRef.current);
+      startupWatchdogRef.current = null;
+    }
+    if (startupWaitingFallbackRef.current) {
+      clearTimeout(startupWaitingFallbackRef.current);
+      startupWaitingFallbackRef.current = null;
+    }
+  }, []);
+
+  const logStartupSample = useCallback((status: 'success' | 'failure', ttffMs: number | null) => {
+    if (!isDebugPlaybackEnabled) return;
+    console.log('[Startup]', {
+      videoId: video.id,
+      status,
+      sourceType,
+      optimized: sourceType !== 'original',
+      ttffMs,
+      retries: startupRetriesRef.current,
+      stalls: startupStallsRef.current,
+      fastStart: ttffMs !== null ? ttffMs <= 2000 : false,
+    });
+  }, [isDebugPlaybackEnabled, video.id, sourceType]);
+
+  const tryNextSource = useCallback((reason: string) => {
+    if (startupSettledRef.current) return false;
+    if (activeSourceIndex >= sourceCandidates.length - 1) return false;
+
+    startupRetriesRef.current += 1;
+    setActiveSourceIndex((prev) => Math.min(prev + 1, sourceCandidates.length - 1));
+
+    if (isDebugPlaybackEnabled) {
+      console.log('[Startup] Switching source', {
+        videoId: video.id,
+        reason,
+        fromIndex: activeSourceIndex,
+        toIndex: Math.min(activeSourceIndex + 1, sourceCandidates.length - 1),
+      });
+    }
+    return true;
+  }, [activeSourceIndex, sourceCandidates.length, isDebugPlaybackEnabled, video.id]);
+
+  useEffect(() => {
+    setActiveSourceIndex(0);
+    retryCountRef.current = 0;
+    startupCycleInitializedRef.current = false;
+    startupSettledRef.current = false;
+    startupRetriesRef.current = 0;
+    startupStallsRef.current = 0;
+    clearStartupTimers();
+  }, [video.id, clearStartupTimers]);
 
 
   // Sync with global mute state
@@ -156,6 +227,29 @@ export const FeedItem = memo(({
     };
   }, []);
 
+  // Hard-cancel non-priority video requests (not active, not preloaded)
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    const isPriority = isActive || shouldPreload || shouldPreloadMeta;
+    if (!isPriority) {
+      clearStartupTimers();
+      startupCycleInitializedRef.current = false;
+      startupSettledRef.current = false;
+      startupRetriesRef.current = 0;
+      startupStallsRef.current = 0;
+      stopWatching();
+      videoEl.pause();
+      try {
+        videoEl.removeAttribute('src');
+        videoEl.load();
+      } catch {
+        // best effort cancellation
+      }
+    }
+  }, [isActive, shouldPreload, shouldPreloadMeta, stopWatching, clearStartupTimers]);
+
   // Play/pause based on isActive - metrics tracked via event listeners in hook
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -163,42 +257,120 @@ export const FeedItem = memo(({
 
     if (isActive && hasEntered) {
       setPlaybackFailed(false);
-      markLoadStart(); // Start TTFF timer
-      videoEl.currentTime = 0;
+
+      if (!startupCycleInitializedRef.current) {
+        startupCycleInitializedRef.current = true;
+        startupSettledRef.current = false;
+        startupStartTimeRef.current = performance.now();
+        startupRetriesRef.current = 0;
+        startupStallsRef.current = 0;
+        markLoadStart();
+        videoEl.currentTime = 0;
+      }
+
+      clearStartupTimers();
+
+      const failStartup = () => {
+        const syntheticTtff = Math.max(10000, Math.round(performance.now() - startupStartTimeRef.current));
+        markStartupFailure(syntheticTtff);
+        setPlaybackFailed(true);
+        logStartupSample('failure', syntheticTtff);
+      };
+
+      const scheduleWatchdog = () => {
+        clearStartupTimers();
+        startupWatchdogRef.current = setTimeout(() => {
+          if (startupSettledRef.current) return;
+          const switched = tryNextSource('startup-timeout');
+          if (!switched) failStartup();
+        }, 2200);
+      };
       
       const attemptPlay = () => {
         videoEl.play().catch((err) => {
           if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
             return;
           }
-          if (err.name === 'NotSupportedError') {
-            retryCountRef.current++;
-            if (retryCountRef.current < 3) {
-              setTimeout(() => {
-                videoEl.load();
-                attemptPlay();
-              }, 500);
+          if (err.name === 'NotSupportedError' || err.name === 'NotReadableError') {
+            const switched = tryNextSource(err.name);
+            if (switched) {
               return;
             }
           }
-          setPlaybackFailed(true);
+
+          retryCountRef.current++;
+          if (retryCountRef.current < 2) {
+            setTimeout(() => {
+              videoEl.load();
+              attemptPlay();
+            }, 250);
+            return;
+          }
+
+          failStartup();
         });
       };
 
+      const handlePlaying = () => {
+        if (startupSettledRef.current) return;
+        startupSettledRef.current = true;
+        const ttffMs = Math.round(performance.now() - startupStartTimeRef.current);
+        clearStartupTimers();
+        logStartupSample('success', ttffMs);
+      };
+
+      const handleWaiting = () => {
+        if (startupSettledRef.current) return;
+        startupStallsRef.current += 1;
+        if (startupWaitingFallbackRef.current) clearTimeout(startupWaitingFallbackRef.current);
+        startupWaitingFallbackRef.current = setTimeout(() => {
+          if (startupSettledRef.current) return;
+          const switched = tryNextSource('waiting-stall');
+          if (!switched) failStartup();
+        }, 900);
+      };
+
+      const handleError = () => {
+        if (startupSettledRef.current) return;
+        const switched = tryNextSource('video-error');
+        if (!switched) failStartup();
+      };
+
       attemptPlay();
+      scheduleWatchdog();
       
       const handleCanPlay = () => attemptPlay();
       videoEl.addEventListener('canplay', handleCanPlay);
+      videoEl.addEventListener('playing', handlePlaying);
+      videoEl.addEventListener('waiting', handleWaiting);
+      videoEl.addEventListener('error', handleError);
       
       return () => {
+        clearStartupTimers();
         videoEl.removeEventListener('canplay', handleCanPlay);
+        videoEl.removeEventListener('playing', handlePlaying);
+        videoEl.removeEventListener('waiting', handleWaiting);
+        videoEl.removeEventListener('error', handleError);
       };
     } else {
+      clearStartupTimers();
+      startupCycleInitializedRef.current = false;
+      startupSettledRef.current = false;
       // Stop watching when scrolling away
       stopWatching();
       videoEl.pause();
     }
-  }, [isActive, hasEntered, markLoadStart, stopWatching]);
+  }, [
+    isActive,
+    hasEntered,
+    markLoadStart,
+    markStartupFailure,
+    stopWatching,
+    tryNextSource,
+    clearStartupTimers,
+    logStartupSample,
+    activeSourceIndex,
+  ]);
 
   // Preload next video when this one is active
   useEffect(() => {
@@ -213,13 +385,19 @@ export const FeedItem = memo(({
     if (!videoEl) return;
     
     retryCountRef.current++;
+    setActiveSourceIndex(0);
+    startupCycleInitializedRef.current = false;
+    startupSettledRef.current = false;
+    startupRetriesRef.current = 0;
+    startupStallsRef.current = 0;
+    clearStartupTimers();
     setPlaybackFailed(false);
     videoEl.src = videoSrc;
     videoEl.load();
     videoEl.play().catch(() => {
       setPlaybackFailed(true);
     });
-  }, [videoSrc]);
+  }, [videoSrc, clearStartupTimers]);
 
   // Check if guest has liked this video
   useEffect(() => {
