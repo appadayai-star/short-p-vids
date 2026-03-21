@@ -122,6 +122,7 @@ export const FeedItem = memo(({
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
+  const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
   
   // Progress bar state
   const [progress, setProgress] = useState(0);
