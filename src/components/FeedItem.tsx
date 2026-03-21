@@ -122,6 +122,7 @@ export const FeedItem = memo(({
   const [isMuted, setIsMuted] = useState(globalMuted);
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
+  const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
   
   // Progress bar state
   const [progress, setProgress] = useState(0);
@@ -198,18 +199,21 @@ export const FeedItem = memo(({
     if (!(isActive && hasEntered)) {
       clearStartupTimeout();
       setPlaybackFailed(false);
+      setHasStartedPlaying(false);
       stopWatching();
       videoEl.pause();
       return;
     }
 
     setPlaybackFailed(false);
+    setHasStartedPlaying(false);
     markLoadStart();
     retryCountRef.current = 0;
 
     const handlePlaying = () => {
       clearStartupTimeout();
       setPlaybackFailed(false);
+      setHasStartedPlaying(true);
     };
 
     const handleError = () => {
@@ -523,13 +527,15 @@ export const FeedItem = memo(({
       className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
       data-video-index={index}
     >
-      {/* Poster image as background - ALWAYS visible until video plays */}
-      <img 
-        src={posterSrc} 
-        alt="" 
-        className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
-        style={{ paddingBottom: navOffset }}
-      />
+      {/* Poster image as background - hidden once video is playing */}
+      {(!isActive || !hasStartedPlaying) && (
+        <img 
+          src={posterSrc} 
+          alt="" 
+          className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
+          style={{ paddingBottom: navOffset }}
+        />
+      )}
 
       {/* Video player - overlays poster */}
       {/* Loading strategy:
