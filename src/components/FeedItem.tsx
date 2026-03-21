@@ -72,6 +72,7 @@ interface FeedItemProps {
   index: number;
   isActive: boolean;
   shouldPreload?: boolean;
+  shouldPreloadMeta?: boolean;
   hasEntered: boolean;
   currentUserId: string | null;
   onViewTracked: (videoId: string, watchDuration?: number) => void;
@@ -83,6 +84,7 @@ export const FeedItem = memo(({
   index,
   isActive,
   shouldPreload = false,
+  shouldPreloadMeta = false,
   hasEntered,
   currentUserId, 
   onViewTracked,
@@ -479,16 +481,21 @@ export const FeedItem = memo(({
       />
 
       {/* Video player - overlays poster */}
+      {/* Loading strategy:
+           active = src set + preload="auto" (full buffer + play)
+           shouldPreload (next) = src set + preload="auto" (aggressive buffer)
+           shouldPreloadMeta (next+1) = src set + preload="metadata" (headers only)
+           everything else = no src (poster only) */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain bg-black"
         style={{ paddingBottom: navOffset }}
-        src={isActive || shouldPreload ? videoSrc : undefined}
+        src={isActive || shouldPreload || shouldPreloadMeta ? videoSrc : undefined}
         poster={posterSrc}
         loop
         playsInline
         muted={isMuted}
-        preload={isActive || shouldPreload ? "auto" : "none"}
+        preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
         onClick={handleVideoTap}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
