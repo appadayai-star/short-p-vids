@@ -71,6 +71,25 @@ export function getBestThumbnailUrl(
   return DEFAULT_PLACEHOLDER;
 }
 
+// Get optimized avatar URL — resize to small dimensions via Cloudinary or query params
+export function getOptimizedAvatarUrl(avatarUrl: string | null, size: number = 80): string {
+  if (!avatarUrl) return '';
+  
+  // If it's a Cloudinary URL, apply transformation
+  if (avatarUrl.includes('res.cloudinary.com')) {
+    // Insert resize transform before the upload path
+    return avatarUrl.replace('/upload/', `/upload/w_${size},h_${size},c_fill,g_face,f_auto,q_auto/`);
+  }
+  
+  // If it's a Supabase storage URL, add render transform
+  if (avatarUrl.includes('supabase.co/storage')) {
+    const separator = avatarUrl.includes('?') ? '&' : '?';
+    return `${avatarUrl}${separator}width=${size}&height=${size}&resize=cover`;
+  }
+  
+  return avatarUrl;
+}
+
 // Preload an image (for warming next thumbnail) - fire and forget
 export function preloadImage(src: string): void {
   if (!src || src === DEFAULT_PLACEHOLDER) return;
