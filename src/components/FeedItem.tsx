@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { getBestVideoSource, getBestThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import {
   DropdownMenu,
