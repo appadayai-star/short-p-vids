@@ -4,7 +4,7 @@ import { FeedItem } from "./FeedItem";
 import { LivestreamAdItem } from "./LivestreamAdItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
-import { getBestThumbnailUrl, preloadImage, getBestVideoSource } from "@/lib/cloudinary";
+import { getBestThumbnailUrl, preloadImage } from "@/lib/cloudinary";
 
 const PAGE_SIZE = 10;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -142,9 +142,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
   const cursorRef = useRef<FeedCursor | null>(null);
-  
-  // Track active preload elements for cancellation
-  const activePreloadsRef = useRef<Map<number, HTMLVideoElement>>(new Map());
 
   // Fetch active ads
   useEffect(() => {
@@ -175,55 +172,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     }
     return entries;
   }, [videos, ads]);
-
-  // === CANCEL stale preloads — only keep preload for currentIdx+1 ===
-  const cancelStalePreloads = useCallback((keepForIdx: number) => {
-    for (const [idx, videoEl] of activePreloadsRef.current.entries()) {
-      if (idx !== keepForIdx + 1) {
-        try { videoEl.src = ''; videoEl.load(); videoEl.remove(); } catch {}
-        activePreloadsRef.current.delete(idx);
-      }
-    }
-  }, []);
-
-  // === SMART PRELOAD: only the immediate next video ===
-  const preloadNextVideo = useCallback((nextIndex: number, currentIdx: number) => {
-    if (nextIndex < 0 || nextIndex >= videos.length) return;
-    if (activePreloadsRef.current.has(nextIndex)) return;
-    
-    cancelStalePreloads(currentIdx);
-    
-    const nextVideo = videos[nextIndex];
-    if (!nextVideo) return;
-    
-    // Thumbnail preload (instant, tiny)
-    const thumb = getBestThumbnailUrl(nextVideo.cloudinary_public_id || null, nextVideo.thumbnail_url);
-    preloadImage(thumb);
-    
-    // Full video preload only for immediate next
-    if (nextIndex === currentIdx + 1) {
-      const videoSrc = getBestVideoSource(
-        nextVideo.cloudinary_public_id || null,
-        nextVideo.optimized_video_url || null,
-        nextVideo.stream_url || null,
-        nextVideo.video_url
-      );
-      
-      const preloadVideo = document.createElement('video');
-      preloadVideo.preload = 'auto';
-      preloadVideo.src = videoSrc;
-      preloadVideo.muted = true;
-      preloadVideo.load();
-      activePreloadsRef.current.set(nextIndex, preloadVideo);
-      
-      const cleanup = () => {
-        activePreloadsRef.current.delete(nextIndex);
-        try { preloadVideo.src = ''; preloadVideo.load(); preloadVideo.remove(); } catch {}
-      };
-      preloadVideo.addEventListener('canplaythrough', cleanup, { once: true });
-      setTimeout(cleanup, 6000);
-    }
-  }, [videos, cancelStalePreloads]);
 
   // Fetch videos
   useEffect(() => {
@@ -351,11 +299,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
                 // Fast scroll — defer playback, show poster only
                 setIsScrollSettled(false);
                 setActiveIndex(idx);
-                cancelStalePreloads(idx);
                 
                 scrollSettleTimerRef.current = setTimeout(() => {
                   setIsScrollSettled(true);
-                  preloadNextVideo(idx + 1, idx);
                   if (videos[idx]) addSessionViewedId(videos[idx].id);
                 }, FAST_SCROLL_SETTLE_MS);
               } else {
@@ -363,7 +309,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
                 setActiveIndex(idx);
                 setIsScrollSettled(true);
                 if (videos[idx]) addSessionViewedId(videos[idx].id);
-                preloadNextVideo(idx + 1, idx);
               }
             }
           });
@@ -375,7 +320,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     });
 
     return () => { observers.forEach(obs => obs.disconnect()); };
-  }, [videos, cancelStalePreloads, preloadNextVideo]);
+  }, [videos]);
 
   // Load more
   useEffect(() => {
@@ -435,16 +380,6 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
   const handleRetry = () => { window.location.reload(); };
 
-  // Cleanup preloads on unmount
-  useEffect(() => {
-    return () => {
-      for (const [, videoEl] of activePreloadsRef.current.entries()) {
-        try { videoEl.src = ''; videoEl.load(); videoEl.remove(); } catch {}
-      }
-      activePreloadsRef.current.clear();
-    };
-  }, []);
-
   if (loading) {
     return (
       <div className="flex flex-col justify-center items-center h-[100dvh] bg-black gap-4">
@@ -482,7 +417,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       style={{ overscrollBehavior: 'none', scrollSnapType: 'y mandatory' }}
     >
       {feedEntries.map((entry, index) => {
-        const isInRange = Math.abs(index - activeIndex) <= 2;
+        const isInRange = isScrollSettled ? Math.abs(index - activeIndex) <= 2 : index === activeIndex;
         const key = entry.type === 'ad' ? `ad-${entry.data.id}-${index}` : entry.data.id;
         
         if (!isInRange) {
@@ -505,8 +440,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         //   active+2 = preload="metadata" (light, headers only)
         //   everything else = no src
         const distFromActive = index - activeIndex;
-        const shouldPreload = distFromActive === 1;
-        const shouldPreloadMeta = distFromActive === 2;
+        const shouldPreload = isScrollSettled && distFromActive === 1;
+        const shouldPreloadMeta = isScrollSettled && distFromActive === 2;
 
         return (
           <FeedItem
