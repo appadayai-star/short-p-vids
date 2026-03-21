@@ -440,7 +440,7 @@ serve(async (req) => {
       // === TOP PERFORMER BOOST (Goal #1: concentrate impressions on winners) ===
       let topPerformerBoost = 0;
       if (metrics?.is_top_performer) {
-        topPerformerBoost = 0.25; // massive bonus for top 15%
+        topPerformerBoost = 0.30; // stronger bonus for top 15% (was 0.25)
       }
 
       // === EARLY SKIP PENALTY (Goal #4/#5: stronger) ===
