@@ -72,6 +72,7 @@ interface FeedItemProps {
   index: number;
   isActive: boolean;
   shouldPreload?: boolean;
+  shouldPreloadMeta?: boolean;
   hasEntered: boolean;
   currentUserId: string | null;
   onViewTracked: (videoId: string, watchDuration?: number) => void;
@@ -83,6 +84,7 @@ export const FeedItem = memo(({
   index,
   isActive,
   shouldPreload = false,
+  shouldPreloadMeta = false,
   hasEntered,
   currentUserId, 
   onViewTracked,
