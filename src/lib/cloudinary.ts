@@ -36,15 +36,22 @@ export function supportsHlsNatively(): boolean {
 }
 
 // Get best video source for playback
-// TEMPORARILY: Skip Cloudinary and use original URLs until reprocessing is fixed
+// Priority: optimized_video_url > cloudinary MP4 > original
 export function getBestVideoSource(
   cloudinaryPublicId: string | null,
   optimizedVideoUrl: string | null,
   streamUrl: string | null,
   originalVideoUrl: string
 ): string {
-  // For now, always use original video URL since Cloudinary videos aren't ready
-  // TODO: Re-enable Cloudinary once reprocessing is confirmed working
+  // 1. Pre-generated optimized URL (fastest, CDN-cached)
+  if (optimizedVideoUrl) {
+    return optimizedVideoUrl;
+  }
+  // 2. Cloudinary public ID — generate canonical MP4 URL
+  if (cloudinaryPublicId) {
+    return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${cloudinaryPublicId}.mp4`;
+  }
+  // 3. Fallback to original (slowest, unoptimized)
   return originalVideoUrl;
 }
 
@@ -62,6 +69,25 @@ export function getBestThumbnailUrl(
   }
   // Always return placeholder - never null/undefined
   return DEFAULT_PLACEHOLDER;
+}
+
+// Get optimized avatar URL — resize to small dimensions via Cloudinary or query params
+export function getOptimizedAvatarUrl(avatarUrl: string | null, size: number = 80): string {
+  if (!avatarUrl) return '';
+  
+  // If it's a Cloudinary URL, apply transformation
+  if (avatarUrl.includes('res.cloudinary.com')) {
+    // Insert resize transform before the upload path
+    return avatarUrl.replace('/upload/', `/upload/w_${size},h_${size},c_fill,g_face,f_auto,q_auto/`);
+  }
+  
+  // If it's a Supabase storage URL, add render transform
+  if (avatarUrl.includes('supabase.co/storage')) {
+    const separator = avatarUrl.includes('?') ? '&' : '?';
+    return `${avatarUrl}${separator}width=${size}&height=${size}&resize=cover`;
+  }
+  
+  return avatarUrl;
 }
 
 // Preload an image (for warming next thumbnail) - fire and forget

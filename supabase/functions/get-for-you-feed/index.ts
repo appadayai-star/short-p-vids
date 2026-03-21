@@ -464,8 +464,17 @@ serve(async (req) => {
       const videoRng = seededRandom(`${seed}-${video.id}`);
       const explorationFactor = videoRng() * 0.05; // very low: 0-5%
 
-      // Quality bonus
-      const qualityBonus = video.cloudinary_public_id ? 0.02 : 0;
+      // Quality bonus: strongly prefer videos with optimized assets (faster loading)
+      let qualityBonus = 0;
+      if (video.optimized_video_url) {
+        qualityBonus = 0.08; // strong bonus for pre-processed video
+      } else if (video.cloudinary_public_id) {
+        qualityBonus = 0.05; // decent bonus for Cloudinary-available
+      }
+      // Penalty for completely unprocessed videos
+      if (!video.optimized_video_url && !video.cloudinary_public_id) {
+        qualityBonus = -0.05; // downrank unprocessed content
+      }
 
       // === VIEWED PENALTY (Goal #2: reduce for top performers) ===
       let viewedPenalty = 0;

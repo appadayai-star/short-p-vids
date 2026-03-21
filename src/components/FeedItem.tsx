@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { getBestVideoSource, getBestThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import {
   DropdownMenu,
@@ -592,14 +592,24 @@ export const FeedItem = memo(({
       >
         <div className="space-y-2">
           <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
-            <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
+            <div className="w-10 h-10 rounded-full bg-secondary overflow-hidden border-2 border-primary flex-shrink-0">
               {video.profiles.avatar_url ? (
-                <img src={video.profiles.avatar_url} alt={video.profiles.username} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
-                  {video.profiles.username[0].toUpperCase()}
-                </div>
-              )}
+                <img 
+                  src={getOptimizedAvatarUrl(video.profiles.avatar_url, 80)} 
+                  alt={video.profiles.username} 
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => {
+                    // Hide broken image, show fallback letter
+                    (e.target as HTMLImageElement).style.display = 'none';
+                    (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                  }}
+                />
+              ) : null}
+              <div className={`w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold ${video.profiles.avatar_url ? 'hidden' : ''}`}>
+                {video.profiles.username[0]?.toUpperCase() || '?'}
+              </div>
             </div>
             <span className="text-white font-semibold">@{video.profiles.username}</span>
           </div>
