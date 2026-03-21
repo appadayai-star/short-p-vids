@@ -192,9 +192,13 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     return entries;
   }, [videos, ads]);
 
-  // Preload next video's source
+  // Aggressively preload next videos' sources
+  const preloadedRef = useRef<Set<number>>(new Set());
+  
   const preloadNextVideo = useCallback((nextIndex: number) => {
     if (nextIndex < 0 || nextIndex >= videos.length) return;
+    if (preloadedRef.current.has(nextIndex)) return; // already preloading
+    preloadedRef.current.add(nextIndex);
     
     const nextVideo = videos[nextIndex];
     if (!nextVideo) return;
@@ -203,7 +207,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     const thumb = getBestThumbnailUrl(nextVideo.cloudinary_public_id || null, nextVideo.thumbnail_url);
     preloadImage(thumb);
     
-    // Warm video source by creating a hidden video element
+    // Warm video source - use preload="auto" for immediate next, "metadata" for further
     const videoSrc = getBestVideoSource(
       nextVideo.cloudinary_public_id || null,
       nextVideo.optimized_video_url || null,
@@ -211,21 +215,28 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       nextVideo.video_url
     );
     
-    // Create hidden preload video
     const preloadVideo = document.createElement('video');
-    preloadVideo.preload = 'metadata';
+    // Next video gets full preload, others just metadata
+    const isImmediate = Math.abs(nextIndex - activeIndex) <= 1;
+    preloadVideo.preload = isImmediate ? 'auto' : 'metadata';
     preloadVideo.src = videoSrc;
     preloadVideo.muted = true;
     preloadVideo.load();
     
-    // Clean up after metadata loaded or timeout
+    // Clean up after loaded or timeout
     const cleanup = () => {
       preloadVideo.src = '';
       preloadVideo.load();
     };
-    preloadVideo.onloadedmetadata = cleanup;
-    setTimeout(cleanup, 5000);
-  }, [videos]);
+    if (isImmediate) {
+      // For immediate next: keep longer for better buffering
+      preloadVideo.oncanplaythrough = cleanup;
+      setTimeout(cleanup, 8000);
+    } else {
+      preloadVideo.onloadedmetadata = cleanup;
+      setTimeout(cleanup, 5000);
+    }
+  }, [videos, activeIndex]);
 
   // Fetch videos using the recommendation edge function
   useEffect(() => {

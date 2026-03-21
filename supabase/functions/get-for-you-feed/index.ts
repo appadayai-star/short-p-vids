@@ -28,23 +28,38 @@ function getTodayDateString(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
 }
 
-function applyCreatorDiversity(videos: any[], maxGap = 4): any[] {
-  if (videos.length <= maxGap) return videos;
+// Creator + category diversity: no same creator within N, no same primary category within M
+function applyDiversity(videos: any[], creatorGap = 4, categoryGap = 3): any[] {
+  if (videos.length <= creatorGap) return videos;
   const result: any[] = [];
   const remaining = [...videos];
   const recentCreators: string[] = [];
+  const recentCategories: string[] = [];
+
   while (remaining.length > 0 && result.length < videos.length) {
-    const nextIdx = remaining.findIndex(v => !recentCreators.slice(-maxGap).includes(v.user_id));
+    // Find first video that satisfies both creator and category diversity
+    let nextIdx = remaining.findIndex(v => {
+      const creatorOk = !recentCreators.slice(-creatorGap).includes(v.user_id);
+      const primaryCat = v.tags?.[0]?.toLowerCase() || '';
+      const catOk = !primaryCat || !recentCategories.slice(-categoryGap).includes(primaryCat);
+      return creatorOk && catOk;
+    });
+
+    // Fallback: just creator diversity
     if (nextIdx === -1) {
-      const video = remaining.shift()!;
-      result.push(video);
-      recentCreators.push(video.user_id);
-    } else {
-      const video = remaining.splice(nextIdx, 1)[0];
-      result.push(video);
-      recentCreators.push(video.user_id);
+      nextIdx = remaining.findIndex(v => !recentCreators.slice(-creatorGap).includes(v.user_id));
     }
+
+    // Fallback: take first
+    if (nextIdx === -1) nextIdx = 0;
+
+    const video = remaining.splice(nextIdx, 1)[0];
+    result.push(video);
+    recentCreators.push(video.user_id);
+    const primaryCat = video.tags?.[0]?.toLowerCase() || '';
+    if (primaryCat) recentCategories.push(primaryCat);
   }
+
   return result;
 }
 
@@ -65,16 +80,15 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const algoDebug = url.searchParams.get('algoDebug') === '1';
-    
-    const { 
-      userId, 
+
+    const {
+      userId,
       viewerId,
       sessionId,
       cursor,
-      limit = 10, 
+      limit = 10,
       sessionViewedIds = [],
       categoryFilter = null,
-      // NEW: session watch data for mid-session adaptation
       sessionWatchData = [] // Array of { videoId, watchDuration, tags }
     } = await req.json();
 
@@ -87,33 +101,32 @@ serve(async (req) => {
     const dateStr = getTodayDateString();
     const seed = `${viewerIdentity}-${dateStr}`;
     const rng = seededRandom(seed);
-    
-    console.log(`[feed] Viewer: ${viewerIdentity.substring(0, 8)}..., sessionWatchData: ${sessionWatchData.length} entries`);
+
+    console.log(`[feed] Viewer: ${viewerIdentity.substring(0, 8)}..., sessionWatch: ${sessionWatchData.length}`);
 
     const sessionExcludeSet = new Set<string>(sessionViewedIds || []);
 
-    // === SESSION ADAPTATION (Goal #7) ===
-    // Analyze what the user watched longest THIS session to adapt mid-session
+    // === SESSION ADAPTATION — triggers after just 2 videos (Goal #7) ===
     const sessionCategoryBoost = new Map<string, number>();
     const sessionSkippedCategories = new Map<string, number>();
-    
-    if (sessionWatchData.length >= 3) {
+
+    if (sessionWatchData.length >= 2) {
       for (const entry of sessionWatchData) {
         const tags = entry.tags || [];
         const duration = entry.watchDuration || 0;
-        
+
         for (const tag of tags) {
           const tagLower = tag.toLowerCase();
-          if (duration >= 8) {
-            // Watched 8s+ → boost this category
+          if (duration >= 5) {
+            // Watched 5s+ → boost (lowered from 8s for faster adaptation)
             sessionCategoryBoost.set(tagLower, (sessionCategoryBoost.get(tagLower) || 0) + duration);
-          } else if (duration <= 2) {
-            // Skipped within 2s → penalize category
+          }
+          if (duration <= 2) {
             sessionSkippedCategories.set(tagLower, (sessionSkippedCategories.get(tagLower) || 0) + 1);
           }
         }
       }
-      console.log(`[feed] Session adaptation: ${sessionCategoryBoost.size} boosted categories, ${sessionSkippedCategories.size} penalized`);
+      console.log(`[feed] Session adapt: +${sessionCategoryBoost.size} cats, -${sessionSkippedCategories.size} cats`);
     }
 
     // Fetch recent videos (last 30 days, up to 500)
@@ -147,7 +160,7 @@ serve(async (req) => {
 
     const videoIds = eligibleVideos.map((v: any) => v.id);
 
-    // Fetch 7-day watch metrics
+    // Fetch 7-day watch metrics + early skip data
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -164,21 +177,30 @@ serve(async (req) => {
         .gte("created_at", sevenDaysAgo.toISOString())
     ]);
 
-    // Build metrics map with early skip detection (Goal #5)
-    const watchByVideo = new Map<string, { completions: number[], durations: number[], earlySkips: number, totalViews: number }>();
+    // Build per-video metrics
+    interface WatchBucket {
+      completions: number[];
+      durations: number[];
+      earlySkips: number;     // watched ≤2s
+      hookPasses: number;     // watched >2s
+      totalViews: number;
+    }
+    const watchByVideo = new Map<string, WatchBucket>();
     for (const row of (watchResult.data || [])) {
       if (!watchByVideo.has(row.video_id)) {
-        watchByVideo.set(row.video_id, { completions: [], durations: [], earlySkips: 0, totalViews: 0 });
+        watchByVideo.set(row.video_id, { completions: [], durations: [], earlySkips: 0, hookPasses: 0, totalViews: 0 });
       }
       const entry = watchByVideo.get(row.video_id)!;
       entry.totalViews++;
-      
+
       if (row.watch_completion_percent != null && row.watch_completion_percent > 0) {
         entry.completions.push(row.watch_completion_percent);
       }
       if (row.watch_duration_seconds != null) {
         if (row.watch_duration_seconds <= 2) {
-          entry.earlySkips++; // Goal #5: early skip detection
+          entry.earlySkips++;
+        } else {
+          entry.hookPasses++;
         }
         if (row.watch_duration_seconds > 0) {
           entry.durations.push(row.watch_duration_seconds);
@@ -191,125 +213,164 @@ serve(async (req) => {
       sharesByVideo.set(row.video_id, (sharesByVideo.get(row.video_id) || 0) + 1);
     }
 
-    // Build final metrics
+    // Build metrics map
     interface VideoMetrics {
       avg_completion: number;
       avg_watch_duration: number;
       view_count: number;
       share_count: number;
       early_skip_rate: number;
+      hook_rate: number;         // % of viewers who watch past 2s
       rewatch_signal: number;
+      is_top_performer: boolean; // top ~15% by retention
     }
-    
+
     const metricsMap = new Map<string, VideoMetrics>();
+    // First pass: compute raw metrics
+    const allCompletions: number[] = [];
+    const allWatchDurations: number[] = [];
+
     for (const videoId of videoIds) {
-      const watchData = watchByVideo.get(videoId);
-      const avgCompletion = watchData && watchData.completions.length > 0
-        ? watchData.completions.reduce((a, b) => a + b, 0) / watchData.completions.length
-        : -1;
-      const avgDuration = watchData && watchData.durations.length > 0
-        ? watchData.durations.reduce((a, b) => a + b, 0) / watchData.durations.length
-        : -1;
-      
-      // Early skip rate (Goal #5)
-      const earlySkipRate = watchData && watchData.totalViews >= 3
-        ? watchData.earlySkips / watchData.totalViews
-        : 0;
-      
-      // Rewatch signal (Goal #4): if avg completion > 100%, video loops well
+      const wd = watchByVideo.get(videoId);
+      const avgCompletion = wd && wd.completions.length > 0
+        ? wd.completions.reduce((a, b) => a + b, 0) / wd.completions.length : -1;
+      const avgDuration = wd && wd.durations.length > 0
+        ? wd.durations.reduce((a, b) => a + b, 0) / wd.durations.length : -1;
+
+      const earlySkipRate = wd && wd.totalViews >= 3
+        ? wd.earlySkips / wd.totalViews : 0;
+
+      // Hook rate: % of viewers watching >2s (Goal #4)
+      const hookRate = wd && wd.totalViews >= 3
+        ? wd.hookPasses / wd.totalViews : -1; // -1 = no data
+
       const rewatchSignal = avgCompletion > 80 ? Math.min((avgCompletion - 80) / 50, 1) : 0;
-      
+
       metricsMap.set(videoId, {
         avg_completion: avgCompletion,
         avg_watch_duration: avgDuration,
-        view_count: watchData?.totalViews || 0,
+        view_count: wd?.totalViews || 0,
         share_count: sharesByVideo.get(videoId) || 0,
         early_skip_rate: earlySkipRate,
+        hook_rate: hookRate,
         rewatch_signal: rewatchSignal,
+        is_top_performer: false, // set below
       });
+
+      if (avgCompletion >= 0 && wd && wd.totalViews >= 3) allCompletions.push(avgCompletion);
+      if (avgDuration >= 0 && wd && wd.totalViews >= 3) allWatchDurations.push(avgDuration);
     }
+
+    // === IDENTIFY TOP PERFORMERS (Goal #1) ===
+    // Top 15% by completion AND watch time get "top performer" status
+    allCompletions.sort((a, b) => b - a);
+    allWatchDurations.sort((a, b) => b - a);
+    const completionP85 = allCompletions.length > 0 ? allCompletions[Math.floor(allCompletions.length * 0.15)] : 100;
+    const watchDurationP85 = allWatchDurations.length > 0 ? allWatchDurations[Math.floor(allWatchDurations.length * 0.15)] : 30;
+
+    let topPerformerCount = 0;
+    for (const [videoId, m] of metricsMap) {
+      if (m.view_count >= 3 && m.avg_completion >= completionP85 && m.avg_watch_duration >= watchDurationP85) {
+        m.is_top_performer = true;
+        topPerformerCount++;
+      }
+    }
+    console.log(`[feed] Top performers: ${topPerformerCount} (completion≥${Math.round(completionP85)}%, watch≥${Math.round(watchDurationP85)}s)`);
 
     // View history for "seen" penalty
     let viewedVideoIds = new Set<string>();
     if (userId) {
       const { data: recentViews } = await supabaseClient
-        .from("video_views")
-        .select("video_id")
-        .eq("user_id", userId)
-        .gte("viewed_at", sevenDaysAgo.toISOString());
+        .from("video_views").select("video_id")
+        .eq("user_id", userId).gte("viewed_at", sevenDaysAgo.toISOString());
       viewedVideoIds = new Set(recentViews?.map(v => v.video_id) || []);
     } else if (viewerId) {
       const { data: recentViews } = await supabaseClient
-        .from("video_views")
-        .select("video_id")
-        .eq("viewer_id", viewerId)
-        .gte("viewed_at", sevenDaysAgo.toISOString());
+        .from("video_views").select("video_id")
+        .eq("viewer_id", viewerId).gte("viewed_at", sevenDaysAgo.toISOString());
       viewedVideoIds = new Set(recentViews?.map(v => v.video_id) || []);
     }
 
-    // Global max values for normalization
+    // Normalization maxes
     const maxLikes = Math.max(...eligibleVideos.map((v: any) => v.likes_count), 1);
     const maxViews = Math.max(...eligibleVideos.map((v: any) => v.views_count), 1);
     const maxShares = Math.max(...Array.from(metricsMap.values()).map(m => m.share_count), 1);
 
     // === CATEGORY PERFORMANCE (Goal #6) ===
-    // Find top-performing categories based on watch metrics
-    const categoryPerformance = new Map<string, { totalWatchTime: number, count: number }>();
+    const categoryPerformance = new Map<string, { totalCompletion: number, totalWatchTime: number, count: number }>();
     for (const video of eligibleVideos) {
       const metrics = metricsMap.get(video.id);
-      if (!metrics || metrics.avg_watch_duration < 0) continue;
+      if (!metrics || metrics.avg_watch_duration < 0 || metrics.view_count < 2) continue;
       for (const tag of (video.tags || [])) {
         const tagLower = tag.toLowerCase();
-        const perf = categoryPerformance.get(tagLower) || { totalWatchTime: 0, count: 0 };
+        const perf = categoryPerformance.get(tagLower) || { totalCompletion: 0, totalWatchTime: 0, count: 0 };
         perf.totalWatchTime += metrics.avg_watch_duration;
+        perf.totalCompletion += metrics.avg_completion >= 0 ? metrics.avg_completion : 0;
         perf.count++;
         categoryPerformance.set(tagLower, perf);
       }
     }
-    const categoryAvgWatchTime = new Map<string, number>();
+    const categoryScore = new Map<string, number>();
     for (const [cat, perf] of categoryPerformance) {
       if (perf.count >= 2) {
-        categoryAvgWatchTime.set(cat, perf.totalWatchTime / perf.count);
+        // Combined score: avg watch time + avg completion (normalized)
+        const avgWT = perf.totalWatchTime / perf.count;
+        const avgComp = perf.totalCompletion / perf.count;
+        categoryScore.set(cat, avgWT * 0.6 + avgComp * 0.4 / 10); // weight watch time more
       }
     }
-    const maxCatWatchTime = Math.max(...Array.from(categoryAvgWatchTime.values()), 1);
+    const maxCatScore = Math.max(...Array.from(categoryScore.values()), 1);
 
-    // === SCORING FUNCTION (Goals #1, #3, #4, #5, #6, #8, #9) ===
+    // === SCORING FUNCTION ===
     const scoreVideo = (video: any, affinityScore: number = 0): { score: number; breakdown: any } => {
       const metrics = metricsMap.get(video.id);
-      
+      const videoDuration = video.duration_seconds || 0;
+
       const normalizedLikes = video.likes_count / maxLikes;
       const normalizedViews = video.views_count / maxViews;
-      
-      // Recency (reduced weight, still relevant)
-      const ageInDays = (Date.now() - new Date(video.created_at).getTime()) / (1000 * 60 * 60 * 24);
-      const recencyScore = Math.exp(-ageInDays / 7);
 
-      // === RETENTION SIGNALS (heavily weighted) ===
-      
-      // Completion score (Goal #1: PRIORITIZE HIGH RETENTION)
+      // Recency
+      const ageInDays = (Date.now() - new Date(video.created_at).getTime()) / (1000 * 60 * 60 * 24);
+      const recencyScore = Math.exp(-ageInDays / 10); // slower decay (10 day half-life)
+
+      // === COMPLETION SCORE (Goal #3: relative to video length) ===
       let completionScore = 0.5;
       if (metrics && metrics.avg_completion >= 0) {
         completionScore = Math.min(metrics.avg_completion / 100, 1);
-        // Bonus for very high completion (>70%)
-        if (metrics.avg_completion > 70) {
-          completionScore *= 1.3;
-          completionScore = Math.min(completionScore, 1.5);
+        // Strong exponential bonus for high completion
+        if (metrics.avg_completion > 60) {
+          completionScore = Math.pow(completionScore, 0.7); // amplify high values
         }
       }
 
-      // Watch time score (Goal #1: high watch duration)
+      // === WATCH TIME SCORE (Goal #3: relative to video length) ===
       let watchTimeScore = 0.5;
       if (metrics && metrics.avg_watch_duration >= 0) {
-        watchTimeScore = Math.min(metrics.avg_watch_duration / 15, 1); // Normalized to 15s target
-        // Strong bonus for videos averaging 12s+
+        if (videoDuration > 0) {
+          // Normalize relative to video duration — a 7s video watched 6s = great
+          const relativeWatch = metrics.avg_watch_duration / videoDuration;
+          watchTimeScore = Math.min(relativeWatch, 1.5); // allow >1 for loops
+        } else {
+          // Fallback: absolute, but cap at 20s
+          watchTimeScore = Math.min(metrics.avg_watch_duration / 20, 1);
+        }
+        // Bonus for 12s+ absolute watch time
         if (metrics.avg_watch_duration >= 12) {
-          watchTimeScore *= 1.2;
-          watchTimeScore = Math.min(watchTimeScore, 1.5);
+          watchTimeScore = Math.min(watchTimeScore * 1.15, 1.8);
         }
       }
 
-      // Shares score
+      // === HOOK QUALITY (Goal #4: how many users watch past first 2s) ===
+      let hookScore = 0.5;
+      if (metrics && metrics.hook_rate >= 0) {
+        hookScore = metrics.hook_rate; // 0-1, direct mapping
+        // Strong amplification: >80% hook rate = outstanding
+        if (hookScore > 0.8) {
+          hookScore = Math.min(hookScore * 1.3, 1.5);
+        }
+      }
+
+      // Shares
       let sharesScore = 0;
       if (metrics && metrics.view_count > 0) {
         sharesScore = Math.min((metrics.share_count / metrics.view_count) * 10, 1);
@@ -317,97 +378,131 @@ serve(async (req) => {
         sharesScore = metrics.share_count / maxShares;
       }
 
-      // === PENALTY SIGNALS ===
-      
-      // Early skip penalty (Goal #5: heavily reduce ranking for quick skips)
+      // === TOP PERFORMER BOOST (Goal #1: concentrate impressions on winners) ===
+      let topPerformerBoost = 0;
+      if (metrics?.is_top_performer) {
+        topPerformerBoost = 0.25; // massive bonus for top 15%
+      }
+
+      // === EARLY SKIP PENALTY (Goal #4/#5: stronger) ===
       let earlySkipPenalty = 0;
-      if (metrics && metrics.early_skip_rate > 0) {
-        // >50% skip rate = severe penalty
-        if (metrics.early_skip_rate > 0.5) {
+      if (metrics && metrics.early_skip_rate > 0 && metrics.view_count >= 3) {
+        if (metrics.early_skip_rate > 0.6) {
+          earlySkipPenalty = -0.6; // near-death penalty
+        } else if (metrics.early_skip_rate > 0.4) {
           earlySkipPenalty = -0.4;
-        } else if (metrics.early_skip_rate > 0.3) {
-          earlySkipPenalty = -0.25;
-        } else if (metrics.early_skip_rate > 0.15) {
-          earlySkipPenalty = -0.1;
+        } else if (metrics.early_skip_rate > 0.25) {
+          earlySkipPenalty = -0.2;
+        } else if (metrics.early_skip_rate > 0.1) {
+          earlySkipPenalty = -0.08;
         }
       }
 
-      // Low quality penalty (Goal #8: underperforming videos shown less)
+      // === LOW QUALITY FILTER (Goal #5: stronger) ===
       let lowQualityPenalty = 0;
       if (metrics && metrics.view_count >= 5) {
+        // Avg watch < 3s = almost remove from feed
         if (metrics.avg_watch_duration >= 0 && metrics.avg_watch_duration < 3) {
-          lowQualityPenalty = -0.3; // Avg watch under 3s with 5+ views = bad content
-        } else if (metrics.avg_completion >= 0 && metrics.avg_completion < 15) {
-          lowQualityPenalty = -0.2; // Very low completion
+          lowQualityPenalty = -0.5;
+        }
+        // Very low completion (<15%) = strong penalty
+        else if (metrics.avg_completion >= 0 && metrics.avg_completion < 15) {
+          lowQualityPenalty = -0.35;
+        }
+        // Low completion (<25%) = moderate penalty
+        else if (metrics.avg_completion >= 0 && metrics.avg_completion < 25) {
+          lowQualityPenalty = -0.15;
+        }
+      }
+      // With 10+ views and still bad = even stronger
+      if (metrics && metrics.view_count >= 10) {
+        if (metrics.avg_watch_duration >= 0 && metrics.avg_watch_duration < 4) {
+          lowQualityPenalty = Math.min(lowQualityPenalty, -0.6);
         }
       }
 
-      // Short video / loop boost (Goal #4)
+      // Loop boost (Goal #4: short videos that loop)
       let loopBoost = 0;
-      const videoDuration = video.duration_seconds;
       if (videoDuration && videoDuration <= 15 && metrics && metrics.rewatch_signal > 0) {
-        loopBoost = metrics.rewatch_signal * 0.1; // Up to 0.1 bonus for rewatched short videos
+        loopBoost = metrics.rewatch_signal * 0.12;
+      }
+      // Short video fairness: don't penalize short videos with good completion
+      if (videoDuration && videoDuration <= 10 && completionScore > 0.6) {
+        loopBoost += 0.05; // small fairness boost
       }
 
-      // Category performance boost (Goal #6)
+      // Category performance boost (Goal #6: increased weight)
       let categoryBoost = 0;
       if (video.tags) {
         for (const tag of video.tags) {
-          const avgWT = categoryAvgWatchTime.get(tag.toLowerCase());
-          if (avgWT) {
-            categoryBoost += (avgWT / maxCatWatchTime) * 0.05;
+          const cs = categoryScore.get(tag.toLowerCase());
+          if (cs) {
+            categoryBoost += (cs / maxCatScore) * 0.08;
           }
         }
-        categoryBoost = Math.min(categoryBoost, 0.15);
+        categoryBoost = Math.min(categoryBoost, 0.2);
       }
 
-      // Session adaptation boost (Goal #7)
+      // Session adaptation (Goal #7: faster, stronger)
       let sessionBoost = 0;
-      if (video.tags && sessionCategoryBoost.size > 0) {
+      if (video.tags && (sessionCategoryBoost.size > 0 || sessionSkippedCategories.size > 0)) {
         for (const tag of video.tags) {
-          const boost = sessionCategoryBoost.get(tag.toLowerCase());
+          const tagLower = tag.toLowerCase();
+          const boost = sessionCategoryBoost.get(tagLower);
           if (boost) {
-            sessionBoost += Math.min(boost / 60, 0.1); // normalize: 60s total watch = max boost
+            sessionBoost += Math.min(boost / 30, 0.15); // faster ramp: 30s = max (was 60)
           }
-          const penalty = sessionSkippedCategories.get(tag.toLowerCase());
-          if (penalty && penalty >= 2) {
-            sessionBoost -= 0.1 * penalty; // penalize categories skipped multiple times
+          const skipCount = sessionSkippedCategories.get(tagLower);
+          if (skipCount) {
+            sessionBoost -= 0.12 * skipCount; // stronger skip penalty
           }
         }
-        sessionBoost = Math.max(-0.3, Math.min(sessionBoost, 0.2));
+        sessionBoost = Math.max(-0.4, Math.min(sessionBoost, 0.3));
       }
 
-      // Exploration factor (Goal #3: REDUCED randomness - was 0.20, now 0.08)
+      // Exploration (Goal: minimal randomness)
       const videoRng = seededRandom(`${seed}-${video.id}`);
-      const explorationFactor = videoRng() * 0.08;
+      const explorationFactor = videoRng() * 0.05; // very low: 0-5%
 
-      // Quality bonus for processed videos
-      const qualityBonus = video.cloudinary_public_id ? 0.03 : 0;
+      // Quality bonus
+      const qualityBonus = video.cloudinary_public_id ? 0.02 : 0;
 
-      // Viewed penalty
-      const viewedPenalty = viewedVideoIds.has(video.id) ? -1.5 : 0;
+      // === VIEWED PENALTY (Goal #2: reduce for top performers) ===
+      let viewedPenalty = 0;
+      if (viewedVideoIds.has(video.id)) {
+        if (metrics?.is_top_performer) {
+          viewedPenalty = -0.3; // mild penalty — allow re-showing winners
+        } else if (metrics && metrics.avg_completion >= 0 && metrics.avg_completion > 50) {
+          viewedPenalty = -0.7; // moderate — decent videos still get suppressed
+        } else {
+          viewedPenalty = -1.8; // heavy — seen low performers almost never return
+        }
+      }
 
-      // === NEW WEIGHT DISTRIBUTION (retention-focused) ===
-      // Completion:   30% (was 20%) — strongest signal for retention
-      // Watch time:   25% (was 15%) — directly measures engagement
-      // Affinity:     12% (was 10%) — personalization
-      // Likes:        10% (was 15%) — social proof
-      // Shares:        8% (was 10%) — high-value engagement
-      // Recency:       8% (was 15%) — fresh content, reduced
-      // Views:         3% (was 5%)  — popularity, less important
-      // Quality/Exploration: ~4%
-      
-      const wCompletion = 0.30 * completionScore;
-      const wWatchTime = 0.25 * watchTimeScore;
-      const wAffinity = 0.12 * Math.min(affinityScore, 1);
-      const wLikes = 0.10 * normalizedLikes;
-      const wShares = 0.08 * sharesScore;
-      const wRecency = 0.08 * recencyScore;
-      const wViews = 0.03 * normalizedViews;
+      // === WEIGHT DISTRIBUTION v2 (retention-maximized) ===
+      // Completion:  28% — primary retention signal
+      // Watch time:  22% — engagement depth
+      // Hook:        15% — first impression quality (NEW)
+      // Affinity:    10% — personalization
+      // Likes:        8% — social proof
+      // Shares:       6% — viral signal
+      // Recency:      6% — freshness
+      // Views:        2% — popularity
+      // Remaining ~3%: quality/exploration
 
-      const score = 
+      const wCompletion  = 0.28 * completionScore;
+      const wWatchTime   = 0.22 * watchTimeScore;
+      const wHook        = 0.15 * hookScore;
+      const wAffinity    = 0.10 * Math.min(affinityScore, 1);
+      const wLikes       = 0.08 * normalizedLikes;
+      const wShares      = 0.06 * sharesScore;
+      const wRecency     = 0.06 * recencyScore;
+      const wViews       = 0.02 * normalizedViews;
+
+      const score =
         wCompletion +
         wWatchTime +
+        wHook +
         wAffinity +
         wLikes +
         wShares +
@@ -415,6 +510,7 @@ serve(async (req) => {
         wViews +
         explorationFactor +
         qualityBonus +
+        topPerformerBoost +
         loopBoost +
         categoryBoost +
         sessionBoost +
@@ -427,6 +523,7 @@ serve(async (req) => {
         breakdown: {
           completionScore: wCompletion,
           watchTimeScore: wWatchTime,
+          hookScore: wHook,
           affinityScore: wAffinity,
           likesScore: wLikes,
           sharesScore: wShares,
@@ -434,6 +531,7 @@ serve(async (req) => {
           viewsScore: wViews,
           explorationFactor,
           qualityBonus,
+          topPerformerBoost,
           loopBoost,
           categoryBoost,
           sessionBoost,
@@ -446,7 +544,7 @@ serve(async (req) => {
 
     // Score all videos
     let scoredVideos: any[];
-    
+
     if (!userId) {
       scoredVideos = eligibleVideos.map((video: any) => {
         const { score, breakdown } = scoreVideo(video, 0);
@@ -454,16 +552,10 @@ serve(async (req) => {
       });
     } else {
       const [likesResult, prefsResult] = await Promise.all([
-        supabaseClient
-          .from("likes")
-          .select("video_id, videos(user_id, tags)")
-          .eq("user_id", userId),
-        supabaseClient
-          .from("user_category_preferences")
-          .select("category, interaction_score")
-          .eq("user_id", userId)
-          .order("interaction_score", { ascending: false })
-          .limit(10)
+        supabaseClient.from("likes").select("video_id, videos(user_id, tags)").eq("user_id", userId),
+        supabaseClient.from("user_category_preferences")
+          .select("category, interaction_score").eq("user_id", userId)
+          .order("interaction_score", { ascending: false }).limit(10)
       ]);
 
       const likedUploaderIds = new Set(
@@ -481,8 +573,8 @@ serve(async (req) => {
         if (likedUploaderIds.has(video.user_id)) affinity += 0.5;
         if (video.tags) {
           for (const tag of video.tags) {
-            const catScore = preferredCategories.get(tag.toLowerCase());
-            if (catScore) affinity += Math.min(catScore / 100, 0.25);
+            const catS = preferredCategories.get(tag.toLowerCase());
+            if (catS) affinity += Math.min(catS / 100, 0.25);
             if (likedTags.has(tag)) affinity += 0.1;
           }
         }
@@ -491,37 +583,50 @@ serve(async (req) => {
       });
     }
 
+    // === HARD FILTER: remove truly dead content (Goal #5) ===
+    const filteredVideos = scoredVideos.filter(v => {
+      const m = metricsMap.get(v.id);
+      if (!m || m.view_count < 10) return true; // not enough data, keep
+      // Remove if avg watch <2.5s AND skip rate >50% AND completion <12%
+      if (m.avg_watch_duration >= 0 && m.avg_watch_duration < 2.5 &&
+          m.early_skip_rate > 0.5 &&
+          m.avg_completion >= 0 && m.avg_completion < 12) {
+        console.log(`[feed] Filtered out dead video: ${v.id}`);
+        return false;
+      }
+      return true;
+    });
+
     // Separate unviewed and viewed
-    const unviewedVideos = scoredVideos.filter(v => !v.isViewed);
-    const viewedVideos = scoredVideos.filter(v => v.isViewed);
+    // BUT: top performers that are viewed go into a special "re-show" pool (Goal #2)
+    const unviewedVideos = filteredVideos.filter(v => !v.isViewed);
+    const viewedTopPerformers = filteredVideos.filter(v => v.isViewed && metricsMap.get(v.id)?.is_top_performer);
+    const viewedRegular = filteredVideos.filter(v => v.isViewed && !metricsMap.get(v.id)?.is_top_performer);
 
-    // Sort by score
+    console.log(`[feed] Unviewed: ${unviewedVideos.length}, Viewed top: ${viewedTopPerformers.length}, Viewed regular: ${viewedRegular.length}`);
+
+    // Sort all pools by score
     const sortedUnviewed = unviewedVideos.sort((a, b) => b.score - a.score);
-    const sortedViewed = viewedVideos.sort((a, b) => b.score - a.score);
+    const sortedViewedTop = viewedTopPerformers.sort((a, b) => b.score - a.score);
+    const sortedViewedRegular = viewedRegular.sort((a, b) => b.score - a.score);
 
-    // === FIRST VIDEO IMPACT (Goal #2) ===
-    // First 5 videos are strictly top-scored (NO tier shuffling)
-    // Remaining use small tier shuffling (3 per tier instead of 5)
+    // === BUILD FINAL FEED ===
     const isFirstPage = !cursor;
     const topSlotCount = isFirstPage ? 5 : 0;
-    
+
+    // First page: top 5 strictly by score, then small tier shuffle
     let finalUnviewed: typeof sortedUnviewed;
     if (isFirstPage && sortedUnviewed.length > topSlotCount) {
-      // Top 5 stay in strict score order - best content first
       const topSlot = sortedUnviewed.slice(0, topSlotCount);
       const rest = sortedUnviewed.slice(topSlotCount);
-      
-      // Shuffle remaining in small tiers of 3 (reduced from 5)
       const shuffledRest: typeof rest = [];
       const tierSize = 3;
       for (let i = 0; i < rest.length; i += tierSize) {
         const tier = rest.slice(i, i + tierSize);
         shuffledRest.push(...shuffleArraySeeded(tier, rng));
       }
-      
       finalUnviewed = [...topSlot, ...shuffledRest];
     } else {
-      // Subsequent pages: small tier shuffle
       const shuffled: typeof sortedUnviewed = [];
       const tierSize = 3;
       for (let i = 0; i < sortedUnviewed.length; i += tierSize) {
@@ -531,12 +636,31 @@ serve(async (req) => {
       finalUnviewed = shuffled;
     }
 
-    // Apply creator diversity
-    let finalResult = applyCreatorDiversity(finalUnviewed, 4);
+    // Interleave top performers back into feed (Goal #2: viral loops)
+    // Insert one top performer every ~8 videos
+    let finalResult = applyDiversity(finalUnviewed, 4, 3);
 
-    // Add viewed videos at end
-    const shuffledViewed = shuffleArraySeeded(sortedViewed, rng);
-    const diverseViewed = applyCreatorDiversity(shuffledViewed, 4);
+    if (sortedViewedTop.length > 0) {
+      const interleaved: any[] = [];
+      let topIdx = 0;
+      for (let i = 0; i < finalResult.length; i++) {
+        interleaved.push(finalResult[i]);
+        // Every 8th position, insert a top performer if available
+        if ((i + 1) % 8 === 0 && topIdx < sortedViewedTop.length) {
+          interleaved.push(sortedViewedTop[topIdx]);
+          topIdx++;
+        }
+      }
+      // Add remaining top performers
+      while (topIdx < sortedViewedTop.length) {
+        interleaved.push(sortedViewedTop[topIdx++]);
+      }
+      finalResult = interleaved;
+    }
+
+    // Add regular viewed videos at end
+    const shuffledViewed = shuffleArraySeeded(sortedViewedRegular, rng);
+    const diverseViewed = applyDiversity(shuffledViewed, 4, 3);
     finalResult = [...finalResult, ...diverseViewed];
 
     // Cursor-based pagination
@@ -551,16 +675,17 @@ serve(async (req) => {
     const nextCursor = lastVideo ? { score: lastVideo.score, id: lastVideo.id } : null;
     const hasMore = startIndex + limit < finalResult.length;
 
-    // Clean response
     const responseVideos = paginatedVideos.map(({ score, breakdown, isViewed, ...video }) => video);
 
     // Debug mode
     let debugInfo = null;
     if (algoDebug) {
-      debugInfo = finalResult.slice(0, 10).map(v => ({
+      debugInfo = finalResult.slice(0, 15).map(v => ({
         videoId: v.id,
         title: v.title?.substring(0, 50),
         finalScore: Math.round(v.score * 1000) / 1000,
+        isTopPerformer: metricsMap.get(v.id)?.is_top_performer || false,
+        hookRate: metricsMap.get(v.id)?.hook_rate ?? -1,
         components: Object.fromEntries(
           Object.entries(v.breakdown).map(([k, val]) => [k, Math.round((val as number) * 1000) / 1000])
         ),
@@ -574,18 +699,18 @@ serve(async (req) => {
       : "private, max-age=0";
 
     return new Response(
-      JSON.stringify({ 
-        videos: responseVideos, 
-        nextCursor, 
+      JSON.stringify({
+        videos: responseVideos,
+        nextCursor,
         hasMore,
         ...(debugInfo ? { debug: debugInfo } : {})
       }),
-      { 
-        headers: { 
-          ...corsHeaders, 
+      {
+        headers: {
+          ...corsHeaders,
           "Content-Type": "application/json",
           "Cache-Control": cacheControl
-        } 
+        }
       }
     );
   } catch (error) {
