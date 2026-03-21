@@ -36,15 +36,22 @@ export function supportsHlsNatively(): boolean {
 }
 
 // Get best video source for playback
-// TEMPORARILY: Skip Cloudinary and use original URLs until reprocessing is fixed
+// Priority: optimized_video_url > cloudinary MP4 > original
 export function getBestVideoSource(
   cloudinaryPublicId: string | null,
   optimizedVideoUrl: string | null,
   streamUrl: string | null,
   originalVideoUrl: string
 ): string {
-  // For now, always use original video URL since Cloudinary videos aren't ready
-  // TODO: Re-enable Cloudinary once reprocessing is confirmed working
+  // 1. Pre-generated optimized URL (fastest, CDN-cached)
+  if (optimizedVideoUrl) {
+    return optimizedVideoUrl;
+  }
+  // 2. Cloudinary public ID — generate canonical MP4 URL
+  if (cloudinaryPublicId) {
+    return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${cloudinaryPublicId}.mp4`;
+  }
+  // 3. Fallback to original (slowest, unoptimized)
   return originalVideoUrl;
 }
 
