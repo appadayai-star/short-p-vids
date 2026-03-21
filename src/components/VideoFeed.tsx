@@ -415,8 +415,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
                   addSessionViewedId(videos[idx].id);
                 }
                 
-                // Preload next video immediately
+                // Preload next 2 videos immediately
                 preloadNextVideo(idx + 1);
+                preloadNextVideo(idx + 2);
               }
             }
           });
