@@ -500,10 +500,10 @@ serve(async (req) => {
         for (const tag of video.tags) {
           const cs = categoryScore.get(tag.toLowerCase());
           if (cs) {
-            categoryBoost += (cs / maxCatScore) * 0.08;
+            categoryBoost += (cs / maxCatScore) * 0.10; // slightly higher (was 0.08)
           }
         }
-        categoryBoost = Math.min(categoryBoost, 0.2);
+        categoryBoost = Math.min(categoryBoost, 0.25); // raised cap (was 0.2)
       }
 
       // Session adaptation (Goal #7: faster, stronger)
