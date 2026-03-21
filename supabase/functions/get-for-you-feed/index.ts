@@ -395,6 +395,10 @@ serve(async (req) => {
           // Normalize relative to video duration — a 7s video watched 6s = great
           const relativeWatch = metrics.avg_watch_duration / videoDuration;
           watchTimeScore = Math.min(relativeWatch, 1.5); // allow >1 for loops
+          // Extra bonus for high % watched on short videos (fairness)
+          if (videoDuration <= 12 && relativeWatch > 0.7) {
+            watchTimeScore = Math.min(watchTimeScore * 1.2, 1.6);
+          }
         } else {
           // Fallback: absolute, but cap at 20s
           watchTimeScore = Math.min(metrics.avg_watch_duration / 20, 1);
@@ -409,9 +413,9 @@ serve(async (req) => {
       let hookScore = 0.5;
       if (metrics && metrics.hook_rate >= 0) {
         hookScore = metrics.hook_rate; // 0-1, direct mapping
-        // Strong amplification: >80% hook rate = outstanding
-        if (hookScore > 0.8) {
-          hookScore = Math.min(hookScore * 1.3, 1.5);
+        // Stronger amplification: >75% hook rate = outstanding (lowered threshold)
+        if (hookScore > 0.75) {
+          hookScore = Math.min(hookScore * 1.4, 1.6); // stronger reward (was 1.3/1.5)
         }
       }
 
@@ -440,7 +444,7 @@ serve(async (req) => {
       // === TOP PERFORMER BOOST (Goal #1: concentrate impressions on winners) ===
       let topPerformerBoost = 0;
       if (metrics?.is_top_performer) {
-        topPerformerBoost = 0.25; // massive bonus for top 15%
+        topPerformerBoost = 0.30; // stronger bonus for top 15% (was 0.25)
       }
 
       // === EARLY SKIP PENALTY (Goal #4/#5: stronger) ===
@@ -496,10 +500,10 @@ serve(async (req) => {
         for (const tag of video.tags) {
           const cs = categoryScore.get(tag.toLowerCase());
           if (cs) {
-            categoryBoost += (cs / maxCatScore) * 0.08;
+            categoryBoost += (cs / maxCatScore) * 0.10; // slightly higher (was 0.08)
           }
         }
-        categoryBoost = Math.min(categoryBoost, 0.2);
+        categoryBoost = Math.min(categoryBoost, 0.25); // raised cap (was 0.2)
       }
 
       // Session adaptation (Goal #7: faster, stronger)
@@ -570,26 +574,25 @@ serve(async (req) => {
         }
       }
 
-      // === WEIGHT DISTRIBUTION v2 (retention-maximized) ===
-      // Completion:  28% — primary retention signal
+      // === WEIGHT DISTRIBUTION v2.1 (retention-maximized, hook-boosted) ===
+      // Completion:  26% — primary retention signal
       // Watch time:  22% — engagement depth
-      // Hook:        15% — first impression quality (NEW)
-      // Startup:     10% — playback reliability under 2s
+      // Hook:        18% — first impression quality (increased)
+      // Startup:      9% — playback reliability
       // Affinity:    10% — personalization
-      // Likes:        8% — social proof
+      // Likes:        7% — social proof
       // Shares:       6% — viral signal
-      // Recency:      6% — freshness
+      // Recency:      5% — freshness
       // Views:        2% — popularity
-      // Remaining ~3%: quality/exploration
 
-      const wCompletion  = 0.28 * completionScore;
+      const wCompletion  = 0.26 * completionScore;
       const wWatchTime   = 0.22 * watchTimeScore;
-      const wHook        = 0.15 * hookScore;
-      const wStartup     = 0.10 * startupReliabilityScore;
+      const wHook        = 0.18 * hookScore;
+      const wStartup     = 0.09 * startupReliabilityScore;
       const wAffinity    = 0.10 * Math.min(affinityScore, 1);
-      const wLikes       = 0.08 * normalizedLikes;
+      const wLikes       = 0.07 * normalizedLikes;
       const wShares      = 0.06 * sharesScore;
-      const wRecency     = 0.06 * recencyScore;
+      const wRecency     = 0.05 * recencyScore;
       const wViews       = 0.02 * normalizedViews;
 
       const score =
