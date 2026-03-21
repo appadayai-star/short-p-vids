@@ -11,6 +11,9 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const DEBUG_SCROLL = import.meta.env.DEV;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+// Fast-scroll detection: if user scrolls past >1 video at once, defer playback
+const FAST_SCROLL_SETTLE_MS = 300;
+
 interface Video {
   id: string;
   title: string;
@@ -53,62 +56,49 @@ interface FeedCursor {
   id: string;
 }
 
-// Get persistent anonymous viewer ID (for guest repeat protection)
 const getOrCreateViewerId = (): string => {
   const key = 'anonymous_viewer_id_v1';
   let viewerId = localStorage.getItem(key);
-  
   if (!viewerId) {
     viewerId = crypto.randomUUID ? crypto.randomUUID() : 
       `anon_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
     localStorage.setItem(key, viewerId);
   }
-  
   return viewerId;
 };
 
-// Get session ID
 const getOrCreateSessionId = (): string => {
   const key = 'video_session_v2';
   const lastActivityKey = 'video_session_last_activity';
   const SESSION_EXPIRY_MS = 30 * 60 * 1000;
-  
   const now = Date.now();
   const lastActivity = parseInt(localStorage.getItem(lastActivityKey) || '0', 10);
   let sessionId = localStorage.getItem(key);
-  
   if (!sessionId || (now - lastActivity) > SESSION_EXPIRY_MS) {
     sessionId = crypto.randomUUID ? crypto.randomUUID() : 
       `sess_${now}_${Math.random().toString(36).substring(2, 15)}`;
     localStorage.setItem(key, sessionId);
-    // Clear session viewed videos on new session
     sessionStorage.removeItem('session_viewed_videos');
   }
-  
   localStorage.setItem(lastActivityKey, now.toString());
   return sessionId;
 };
 
-// Get session-viewed videos to prevent duplicates within session
 const getSessionViewedIds = (): string[] => {
   try {
     const viewed = sessionStorage.getItem('session_viewed_videos');
     return viewed ? JSON.parse(viewed) : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 };
 
 const addSessionViewedId = (videoId: string) => {
   try {
     const viewed = new Set(getSessionViewedIds());
     viewed.add(videoId);
-    const arr = Array.from(viewed).slice(-100);
-    sessionStorage.setItem('session_viewed_videos', JSON.stringify(arr));
+    sessionStorage.setItem('session_viewed_videos', JSON.stringify(Array.from(viewed).slice(-100)));
   } catch {}
 };
 
-// Session watch data for mid-session adaptation
 interface SessionWatchEntry {
   videoId: string;
   watchDuration: number;
@@ -119,24 +109,16 @@ const getSessionWatchData = (): SessionWatchEntry[] => {
   try {
     const data = sessionStorage.getItem('session_watch_data');
     return data ? JSON.parse(data) : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 };
 
 const addSessionWatchData = (entry: SessionWatchEntry) => {
   try {
     const data = getSessionWatchData();
-    // Update existing or add new
     const existing = data.findIndex(e => e.videoId === entry.videoId);
-    if (existing >= 0) {
-      data[existing] = entry;
-    } else {
-      data.push(entry);
-    }
-    // Keep last 30 entries
-    const trimmed = data.slice(-30);
-    sessionStorage.setItem('session_watch_data', JSON.stringify(trimmed));
+    if (existing >= 0) data[existing] = entry;
+    else data.push(entry);
+    sessionStorage.setItem('session_watch_data', JSON.stringify(data.slice(-30)));
   } catch {}
 };
 
@@ -151,10 +133,18 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   
+  // Fast-scroll detection
+  const [isScrollSettled, setIsScrollSettled] = useState(true);
+  const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActiveIndexRef = useRef(0);
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const hasFetchedRef = useRef(false);
   const cursorRef = useRef<FeedCursor | null>(null);
+  
+  // Track active preload elements for cancellation
+  const activePreloadsRef = useRef<Map<number, HTMLVideoElement>>(new Map());
 
   // Fetch active ads
   useEffect(() => {
@@ -172,143 +162,107 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     fetchAds();
   }, []);
 
-  // Build interleaved feed entries (insert ad every ~10 videos)
   const feedEntries: FeedEntry[] = useMemo(() => {
     if (ads.length === 0) return videos.map(v => ({ type: 'video' as const, data: v }));
-    
     const entries: FeedEntry[] = [];
     let adIndex = 0;
-    
     for (let i = 0; i < videos.length; i++) {
       entries.push({ type: 'video', data: videos[i] });
-      
-      // Insert ad after every 10th video
       if ((i + 1) % 10 === 0 && ads.length > 0) {
         entries.push({ type: 'ad', data: ads[adIndex % ads.length] });
         adIndex++;
       }
     }
-    
     return entries;
   }, [videos, ads]);
 
-  // Aggressively preload next videos' sources
-  const preloadedRef = useRef<Set<number>>(new Set());
-  
-  const preloadNextVideo = useCallback((nextIndex: number) => {
+  // === CANCEL stale preloads — only keep preload for currentIdx+1 ===
+  const cancelStalePreloads = useCallback((keepForIdx: number) => {
+    for (const [idx, videoEl] of activePreloadsRef.current.entries()) {
+      if (idx !== keepForIdx + 1) {
+        try { videoEl.src = ''; videoEl.load(); videoEl.remove(); } catch {}
+        activePreloadsRef.current.delete(idx);
+      }
+    }
+  }, []);
+
+  // === SMART PRELOAD: only the immediate next video ===
+  const preloadNextVideo = useCallback((nextIndex: number, currentIdx: number) => {
     if (nextIndex < 0 || nextIndex >= videos.length) return;
-    if (preloadedRef.current.has(nextIndex)) return; // already preloading
-    preloadedRef.current.add(nextIndex);
+    if (activePreloadsRef.current.has(nextIndex)) return;
+    
+    cancelStalePreloads(currentIdx);
     
     const nextVideo = videos[nextIndex];
     if (!nextVideo) return;
     
-    // Preload thumbnail
+    // Thumbnail preload (instant, tiny)
     const thumb = getBestThumbnailUrl(nextVideo.cloudinary_public_id || null, nextVideo.thumbnail_url);
     preloadImage(thumb);
     
-    // Warm video source - use preload="auto" for immediate next, "metadata" for further
-    const videoSrc = getBestVideoSource(
-      nextVideo.cloudinary_public_id || null,
-      nextVideo.optimized_video_url || null,
-      nextVideo.stream_url || null,
-      nextVideo.video_url
-    );
-    
-    const preloadVideo = document.createElement('video');
-    // Next video gets full preload, others just metadata
-    const isImmediate = Math.abs(nextIndex - activeIndex) <= 1;
-    preloadVideo.preload = isImmediate ? 'auto' : 'metadata';
-    preloadVideo.src = videoSrc;
-    preloadVideo.muted = true;
-    preloadVideo.load();
-    
-    // Clean up after loaded or timeout
-    const cleanup = () => {
-      preloadVideo.src = '';
+    // Full video preload only for immediate next
+    if (nextIndex === currentIdx + 1) {
+      const videoSrc = getBestVideoSource(
+        nextVideo.cloudinary_public_id || null,
+        nextVideo.optimized_video_url || null,
+        nextVideo.stream_url || null,
+        nextVideo.video_url
+      );
+      
+      const preloadVideo = document.createElement('video');
+      preloadVideo.preload = 'auto';
+      preloadVideo.src = videoSrc;
+      preloadVideo.muted = true;
       preloadVideo.load();
-    };
-    if (isImmediate) {
-      // For immediate next: keep longer for better buffering
-      preloadVideo.oncanplaythrough = cleanup;
-      setTimeout(cleanup, 8000);
-    } else {
-      preloadVideo.onloadedmetadata = cleanup;
-      setTimeout(cleanup, 5000);
+      activePreloadsRef.current.set(nextIndex, preloadVideo);
+      
+      const cleanup = () => {
+        activePreloadsRef.current.delete(nextIndex);
+        try { preloadVideo.src = ''; preloadVideo.load(); preloadVideo.remove(); } catch {}
+      };
+      preloadVideo.addEventListener('canplaythrough', cleanup, { once: true });
+      setTimeout(cleanup, 6000);
     }
-  }, [videos, activeIndex]);
+  }, [videos, cancelStalePreloads]);
 
-  // Fetch videos using the recommendation edge function
+  // Fetch videos
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
 
     const fetchVideos = async () => {
-      console.log("[VideoFeed] Starting fetch...");
-      
       try {
         if (searchQuery) {
-          // Direct query for search only
           let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE * 2}`;
-          
           url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
-
           const response = await fetch(url, {
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json',
-            },
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
           });
-
           if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-
           let results = await response.json() || [];
-          
           const q = searchQuery.toLowerCase();
           results = results.filter((v: Video) =>
-            v.title?.toLowerCase().includes(q) ||
-            v.description?.toLowerCase().includes(q) ||
-            v.profiles?.username?.toLowerCase().includes(q) ||
-            v.tags?.some(t => t.toLowerCase().includes(q))
+            v.title?.toLowerCase().includes(q) || v.description?.toLowerCase().includes(q) ||
+            v.profiles?.username?.toLowerCase().includes(q) || v.tags?.some(t => t.toLowerCase().includes(q))
           );
-
           results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(results.slice(0, PAGE_SIZE));
           setHasMore(results.length >= PAGE_SIZE);
         } else {
-          // Use recommendation edge function for main feed AND category feeds
           const viewerId = getOrCreateViewerId();
           const sessionId = getOrCreateSessionId();
           const sessionViewedIds = getSessionViewedIds();
-          
           const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-            body: { 
-              userId, 
-              viewerId,
-              sessionId,
-              cursor: null,
-              limit: PAGE_SIZE, 
-              sessionViewedIds,
-              categoryFilter: categoryFilter || null,
-              sessionWatchData: getSessionWatchData()
-            }
+            body: { userId, viewerId, sessionId, cursor: null, limit: PAGE_SIZE, sessionViewedIds, categoryFilter: categoryFilter || null, sessionWatchData: getSessionWatchData() }
           });
-
           if (error) throw error;
-
           const resultVideos = data?.videos || [];
           cursorRef.current = data?.nextCursor || null;
-          console.log("[VideoFeed] Got recommended videos:", resultVideos.length);
-          
           resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(resultVideos);
           setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
-          
-          // Preload second video thumbnail
           if (resultVideos.length > 1) {
-            const thumb = getBestThumbnailUrl(resultVideos[1].cloudinary_public_id || null, resultVideos[1].thumbnail_url);
-            preloadImage(thumb);
+            preloadImage(getBestThumbnailUrl(resultVideos[1].cloudinary_public_id || null, resultVideos[1].thumbnail_url));
           }
         }
       } catch (err) {
@@ -317,10 +271,8 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         setVideos([]);
       } finally {
         setLoading(false);
-        console.log("[VideoFeed] Fetch complete");
       }
     };
-
     fetchVideos();
   }, [userId]);
 
@@ -328,66 +280,37 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   useEffect(() => {
     if (!hasFetchedRef.current) return;
     if (!searchQuery && !categoryFilter) return;
-    
     const refetch = async () => {
       setLoading(true);
       setActiveIndex(0);
       loadedIdsRef.current.clear();
       cursorRef.current = null;
-      
-      if (containerRef.current) {
-        containerRef.current.scrollTop = 0;
-      }
-
+      if (containerRef.current) containerRef.current.scrollTop = 0;
       try {
         if (searchQuery) {
-          // Direct query for search
           let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&limit=${PAGE_SIZE}`;
           url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
-
           const response = await fetch(url, {
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json',
-            },
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
           });
-
           if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-
           let results = await response.json() || [];
           const q = searchQuery.toLowerCase();
           results = results.filter((v: Video) =>
-            v.title?.toLowerCase().includes(q) ||
-            v.description?.toLowerCase().includes(q) ||
-            v.profiles?.username?.toLowerCase().includes(q) ||
-            v.tags?.some(t => t.toLowerCase().includes(q))
+            v.title?.toLowerCase().includes(q) || v.description?.toLowerCase().includes(q) ||
+            v.profiles?.username?.toLowerCase().includes(q) || v.tags?.some(t => t.toLowerCase().includes(q))
           );
-
           results.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(results);
           setHasMore(results.length >= PAGE_SIZE);
         } else if (categoryFilter) {
-          // Use algorithm for category feeds
           const viewerId = getOrCreateViewerId();
           const sessionId = getOrCreateSessionId();
           const sessionViewedIds = getSessionViewedIds();
-          
           const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-            body: { 
-              userId, 
-              viewerId,
-              sessionId,
-              cursor: null,
-              limit: PAGE_SIZE, 
-              sessionViewedIds,
-              categoryFilter,
-              sessionWatchData: getSessionWatchData()
-            }
+            body: { userId, viewerId, sessionId, cursor: null, limit: PAGE_SIZE, sessionViewedIds, categoryFilter, sessionWatchData: getSessionWatchData() }
           });
-
           if (error) throw error;
-
           const resultVideos = data?.videos || [];
           cursorRef.current = data?.nextCursor || null;
           resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
@@ -400,35 +323,47 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         setLoading(false);
       }
     };
-
     refetch();
   }, [searchQuery, categoryFilter]);
 
-  // Intersection observer for active detection - 40% threshold for earlier activation
+  // === INTERSECTION OBSERVER with fast-scroll detection ===
   useEffect(() => {
     const container = containerRef.current;
     if (!container || videos.length === 0) return;
 
     const observers: IntersectionObserver[] = [];
-    
     const items = container.querySelectorAll('[data-video-index]');
+    
     items.forEach((item) => {
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
             if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
               const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
-              if (idx !== activeIndex) {
+              const jumped = Math.abs(idx - lastActiveIndexRef.current);
+              lastActiveIndexRef.current = idx;
+              
+              if (scrollSettleTimerRef.current) {
+                clearTimeout(scrollSettleTimerRef.current);
+              }
+              
+              if (jumped > 1) {
+                // Fast scroll — defer playback, show poster only
+                setIsScrollSettled(false);
                 setActiveIndex(idx);
+                cancelStalePreloads(idx);
                 
-                // Track session view
-                if (videos[idx]) {
-                  addSessionViewedId(videos[idx].id);
-                }
-                
-                // Preload next 2 videos immediately
-                preloadNextVideo(idx + 1);
-                preloadNextVideo(idx + 2);
+                scrollSettleTimerRef.current = setTimeout(() => {
+                  setIsScrollSettled(true);
+                  preloadNextVideo(idx + 1, idx);
+                  if (videos[idx]) addSessionViewedId(videos[idx].id);
+                }, FAST_SCROLL_SETTLE_MS);
+              } else {
+                // Normal scroll — play immediately
+                setActiveIndex(idx);
+                setIsScrollSettled(true);
+                if (videos[idx]) addSessionViewedId(videos[idx].id);
+                preloadNextVideo(idx + 1, idx);
               }
             }
           });
@@ -439,12 +374,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       observers.push(observer);
     });
 
-    return () => {
-      observers.forEach(obs => obs.disconnect());
-    };
-  }, [videos, activeIndex, preloadNextVideo]);
+    return () => { observers.forEach(obs => obs.disconnect()); };
+  }, [videos, cancelStalePreloads, preloadNextVideo]);
 
-  // Load more - trigger earlier (within last 2 items instead of 3)
+  // Load more
   useEffect(() => {
     if (!hasMore || isLoadingMore || loading || videos.length === 0) return;
     if (activeIndex < feedEntries.length - 3) return;
@@ -455,55 +388,31 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
     const loadMore = async () => {
       setIsLoadingMore(true);
-      
       try {
         if (searchQuery) {
-          // Direct query for search only (keep offset-based)
           const offset = videos.length;
           let url = `${SUPABASE_URL}/rest/v1/videos?select=id,title,description,video_url,optimized_video_url,stream_url,cloudinary_public_id,thumbnail_url,views_count,likes_count,tags,user_id,profiles(username,avatar_url)&order=created_at.desc&offset=${offset}&limit=${PAGE_SIZE}`;
           url += `&or=(title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%)`;
-
           const response = await fetch(url, {
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json',
-            },
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
           });
-
           if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-
           const data = await response.json();
           const newVideos = (data || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
           newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
-          
           setVideos(prev => [...prev, ...newVideos]);
           setHasMore(newVideos.length > 0);
         } else {
-          // Use edge function with cursor-based pagination (main feed + categories)
           const viewerId = getOrCreateViewerId();
           const sessionId = getOrCreateSessionId();
           const sessionViewedIds = getSessionViewedIds();
-          
           const { data, error } = await supabase.functions.invoke('get-for-you-feed', {
-            body: { 
-              userId, 
-              viewerId,
-              sessionId,
-              cursor: cursorRef.current, 
-              limit: PAGE_SIZE, 
-              sessionViewedIds,
-              categoryFilter: categoryFilter || null,
-              sessionWatchData: getSessionWatchData()
-            }
+            body: { userId, viewerId, sessionId, cursor: cursorRef.current, limit: PAGE_SIZE, sessionViewedIds, categoryFilter: categoryFilter || null, sessionWatchData: getSessionWatchData() }
           });
-
           if (error) throw error;
-
           const newVideos = (data?.videos || []).filter((v: Video) => !loadedIdsRef.current.has(v.id));
           newVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           cursorRef.current = data?.nextCursor || null;
-          
           setVideos(prev => [...prev, ...newVideos]);
           setHasMore(data?.hasMore ?? newVideos.length > 0);
         }
@@ -513,28 +422,28 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         setIsLoadingMore(false);
       }
     };
-
     loadMore();
   }, [activeIndex, feedEntries.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
 
-  // Track view locally and record session watch data for mid-session adaptation
   const handleViewTracked = useCallback((videoId: string, watchDuration?: number) => {
     addSessionViewedId(videoId);
-    
-    // Record watch data for session adaptation
     const video = videos.find(v => v.id === videoId);
     if (video && watchDuration !== undefined) {
-      addSessionWatchData({
-        videoId,
-        watchDuration,
-        tags: video.tags || [],
-      });
+      addSessionWatchData({ videoId, watchDuration, tags: video.tags || [] });
     }
   }, [videos]);
 
-  const handleRetry = () => {
-    window.location.reload();
-  };
+  const handleRetry = () => { window.location.reload(); };
+
+  // Cleanup preloads on unmount
+  useEffect(() => {
+    return () => {
+      for (const [, videoEl] of activePreloadsRef.current.entries()) {
+        try { videoEl.src = ''; videoEl.load(); videoEl.remove(); } catch {}
+      }
+      activePreloadsRef.current.clear();
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -549,10 +458,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     return (
       <div className="flex flex-col items-center justify-center h-[100dvh] bg-black gap-4 px-4">
         <p className="text-red-400 text-lg text-center">{error}</p>
-        <button
-          onClick={handleRetry}
-          className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg"
-        >
+        <button onClick={handleRetry} className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg">
           <RefreshCw className="h-5 w-5" /> Try Again
         </button>
       </div>
@@ -573,45 +479,43 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     <div
       ref={containerRef}
       className="w-full h-[100dvh] overflow-y-auto overflow-x-hidden scrollbar-hide bg-black snap-y snap-mandatory"
-      style={{ 
-        overscrollBehavior: 'none',
-        scrollSnapType: 'y mandatory',
-      }}
+      style={{ overscrollBehavior: 'none', scrollSnapType: 'y mandatory' }}
     >
       {feedEntries.map((entry, index) => {
-        // Virtualization: only render items within range
-        const isInRange = Math.abs(index - activeIndex) <= 3;
+        const isInRange = Math.abs(index - activeIndex) <= 2;
         const key = entry.type === 'ad' ? `ad-${entry.data.id}-${index}` : entry.data.id;
         
         if (!isInRange) {
           return (
-            <div
-              key={key}
-              data-video-index={index}
-              className="w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
-            />
+            <div key={key} data-video-index={index}
+              className="w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always" />
           );
         }
         
         if (entry.type === 'ad') {
           return (
-            <LivestreamAdItem
-              key={key}
-              ad={entry.data}
-              index={index}
-              isActive={index === activeIndex}
-              currentUserId={userId}
-            />
+            <LivestreamAdItem key={key} ad={entry.data} index={index}
+              isActive={index === activeIndex} currentUserId={userId} />
           );
         }
+
+        // Preload strategy:
+        //   active = full load + play (only when settled)
+        //   active+1 = preload="auto" (aggressive preload)  
+        //   active+2 = preload="metadata" (light, headers only)
+        //   everything else = no src
+        const distFromActive = index - activeIndex;
+        const shouldPreload = distFromActive === 1;
+        const shouldPreloadMeta = distFromActive === 2;
 
         return (
           <FeedItem
             key={key}
             video={entry.data}
             index={index}
-            isActive={index === activeIndex}
-            shouldPreload={Math.abs(index - activeIndex) <= 2}
+            isActive={index === activeIndex && isScrollSettled}
+            shouldPreload={shouldPreload}
+            shouldPreloadMeta={shouldPreloadMeta}
             hasEntered={hasEntered}
             currentUserId={userId}
             onViewTracked={handleViewTracked}
