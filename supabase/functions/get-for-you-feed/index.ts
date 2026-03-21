@@ -409,9 +409,9 @@ serve(async (req) => {
       let hookScore = 0.5;
       if (metrics && metrics.hook_rate >= 0) {
         hookScore = metrics.hook_rate; // 0-1, direct mapping
-        // Strong amplification: >80% hook rate = outstanding
-        if (hookScore > 0.8) {
-          hookScore = Math.min(hookScore * 1.3, 1.5);
+        // Stronger amplification: >75% hook rate = outstanding (lowered threshold)
+        if (hookScore > 0.75) {
+          hookScore = Math.min(hookScore * 1.4, 1.6); // stronger reward (was 1.3/1.5)
         }
       }
 
