@@ -312,6 +312,8 @@ export const FeedItem = memo(({
       };
 
       const handlePlaying = () => {
+        // ALWAYS clear retry UI when video actually plays — even if watchdog fired prematurely
+        setPlaybackFailed(false);
         if (startupSettledRef.current) return;
         startupSettledRef.current = true;
         const ttffMs = Math.round(performance.now() - startupStartTimeRef.current);
@@ -320,26 +322,37 @@ export const FeedItem = memo(({
       };
 
       const handleWaiting = () => {
+        // Only treat 'waiting' as a startup stall BEFORE the video has started playing
         if (startupSettledRef.current) return;
         startupStallsRef.current += 1;
-        if (startupWaitingFallbackRef.current) clearTimeout(startupWaitingFallbackRef.current);
-        startupWaitingFallbackRef.current = setTimeout(() => {
-          if (startupSettledRef.current) return;
-          const switched = tryNextSource('waiting-stall');
-          if (!switched) failStartup();
-        }, 900);
+        // Only escalate if we've stalled multiple times during startup
+        if (startupStallsRef.current >= 2) {
+          if (startupWaitingFallbackRef.current) clearTimeout(startupWaitingFallbackRef.current);
+          startupWaitingFallbackRef.current = setTimeout(() => {
+            if (startupSettledRef.current) return;
+            const switched = tryNextSource('waiting-stall');
+            if (!switched) failStartup();
+          }, 1200);
+        }
       };
 
       const handleError = () => {
         if (startupSettledRef.current) return;
-        const switched = tryNextSource('video-error');
-        if (!switched) failStartup();
+        // Only act on actual MediaError, not transient events
+        if (videoEl.error) {
+          const switched = tryNextSource('video-error');
+          if (!switched) failStartup();
+        }
       };
 
       attemptPlay();
       scheduleWatchdog();
       
-      const handleCanPlay = () => attemptPlay();
+      const handleCanPlay = () => {
+        if (!startupSettledRef.current) {
+          attemptPlay();
+        }
+      };
       videoEl.addEventListener('canplay', handleCanPlay);
       videoEl.addEventListener('playing', handlePlaying);
       videoEl.addEventListener('waiting', handleWaiting);
