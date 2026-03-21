@@ -540,7 +540,6 @@ export const FeedItem = memo(({
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain transition-opacity duration-150"
-        style={{ paddingBottom: navOffset }}
         src={shouldAttachSource ? videoSrc : undefined}
         poster={posterSrc}
         loop
