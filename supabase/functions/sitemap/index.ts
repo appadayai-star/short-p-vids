@@ -9,7 +9,7 @@ const corsHeaders = {
 const BASE_URL = "https://shortpornvids.com";
 
 // Categories for the platform
-const CATEGORIES = ["Beauty", "Real", "Public", "Homemade", "POV", "Mom", "MILF", "Amateur", "Latina", "Asian", "Big Ass", "Big Tits", "Lesbian", "Blonde"];
+const CATEGORIES = ["Beauty", "Real", "Public", "Homemade", "POV", "Mom", "MILF", "Amateur", "Latina", "Asian", "Big Ass", "Big Tits", "Lesbian", "Blonde", "Brunettes", "Red Head", "Small", "Stepsis", "Snowbunny", "Blowjob"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
