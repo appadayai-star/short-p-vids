@@ -97,13 +97,17 @@ export const FeedItem = memo(({
   const {
     markLoadStart,
     stopWatching,
+    getMetrics,
   } = useWatchMetrics({
     videoId: video.id,
     userId: currentUserId,
     isActive,
     videoRef,
     videoIndex: index,
-    onViewRecorded: () => onViewTracked(video.id),
+    onViewRecorded: () => {
+      const metrics = getMetrics();
+      onViewTracked(video.id, metrics.watchDurationSeconds);
+    },
   });
   
   // UI state
