@@ -103,9 +103,40 @@ const addSessionViewedId = (videoId: string) => {
   try {
     const viewed = new Set(getSessionViewedIds());
     viewed.add(videoId);
-    // Keep only last 100 to prevent storage bloat
     const arr = Array.from(viewed).slice(-100);
     sessionStorage.setItem('session_viewed_videos', JSON.stringify(arr));
+  } catch {}
+};
+
+// Session watch data for mid-session adaptation
+interface SessionWatchEntry {
+  videoId: string;
+  watchDuration: number;
+  tags: string[];
+}
+
+const getSessionWatchData = (): SessionWatchEntry[] => {
+  try {
+    const data = sessionStorage.getItem('session_watch_data');
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+};
+
+const addSessionWatchData = (entry: SessionWatchEntry) => {
+  try {
+    const data = getSessionWatchData();
+    // Update existing or add new
+    const existing = data.findIndex(e => e.videoId === entry.videoId);
+    if (existing >= 0) {
+      data[existing] = entry;
+    } else {
+      data.push(entry);
+    }
+    // Keep last 30 entries
+    const trimmed = data.slice(-30);
+    sessionStorage.setItem('session_watch_data', JSON.stringify(trimmed));
   } catch {}
 };
 
