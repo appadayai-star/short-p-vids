@@ -283,7 +283,7 @@ export const FeedItem = memo(({
           if (startupSettledRef.current) return;
           const switched = tryNextSource('startup-timeout');
           if (!switched) failStartup();
-        }, 2200);
+        }, 4000);
       };
       
       const attemptPlay = () => {
