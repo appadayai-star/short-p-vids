@@ -505,10 +505,20 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     loadMore();
   }, [activeIndex, feedEntries.length, hasMore, isLoadingMore, loading, searchQuery, categoryFilter, userId]);
 
-  // Track view locally to prevent duplicate fetches - actual metrics are handled by useWatchMetrics
-  const handleViewTracked = useCallback((videoId: string) => {
+  // Track view locally and record session watch data for mid-session adaptation
+  const handleViewTracked = useCallback((videoId: string, watchDuration?: number) => {
     addSessionViewedId(videoId);
-  }, []);
+    
+    // Record watch data for session adaptation
+    const video = videos.find(v => v.id === videoId);
+    if (video && watchDuration !== undefined) {
+      addSessionWatchData({
+        videoId,
+        watchDuration,
+        tags: video.tags || [],
+      });
+    }
+  }, [videos]);
 
   const handleRetry = () => {
     window.location.reload();
