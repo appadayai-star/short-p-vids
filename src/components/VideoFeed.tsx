@@ -11,8 +11,8 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const DEBUG_SCROLL = import.meta.env.DEV;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-// Fast-scroll detection: if user scrolls past >1 video at once, defer playback
-const FAST_SCROLL_SETTLE_MS = 300;
+// Keep this short so the landed-on video becomes priority almost immediately
+const SCROLL_SETTLE_MS = 140;
 
 interface Video {
   id: string;
@@ -133,10 +133,11 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   
-  // Fast-scroll detection
+  // Scroll settle state (used only for preload, not for active playback)
   const [isScrollSettled, setIsScrollSettled] = useState(true);
   const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActiveIndexRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedIdsRef = useRef<Set<string>>(new Set());
@@ -274,94 +275,56 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     refetch();
   }, [searchQuery, categoryFilter]);
 
-  // === INTERSECTION OBSERVER with fast-scroll detection ===
+  // === SIMPLE ACTIVE INDEX DETECTION (scroll-snap aware) ===
+  // We derive active index directly from scroll position for deterministic behavior.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || videos.length === 0) return;
+    if (!container || feedEntries.length === 0) return;
 
-    const observers: IntersectionObserver[] = [];
-    const items = container.querySelectorAll('[data-video-index]');
-    
-    items.forEach((item) => {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting && entry.intersectionRatio >= 0.25) {
-              const idx = parseInt((entry.target as HTMLElement).dataset.videoIndex || '0', 10);
-              const jumped = Math.abs(idx - lastActiveIndexRef.current);
-              lastActiveIndexRef.current = idx;
-              
-              if (scrollSettleTimerRef.current) {
-                clearTimeout(scrollSettleTimerRef.current);
-              }
-              
-              if (jumped > 1) {
-                // Fast scroll — defer playback, show poster only
-                setIsScrollSettled(false);
-                setActiveIndex(idx);
-                
-                scrollSettleTimerRef.current = setTimeout(() => {
-                  setIsScrollSettled(true);
-                  if (videos[idx]) addSessionViewedId(videos[idx].id);
-                }, FAST_SCROLL_SETTLE_MS);
-              } else {
-                // Normal scroll — play immediately
-                setActiveIndex(idx);
-                setIsScrollSettled(true);
-                if (videos[idx]) addSessionViewedId(videos[idx].id);
-              }
-            }
-          });
-        },
-        { threshold: [0.25, 0.5, 0.75], root: container }
-      );
-      observer.observe(item);
-      observers.push(observer);
-    });
+    const getItemHeight = () => container.clientHeight || window.innerHeight || 1;
 
-    // Scroll-settle fallback: after scroll ends, check which item is most visible
-    // This catches edge cases where IntersectionObserver misses the final position
-    const detectActiveFromScroll = () => {
-      const containerRect = container.getBoundingClientRect();
-      const containerCenter = containerRect.top + containerRect.height / 2;
-      let bestIdx = -1;
-      let bestDist = Infinity;
+    const updateFromScrollPosition = () => {
+      const itemHeight = getItemHeight();
+      const rawIndex = Math.round(container.scrollTop / itemHeight);
+      const nextIndex = Math.max(0, Math.min(rawIndex, feedEntries.length - 1));
 
-      items.forEach((item) => {
-        const rect = item.getBoundingClientRect();
-        const itemCenter = rect.top + rect.height / 2;
-        const dist = Math.abs(itemCenter - containerCenter);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestIdx = parseInt((item as HTMLElement).dataset.videoIndex || '0', 10);
-        }
-      });
-
-      if (bestIdx >= 0 && bestIdx !== lastActiveIndexRef.current) {
-        lastActiveIndexRef.current = bestIdx;
-        setActiveIndex(bestIdx);
-        setIsScrollSettled(true);
-        if (videos[bestIdx]) addSessionViewedId(videos[bestIdx].id);
-      } else if (bestIdx >= 0) {
-        // Same index but ensure it's settled & playing
-        setIsScrollSettled(true);
+      if (nextIndex !== lastActiveIndexRef.current) {
+        lastActiveIndexRef.current = nextIndex;
+        setActiveIndex(nextIndex);
       }
     };
 
-    let scrollEndTimer: ReturnType<typeof setTimeout> | null = null;
     const handleScroll = () => {
-      if (scrollEndTimer) clearTimeout(scrollEndTimer);
-      scrollEndTimer = setTimeout(detectActiveFromScroll, 150);
+      setIsScrollSettled(false);
+
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+      scrollRafRef.current = requestAnimationFrame(updateFromScrollPosition);
+
+      if (scrollSettleTimerRef.current) clearTimeout(scrollSettleTimerRef.current);
+      scrollSettleTimerRef.current = setTimeout(() => {
+        updateFromScrollPosition();
+        const idx = lastActiveIndexRef.current;
+        setIsScrollSettled(true);
+        if (feedEntries[idx]?.type === 'video') {
+          addSessionViewedId(feedEntries[idx].data.id);
+        }
+      }, SCROLL_SETTLE_MS);
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
+    updateFromScrollPosition();
 
     return () => {
-      observers.forEach(obs => obs.disconnect());
       container.removeEventListener('scroll', handleScroll);
-      if (scrollEndTimer) clearTimeout(scrollEndTimer);
+      if (scrollSettleTimerRef.current) clearTimeout(scrollSettleTimerRef.current);
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
     };
-  }, [videos]);
+  }, [feedEntries]);
 
   // Load more
   useEffect(() => {
@@ -458,7 +421,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       style={{ overscrollBehavior: 'none', scrollSnapType: 'y mandatory' }}
     >
       {feedEntries.map((entry, index) => {
-        const isInRange = isScrollSettled ? Math.abs(index - activeIndex) <= 2 : index === activeIndex;
+        const isInRange = Math.abs(index - activeIndex) <= 2;
         const key = entry.type === 'ad' ? `ad-${entry.data.id}-${index}` : entry.data.id;
         
         if (!isInRange) {
@@ -489,7 +452,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             key={key}
             video={entry.data}
             index={index}
-            isActive={index === activeIndex && isScrollSettled}
+            isActive={index === activeIndex}
             shouldPreload={shouldPreload}
             shouldPreloadMeta={shouldPreloadMeta}
             hasEntered={hasEntered}
