@@ -599,7 +599,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             video={entry.data}
             index={index}
             isActive={index === activeIndex}
-            shouldPreload={Math.abs(index - activeIndex) <= 1}
+            shouldPreload={Math.abs(index - activeIndex) <= 2}
             hasEntered={hasEntered}
             currentUserId={userId}
             onViewTracked={handleViewTracked}
