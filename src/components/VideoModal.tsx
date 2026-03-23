@@ -515,41 +515,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }
   };
 
-  const handleOpenEdit = (video: Video) => {
-    setEditTitle(video.title || "");
-    setEditTags((video.tags || []).join(", "));
+  const handleOpenEdit = () => {
     setIsEditOpen(true);
-  };
-
-  const handleSaveEdit = async () => {
-    const activeVideo = videos[activeIndex];
-    if (!activeVideo) return;
-    setIsSavingEdit(true);
-    try {
-      const parsedTags = editTags
-        .split(/[,\s#]+/)
-        .map((t: string) => t.trim().toLowerCase())
-        .filter((t: string) => t.length > 0);
-
-      const { error } = await supabase
-        .from("videos")
-        .update({ title: editTitle, tags: parsedTags })
-        .eq("id", activeVideo.id);
-
-      if (error) throw error;
-
-      setVideos(prev =>
-        prev.map(v =>
-          v.id === activeVideo.id ? { ...v, title: editTitle, tags: parsedTags } : v
-        )
-      );
-      toast.success("Video updated");
-      setIsEditOpen(false);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update video");
-    } finally {
-      setIsSavingEdit(false);
-    }
   };
 
   if (!isOpen) return null;
