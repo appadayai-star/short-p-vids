@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,6 +27,7 @@ const SUPABASE_URL = "https://mbuajcicosojebakdtsn.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1idWFqY2ljb3NvamViYWtkdHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NDcxMTYsImV4cCI6MjA3OTEyMzExNn0.Kl3CuR1f3sGm5UAfh3xz1979SUt9Uf9aN_03ns2Qr98";
 
 export const AdminUsers = () => {
+  const { session } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +48,6 @@ export const AdminUsers = () => {
       setError(null);
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("Not authenticated");
 
         const params: Record<string, string> = {
@@ -83,7 +84,7 @@ export const AdminUsers = () => {
 
     const debounce = setTimeout(fetchUsers, 300);
     return () => clearTimeout(debounce);
-  }, [search, roleFilter, page]);
+  }, [search, roleFilter, page, session]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -112,7 +113,6 @@ export const AdminUsers = () => {
     if (!deleteUser) return;
     setDeleting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
       const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-user`, {
@@ -150,7 +150,6 @@ export const AdminUsers = () => {
     let failCount = 0;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
       for (const userId of ids) {

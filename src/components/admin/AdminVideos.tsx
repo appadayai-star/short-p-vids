@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -62,6 +63,7 @@ const VideoThumbnailCell = ({ video }: { video: VideoItem }) => (
 );
 
 export const AdminVideos = () => {
+  const { session } = useAuth();
   const { toast } = useToast();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,7 +86,6 @@ export const AdminVideos = () => {
     requestId: number, currentPage: number, currentSortField: SortField, currentSortOrder: SortOrder, currentSearch: string
   ) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
       const params: Record<string, string> = {
@@ -112,7 +113,7 @@ export const AdminVideos = () => {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
@@ -148,7 +149,6 @@ export const AdminVideos = () => {
     if (!deleteVideo) return;
     setDeleting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
       const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-video`, {
@@ -179,7 +179,6 @@ export const AdminVideos = () => {
     let failCount = 0;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
       for (const videoId of ids) {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -223,6 +224,7 @@ const MetricSection = ({ title, children }: { title: string; children: React.Rea
 );
 
 export const AdminStats = () => {
+  const { session } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -320,7 +322,6 @@ export const AdminStats = () => {
       setError(null);
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("Not authenticated");
 
         let url: string;
@@ -385,7 +386,7 @@ export const AdminStats = () => {
       isCancelled = true;
       abortController.abort();
     };
-  }, [fetchKey]);
+  }, [fetchKey, session]);
 
   // Fetch category clicks
   useEffect(() => {
