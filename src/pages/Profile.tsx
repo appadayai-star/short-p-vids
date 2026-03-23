@@ -10,7 +10,7 @@ import { VideoModal } from "@/components/VideoModal";
 import { SEO } from "@/components/SEO";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, Camera, Loader2 } from "lucide-react";
+import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, Camera, Loader2, MoreVertical, Trash2, Pencil } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { VideoThumbnail } from "@/components/VideoThumbnail";
 import {
@@ -19,6 +19,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 
 const Profile = () => {
   const navigate = useNavigate();
