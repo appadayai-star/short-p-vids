@@ -24,6 +24,10 @@ interface DailyStats {
   saves: number;
   uploads: number;
   shares: number;
+  avgWatchTime: number;
+  videosPerSession: number;
+  engagementRate: number;
+  adClicks: number;
 }
 
 interface Stats {
