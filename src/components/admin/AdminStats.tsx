@@ -24,6 +24,10 @@ interface DailyStats {
   saves: number;
   uploads: number;
   shares: number;
+  avgWatchTime: number;
+  videosPerSession: number;
+  engagementRate: number;
+  adClicks: number;
 }
 
 interface Stats {
@@ -1067,11 +1071,12 @@ export const AdminStats = () => {
                 <Loader2 className="h-8 w-8 animate-spin" />
               </div>
             ) : chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={400}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="date" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
-                  <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                  <YAxis yAxisId="left" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                  <YAxis yAxisId="right" orientation="right" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--card))', 
@@ -1079,14 +1084,23 @@ export const AdminStats = () => {
                       borderRadius: '8px',
                     }}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    formatter={(value: number, name: string) => {
+                      if (name === 'Avg Watch Time') return [`${value}s`, name];
+                      if (name === 'Engagement Rate') return [`${value}%`, name];
+                      return [value, name];
+                    }}
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="views" stroke="#3b82f6" strokeWidth={2} dot={false} name="Views" />
-                  <Line type="monotone" dataKey="profilesCreated" stroke="#22c55e" strokeWidth={2} dot={false} name="Profiles Created" />
-                  <Line type="monotone" dataKey="likes" stroke="#ef4444" strokeWidth={2} dot={false} name="Likes" />
-                  <Line type="monotone" dataKey="saves" stroke="#a855f7" strokeWidth={2} dot={false} name="Saves" />
-                  <Line type="monotone" dataKey="shares" stroke="#06b6d4" strokeWidth={2} dot={false} name="Shares" />
-                  <Line type="monotone" dataKey="uploads" stroke="#f97316" strokeWidth={2} dot={false} name="Uploads" />
+                  <Line yAxisId="left" type="monotone" dataKey="views" stroke="#3b82f6" strokeWidth={2} dot={false} name="Views" />
+                  <Line yAxisId="left" type="monotone" dataKey="likes" stroke="#ef4444" strokeWidth={2} dot={false} name="Likes" />
+                  <Line yAxisId="left" type="monotone" dataKey="saves" stroke="#a855f7" strokeWidth={2} dot={false} name="Saves" />
+                  <Line yAxisId="left" type="monotone" dataKey="shares" stroke="#06b6d4" strokeWidth={2} dot={false} name="Shares" />
+                  <Line yAxisId="left" type="monotone" dataKey="adClicks" stroke="#f59e0b" strokeWidth={2} dot={false} name="Ad Clicks" />
+                  <Line yAxisId="left" type="monotone" dataKey="uploads" stroke="#f97316" strokeWidth={2} dot={false} name="Uploads" />
+                  <Line yAxisId="left" type="monotone" dataKey="profilesCreated" stroke="#22c55e" strokeWidth={2} dot={false} name="Profiles Created" />
+                  <Line yAxisId="right" type="monotone" dataKey="avgWatchTime" stroke="#14b8a6" strokeWidth={2} dot={false} name="Avg Watch Time" strokeDasharray="5 5" />
+                  <Line yAxisId="right" type="monotone" dataKey="videosPerSession" stroke="#8b5cf6" strokeWidth={2} dot={false} name="Videos / Session" strokeDasharray="5 5" />
+                  <Line yAxisId="right" type="monotone" dataKey="engagementRate" stroke="#ec4899" strokeWidth={2} dot={false} name="Engagement Rate" strokeDasharray="5 5" />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
