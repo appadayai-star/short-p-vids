@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
 import { ShareDrawer } from "./ShareDrawer";
 import { cn } from "@/lib/utils";
+import { EditVideoDialog } from "./EditVideoDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
