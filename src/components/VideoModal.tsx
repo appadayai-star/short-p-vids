@@ -103,15 +103,6 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
   const [isScrubbing, setIsScrubbing] = useState(false);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editTags, setEditTags] = useState("");
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
-
-  const ALL_CATEGORIES = [
-    "beauty", "real", "public", "homemade", "pov", "mom", "milf", "amateur",
-    "latina", "asian", "big_ass", "big_tits", "lesbian", "blonde",
-    "brunettes", "red_head", "small", "stepsis", "anal", "blowjob",
-  ];
 
   // Sync with global mute
   useEffect(() => {
