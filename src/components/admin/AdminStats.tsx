@@ -1102,6 +1102,7 @@ export const AdminStats = () => {
                   <Line yAxisId="left" type="monotone" dataKey="uploads" stroke="#f97316" strokeWidth={2} dot={false} name="Uploads" />
                   <Line yAxisId="left" type="monotone" dataKey="profilesCreated" stroke="#22c55e" strokeWidth={2} dot={false} name="Profiles Created" />
                   <Line yAxisId="right" type="monotone" dataKey="avgWatchTime" stroke="#14b8a6" strokeWidth={2} dot={false} name="Avg Watch Time" strokeDasharray="5 5" />
+                  <Line yAxisId="right" type="monotone" dataKey="avgSessionWatchTime" stroke="#06b6d4" strokeWidth={2} dot={false} name="Avg Session Watch Time" strokeDasharray="5 5" />
                   <Line yAxisId="right" type="monotone" dataKey="videosPerSession" stroke="#8b5cf6" strokeWidth={2} dot={false} name="Videos / Session" strokeDasharray="5 5" />
                   <Line yAxisId="right" type="monotone" dataKey="engagementRate" stroke="#ec4899" strokeWidth={2} dot={false} name="Engagement Rate" strokeDasharray="5 5" />
                 </LineChart>
