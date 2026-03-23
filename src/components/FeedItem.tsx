@@ -514,42 +514,9 @@ export const FeedItem = memo(({
     }
   };
 
-  const ALL_CATEGORIES = [
-    "beauty", "real", "public", "homemade", "pov", "mom", "milf", "amateur",
-    "latina", "asian", "big_ass", "big_tits", "lesbian", "blonde",
-    "brunettes", "red_head", "small", "stepsis", "anal", "blowjob",
-  ];
-
   const handleOpenEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditTitle(localVideo.title || "");
-    setEditTags((localVideo.tags || []).join(", "));
     setIsEditOpen(true);
-  };
-
-  const handleSaveEdit = async () => {
-    setIsSavingEdit(true);
-    try {
-      const parsedTags = editTags
-        .split(/[,\s#]+/)
-        .map((t: string) => t.trim().toLowerCase())
-        .filter((t: string) => t.length > 0);
-
-      const { error } = await supabase
-        .from("videos")
-        .update({ title: editTitle, tags: parsedTags })
-        .eq("id", video.id);
-
-      if (error) throw error;
-
-      setLocalVideo(prev => ({ ...prev, title: editTitle, tags: parsedTags }));
-      toast.success("Video updated");
-      setIsEditOpen(false);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update video");
-    } finally {
-      setIsSavingEdit(false);
-    }
   };
 
   const handleCategoryClick = (tag: string) => {
