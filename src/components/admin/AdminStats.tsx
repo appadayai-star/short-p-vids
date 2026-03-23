@@ -224,6 +224,7 @@ const MetricSection = ({ title, children }: { title: string; children: React.Rea
 );
 
 export const AdminStats = () => {
+  const { session } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
