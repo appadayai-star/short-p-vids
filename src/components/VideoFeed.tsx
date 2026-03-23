@@ -444,8 +444,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         //   active+2 = preload="metadata" (light, headers only)
         //   everything else = no src
         const distFromActive = index - activeIndex;
-        const shouldPreload = isScrollSettled && distFromActive === 1;
-        const shouldPreloadMeta = isScrollSettled && distFromActive === 2;
+        // Always preload next video so it's ready instantly when scrolled to
+        const shouldPreload = distFromActive === 1;
+        const shouldPreloadMeta = isScrollSettled && Math.abs(distFromActive) === 2;
 
         return (
           <FeedItem
