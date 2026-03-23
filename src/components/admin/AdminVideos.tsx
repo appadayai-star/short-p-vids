@@ -149,7 +149,6 @@ export const AdminVideos = () => {
     if (!deleteVideo) return;
     setDeleting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Not authenticated");
 
       const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-video`, {
