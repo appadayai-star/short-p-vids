@@ -48,7 +48,6 @@ export const AdminUsers = () => {
       setError(null);
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("Not authenticated");
 
         const params: Record<string, string> = {
