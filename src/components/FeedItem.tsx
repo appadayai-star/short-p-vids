@@ -744,11 +744,11 @@ export const FeedItem = memo(({
             <span className="text-white font-semibold">@{video.profiles.username}</span>
           </div>
 
-          {video.description && <p className="text-white/90 text-sm">{video.description}</p>}
+          {localVideo.description && <p className="text-white/90 text-sm">{localVideo.description}</p>}
 
-          {video.tags && video.tags.length > 0 && (
+          {localVideo.tags && localVideo.tags.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {video.tags.map((tag, idx) => (
+              {localVideo.tags.map((tag, idx) => (
                 <button
                   key={idx}
                   onClick={(e) => { e.stopPropagation(); handleCategoryClick(tag); }}
