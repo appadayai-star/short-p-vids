@@ -28,7 +28,7 @@ const CATEGORIES = [
   { id: "red_head", name: "Red Head" },
   { id: "small", name: "Small" },
   { id: "stepsis", name: "Stepsis" },
-  { id: "snowbunny", name: "Snowbunny" },
+  { id: "anal", name: "Anal" },
   { id: "blowjob", name: "Blowjob" },
 ];
 
