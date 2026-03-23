@@ -792,43 +792,16 @@ export const FeedItem = memo(({
       )}
 
       {/* Edit Video Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-zinc-900 border-white/10 text-white sm:max-w-md z-[60]">
-          <DialogHeader>
-            <DialogTitle>Edit Video</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-white/70">Caption</Label>
-              <Textarea
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="Video caption..."
-                className="bg-white/5 border-white/10 text-white placeholder:text-white/30 min-h-[80px]"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-white/70">Hashtags</Label>
-              <Input
-                value={editTags}
-                onChange={(e) => setEditTags(e.target.value)}
-                placeholder="e.g. beauty, latina, pov"
-                className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
-              />
-              <p className="text-white/40 text-xs">Separate with commas. Available: {ALL_CATEGORIES.join(", ")}</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-white/10 text-white hover:bg-white/10">
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEdit} disabled={isSavingEdit}>
-              {isSavingEdit ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EditVideoDialog
+        open={isEditOpen}
+        onOpenChange={setIsEditOpen}
+        videoId={video.id}
+        initialDescription={localVideo.description}
+        initialTags={localVideo.tags}
+        onSaved={(desc, tags) => {
+          setLocalVideo(prev => ({ ...prev, description: desc, tags }));
+        }}
+      />
     </div>
   );
 });
