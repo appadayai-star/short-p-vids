@@ -142,7 +142,7 @@ export const EditVideoDialog = ({
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="w-full border-white/10 text-white hover:bg-white/10"
+              className="w-full border-white/20 bg-white/10 text-white hover:bg-white/20"
             >
               Cancel
             </Button>
