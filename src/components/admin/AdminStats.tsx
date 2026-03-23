@@ -19,6 +19,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 interface DailyStats {
   date: string;
   views: number;
+  uniqueViewers: number;
   profilesCreated: number;
   likes: number;
   saves: number;

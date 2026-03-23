@@ -564,6 +564,7 @@ Deno.serve(async (req) => {
           
           const bucketSessions = new Set(bucketViews.filter((v: any) => v.session_id).map((v: any) => v.session_id));
           const bucketVideosPerSession = bucketSessions.size > 0 ? Math.round((bucketViews.length / bucketSessions.size) * 10) / 10 : 0;
+          const bucketUniqueViewers = new Set(bucketViews.filter((v: any) => v.viewer_id).map((v: any) => v.viewer_id)).size;
 
           const bucketTotalLikes = (likes.count || 0) + (guestLikes.count || 0);
           const bucketViews_count = views.count || 0;
@@ -572,6 +573,7 @@ Deno.serve(async (req) => {
           return {
             date: dateStr,
             views: bucketViews_count,
+            uniqueViewers: bucketUniqueViewers,
             profilesCreated: profiles.count || 0,
             likes: bucketTotalLikes,
             saves: saves.count || 0,
