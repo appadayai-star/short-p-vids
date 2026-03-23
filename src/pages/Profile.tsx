@@ -627,6 +627,36 @@ const Profile = () => {
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                       <div className="text-white text-xs font-semibold">{video.views_count} views</div>
                     </div>
+                    {/* Three-dot menu for own videos */}
+                    {isOwnProfile && (
+                      <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="p-1.5 bg-black/60 rounded-full hover:bg-black/80 transition-colors">
+                              <MoreVertical className="h-4 w-4 text-white" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="bg-zinc-900 border-white/10">
+                            <DropdownMenuItem
+                              className="text-white hover:bg-white/10 cursor-pointer gap-2"
+                              onClick={(e) => handleEditVideo(video, e)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-red-400 hover:bg-white/10 cursor-pointer gap-2"
+                              onClick={(e) => handleDeleteVideo(video.id, e)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
