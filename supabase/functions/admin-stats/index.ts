@@ -445,7 +445,7 @@ Deno.serve(async (req) => {
     }
 
     // Time-based breakdown (hourly for 24h, daily for longer periods)
-    const daily: { date: string; views: number; profilesCreated: number; likes: number; saves: number; uploads: number; shares: number; avgWatchTime: number; videosPerSession: number; engagementRate: number; adClicks: number }[] = [];
+    const daily: { date: string; views: number; uniqueViewers: number; profilesCreated: number; likes: number; saves: number; uploads: number; shares: number; avgWatchTime: number; videosPerSession: number; engagementRate: number; adClicks: number }[] = [];
     let isHourlyBreakdown = false;
     
     if (!isLifetime && startDate && endDate) {
