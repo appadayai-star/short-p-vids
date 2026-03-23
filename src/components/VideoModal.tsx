@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { X, Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2 } from "lucide-react";
+import { X, Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -12,6 +12,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 
 // Global mute state
 let globalMuted = true;
@@ -101,6 +112,16 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
   const [duration, setDuration] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const ALL_CATEGORIES = [
+    "beauty", "real", "public", "homemade", "pov", "mom", "milf", "amateur",
+    "latina", "asian", "big_ass", "big_tits", "lesbian", "blonde",
+    "brunettes", "red_head", "small", "stepsis", "anal", "blowjob",
+  ];
 
   // Sync with global mute
   useEffect(() => {
@@ -513,6 +534,43 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }
   };
 
+  const handleOpenEdit = (video: Video) => {
+    setEditTitle(video.title || "");
+    setEditTags((video.tags || []).join(", "));
+    setIsEditOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    const activeVideo = videos[activeIndex];
+    if (!activeVideo) return;
+    setIsSavingEdit(true);
+    try {
+      const parsedTags = editTags
+        .split(/[,\s#]+/)
+        .map((t: string) => t.trim().toLowerCase())
+        .filter((t: string) => t.length > 0);
+
+      const { error } = await supabase
+        .from("videos")
+        .update({ title: editTitle, tags: parsedTags })
+        .eq("id", activeVideo.id);
+
+      if (error) throw error;
+
+      setVideos(prev =>
+        prev.map(v =>
+          v.id === activeVideo.id ? { ...v, title: editTitle, tags: parsedTags } : v
+        )
+      );
+      toast.success("Video updated");
+      setIsEditOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update video");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const activeVideo = videos[activeIndex];
@@ -651,6 +709,10 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-background border-border z-50">
+                        <DropdownMenuItem onClick={() => handleOpenEdit(video)} className="cursor-pointer">
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleDelete(video.id)} className="text-destructive focus:text-destructive cursor-pointer">
                           <Trash2 className="h-4 w-4 mr-2" />
                           Delete
@@ -741,6 +803,45 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
           username={activeVideo.profiles?.username || 'unknown'}
         />
       )}
+
+      {/* Edit Video Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="bg-zinc-900 border-white/10 text-white sm:max-w-md z-[60]">
+          <DialogHeader>
+            <DialogTitle>Edit Video</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-white/70">Caption</Label>
+              <Textarea
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="Video caption..."
+                className="bg-white/5 border-white/10 text-white placeholder:text-white/30 min-h-[80px]"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white/70">Hashtags</Label>
+              <Input
+                value={editTags}
+                onChange={(e) => setEditTags(e.target.value)}
+                placeholder="e.g. beauty, latina, pov"
+                className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
+              />
+              <p className="text-white/40 text-xs">Separate with commas. Available: {ALL_CATEGORIES.join(", ")}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-white/10 text-white hover:bg-white/10">
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={isSavingEdit}>
+              {isSavingEdit ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
