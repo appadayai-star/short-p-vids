@@ -1093,6 +1093,7 @@ export const AdminStats = () => {
                   />
                   <Legend />
                   <Line yAxisId="left" type="monotone" dataKey="views" stroke="#3b82f6" strokeWidth={2} dot={false} name="Views" />
+                  <Line yAxisId="left" type="monotone" dataKey="uniqueViewers" stroke="#0ea5e9" strokeWidth={2} dot={false} name="Unique Viewers" />
                   <Line yAxisId="left" type="monotone" dataKey="likes" stroke="#ef4444" strokeWidth={2} dot={false} name="Likes" />
                   <Line yAxisId="left" type="monotone" dataKey="saves" stroke="#a855f7" strokeWidth={2} dot={false} name="Saves" />
                   <Line yAxisId="left" type="monotone" dataKey="shares" stroke="#06b6d4" strokeWidth={2} dot={false} name="Shares" />
