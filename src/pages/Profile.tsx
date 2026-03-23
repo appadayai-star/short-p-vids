@@ -50,6 +50,16 @@ const Profile = () => {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [editingVideo, setEditingVideo] = useState<any>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const ALL_CATEGORIES = [
+    "beauty", "real", "public", "homemade", "pov", "mom", "milf", "amateur",
+    "latina", "asian", "big_ass", "big_tits", "lesbian", "blonde",
+    "brunettes", "red_head", "small", "stepsis", "anal", "blowjob",
+  ];
 
   const isOwnProfile = !userId || userId === currentUser?.id;
 
