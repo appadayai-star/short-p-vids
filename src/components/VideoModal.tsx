@@ -717,7 +717,6 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                           <Trash2 className="h-4 w-4 mr-2" />
                           Delete
                         </DropdownMenuItem>
-                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
