@@ -30,19 +30,53 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      setSession(initialSession);
-      setUser(initialSession?.user ?? null);
-      setStatus("ready");
-    });
-
-    // Listen for auth changes
+    // Listen first so we never miss auth state transitions
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
       setUser(newSession?.user ?? null);
       setStatus("ready");
     });
+
+    const initializeAuth = async () => {
+      try {
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+
+        if (!initialSession) {
+          setSession(null);
+          setUser(null);
+          setStatus("ready");
+          return;
+        }
+
+        // Validate stored session; if stale/revoked, try refresh once
+        const { data: userData, error: userError } = await supabase.auth.getUser(initialSession.access_token);
+
+        if (userError || !userData.user) {
+          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession({
+            refresh_token: initialSession.refresh_token,
+          });
+
+          if (refreshError || !refreshed.session) {
+            await supabase.auth.signOut();
+            setSession(null);
+            setUser(null);
+          } else {
+            setSession(refreshed.session);
+            setUser(refreshed.user ?? refreshed.session.user ?? null);
+          }
+        } else {
+          setSession(initialSession);
+          setUser(userData.user);
+        }
+      } catch {
+        setSession(null);
+        setUser(null);
+      } finally {
+        setStatus("ready");
+      }
+    };
+
+    initializeAuth();
 
     return () => subscription.unsubscribe();
   }, []);
