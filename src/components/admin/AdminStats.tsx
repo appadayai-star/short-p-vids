@@ -1087,7 +1087,7 @@ export const AdminStats = () => {
                     }}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
                     formatter={(value: number, name: string) => {
-                      if (name === 'Avg Watch Time') return [`${value}s`, name];
+                      if (name === 'Avg Watch Time' || name === 'Avg Session Watch Time') return [`${value}s`, name];
                       if (name === 'Engagement Rate') return [`${value}%`, name];
                       return [value, name];
                     }}
