@@ -63,6 +63,7 @@ const VideoThumbnailCell = ({ video }: { video: VideoItem }) => (
 );
 
 export const AdminVideos = () => {
+  const { session } = useAuth();
   const { toast } = useToast();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);

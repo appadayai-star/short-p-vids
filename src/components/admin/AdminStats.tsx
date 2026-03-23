@@ -322,7 +322,6 @@ export const AdminStats = () => {
       setError(null);
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("Not authenticated");
 
         let url: string;
