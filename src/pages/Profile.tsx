@@ -324,6 +324,43 @@ const Profile = () => {
     }
   };
 
+  const handleEditVideo = (video: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingVideo(video);
+    setEditTitle(video.title || "");
+    setEditTags((video.tags || []).join(", "));
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingVideo) return;
+    setIsSavingEdit(true);
+    try {
+      const parsedTags = editTags
+        .split(/[,\s#]+/)
+        .map((t: string) => t.trim().toLowerCase())
+        .filter((t: string) => t.length > 0);
+
+      const { error } = await supabase
+        .from("videos")
+        .update({ title: editTitle, tags: parsedTags })
+        .eq("id", editingVideo.id);
+
+      if (error) throw error;
+
+      setMyVideos(prev =>
+        prev.map(v =>
+          v.id === editingVideo.id ? { ...v, title: editTitle, tags: parsedTags } : v
+        )
+      );
+      toast.success("Video updated");
+      setEditingVideo(null);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update video");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   const handleAvatarClick = () => {
     if (isOwnProfile && avatarInputRef.current) {
       avatarInputRef.current.click();
