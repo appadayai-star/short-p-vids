@@ -497,6 +497,8 @@ Deno.serve(async (req) => {
           const bucketSessions = new Set(bucketViews.filter((v: any) => v.session_id).map((v: any) => v.session_id));
           const bucketVideosPerSession = bucketSessions.size > 0 ? Math.round((bucketViews.length / bucketSessions.size) * 10) / 10 : 0;
           const bucketUniqueViewers = new Set(bucketViews.filter((v: any) => v.viewer_id).map((v: any) => v.viewer_id)).size;
+          const bucketTotalWatchTime = bucketWatchDurations.reduce((a: number, b: number) => a + b, 0);
+          const bucketAvgSessionWatchTime = bucketSessions.size > 0 ? Math.round(bucketTotalWatchTime / bucketSessions.size) : 0;
 
           const bucketTotalLikes = (likes.count || 0) + (guestLikes.count || 0);
           const bucketViews_count = views.count || 0;
@@ -512,6 +514,7 @@ Deno.serve(async (req) => {
             uploads: uploads.count || 0,
             shares: shares.count || 0,
             avgWatchTime: bucketAvgWatchTime,
+            avgSessionWatchTime: bucketAvgSessionWatchTime,
             videosPerSession: bucketVideosPerSession,
             engagementRate: bucketEngagementRate,
             adClicks: adClicksResult.count || 0,
@@ -565,6 +568,8 @@ Deno.serve(async (req) => {
           const bucketSessions = new Set(bucketViews.filter((v: any) => v.session_id).map((v: any) => v.session_id));
           const bucketVideosPerSession = bucketSessions.size > 0 ? Math.round((bucketViews.length / bucketSessions.size) * 10) / 10 : 0;
           const bucketUniqueViewers = new Set(bucketViews.filter((v: any) => v.viewer_id).map((v: any) => v.viewer_id)).size;
+          const bucketTotalWatchTime = bucketWatchDurations.reduce((a: number, b: number) => a + b, 0);
+          const bucketAvgSessionWatchTime = bucketSessions.size > 0 ? Math.round(bucketTotalWatchTime / bucketSessions.size) : 0;
 
           const bucketTotalLikes = (likes.count || 0) + (guestLikes.count || 0);
           const bucketViews_count = views.count || 0;
@@ -580,6 +585,7 @@ Deno.serve(async (req) => {
             uploads: uploads.count || 0,
             shares: shares.count || 0,
             avgWatchTime: bucketAvgWatchTime,
+            avgSessionWatchTime: bucketAvgSessionWatchTime,
             videosPerSession: bucketVideosPerSession,
             engagementRate: bucketEngagementRate,
             adClicks: adClicksResult.count || 0,
