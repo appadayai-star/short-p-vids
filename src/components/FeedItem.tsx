@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, memo, useCallback } from "react";
-import { Heart, Share2, Bookmark, MoreVertical, Trash2, Pencil, Volume2, VolumeX, RefreshCw, Loader2 } from "lucide-react";
+import { Heart, Share2, Bookmark, MoreVertical, Trash2, Pencil, Volume2, VolumeX, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
 import { getBestVideoSource, getBestThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import {
   DropdownMenu,
@@ -13,17 +14,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 
 // Global mute state - persisted across videos
 let globalMuted = true;
@@ -134,9 +124,6 @@ export const FeedItem = memo(({
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editTitle, setEditTitle] = useState(video.title || "");
-  const [editTags, setEditTags] = useState((video.tags || []).join(", "));
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [localVideo, setLocalVideo] = useState(video);
   const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
   
@@ -527,42 +514,9 @@ export const FeedItem = memo(({
     }
   };
 
-  const ALL_CATEGORIES = [
-    "beauty", "real", "public", "homemade", "pov", "mom", "milf", "amateur",
-    "latina", "asian", "big_ass", "big_tits", "lesbian", "blonde",
-    "brunettes", "red_head", "small", "stepsis", "anal", "blowjob",
-  ];
-
   const handleOpenEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditTitle(localVideo.title || "");
-    setEditTags((localVideo.tags || []).join(", "));
     setIsEditOpen(true);
-  };
-
-  const handleSaveEdit = async () => {
-    setIsSavingEdit(true);
-    try {
-      const parsedTags = editTags
-        .split(/[,\s#]+/)
-        .map((t: string) => t.trim().toLowerCase())
-        .filter((t: string) => t.length > 0);
-
-      const { error } = await supabase
-        .from("videos")
-        .update({ title: editTitle, tags: parsedTags })
-        .eq("id", video.id);
-
-      if (error) throw error;
-
-      setLocalVideo(prev => ({ ...prev, title: editTitle, tags: parsedTags }));
-      toast.success("Video updated");
-      setIsEditOpen(false);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update video");
-    } finally {
-      setIsSavingEdit(false);
-    }
   };
 
   const handleCategoryClick = (tag: string) => {
@@ -792,43 +746,16 @@ export const FeedItem = memo(({
       )}
 
       {/* Edit Video Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="bg-zinc-900 border-white/10 text-white sm:max-w-md z-[60]">
-          <DialogHeader>
-            <DialogTitle>Edit Video</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-white/70">Caption</Label>
-              <Textarea
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="Video caption..."
-                className="bg-white/5 border-white/10 text-white placeholder:text-white/30 min-h-[80px]"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-white/70">Hashtags</Label>
-              <Input
-                value={editTags}
-                onChange={(e) => setEditTags(e.target.value)}
-                placeholder="e.g. beauty, latina, pov"
-                className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
-              />
-              <p className="text-white/40 text-xs">Separate with commas. Available: {ALL_CATEGORIES.join(", ")}</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditOpen(false)} className="border-white/10 text-white hover:bg-white/10">
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEdit} disabled={isSavingEdit}>
-              {isSavingEdit ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EditVideoDialog
+        open={isEditOpen}
+        onOpenChange={setIsEditOpen}
+        videoId={video.id}
+        initialDescription={localVideo.description}
+        initialTags={localVideo.tags}
+        onSaved={(desc, tags) => {
+          setLocalVideo(prev => ({ ...prev, description: desc, tags }));
+        }}
+      />
     </div>
   );
 });

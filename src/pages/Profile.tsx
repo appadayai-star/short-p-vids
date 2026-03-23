@@ -13,22 +13,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, Camera, Loader2, MoreVertical, Trash2, Pencil } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { VideoThumbnail } from "@/components/VideoThumbnail";
+import { EditVideoDialog } from "@/components/EditVideoDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -51,15 +42,6 @@ const Profile = () => {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [editingVideo, setEditingVideo] = useState<any>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editTags, setEditTags] = useState("");
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
-
-  const ALL_CATEGORIES = [
-    "beauty", "real", "public", "homemade", "pov", "mom", "milf", "amateur",
-    "latina", "asian", "big_ass", "big_tits", "lesbian", "blonde",
-    "brunettes", "red_head", "small", "stepsis", "anal", "blowjob",
-  ];
 
   const isOwnProfile = !userId || userId === currentUser?.id;
 
@@ -327,38 +309,6 @@ const Profile = () => {
   const handleEditVideo = (video: any, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingVideo(video);
-    setEditTitle(video.title || "");
-    setEditTags((video.tags || []).join(", "));
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editingVideo) return;
-    setIsSavingEdit(true);
-    try {
-      const parsedTags = editTags
-        .split(/[,\s#]+/)
-        .map((t: string) => t.trim().toLowerCase())
-        .filter((t: string) => t.length > 0);
-
-      const { error } = await supabase
-        .from("videos")
-        .update({ title: editTitle, tags: parsedTags })
-        .eq("id", editingVideo.id);
-
-      if (error) throw error;
-
-      setMyVideos(prev =>
-        prev.map(v =>
-          v.id === editingVideo.id ? { ...v, title: editTitle, tags: parsedTags } : v
-        )
-      );
-      toast.success("Video updated");
-      setEditingVideo(null);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update video");
-    } finally {
-      setIsSavingEdit(false);
-    }
   };
 
   const handleAvatarClick = () => {
@@ -793,43 +743,23 @@ const Profile = () => {
       )}
 
       {/* Edit Video Dialog */}
-      <Dialog open={!!editingVideo} onOpenChange={(open) => !open && setEditingVideo(null)}>
-        <DialogContent className="bg-zinc-900 border-white/10 text-white sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Video</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-white/70">Caption</Label>
-              <Textarea
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="Video caption..."
-                className="bg-white/5 border-white/10 text-white placeholder:text-white/30 min-h-[80px]"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-white/70">Hashtags</Label>
-              <Input
-                value={editTags}
-                onChange={(e) => setEditTags(e.target.value)}
-                placeholder="e.g. beauty, latina, pov"
-                className="bg-white/5 border-white/10 text-white placeholder:text-white/30"
-              />
-              <p className="text-white/40 text-xs">Separate with commas. Available: {ALL_CATEGORIES.join(", ")}</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingVideo(null)} className="border-white/10 text-white hover:bg-white/10">
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEdit} disabled={isSavingEdit}>
-              {isSavingEdit ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {editingVideo && (
+        <EditVideoDialog
+          open={!!editingVideo}
+          onOpenChange={(open) => !open && setEditingVideo(null)}
+          videoId={editingVideo.id}
+          initialDescription={editingVideo.description}
+          initialTags={editingVideo.tags}
+          onSaved={(desc, tags) => {
+            setMyVideos(prev =>
+              prev.map(v =>
+                v.id === editingVideo.id ? { ...v, description: desc, tags } : v
+              )
+            );
+            setEditingVideo(null);
+          }}
+        />
+      )}
     </div>
   );
 };
