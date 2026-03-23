@@ -467,7 +467,7 @@ Deno.serve(async (req) => {
           const hourStartStr = hourStart.toISOString();
           const hourEndStr = hourEnd.toISOString();
 
-          const [views, profiles, likes, guestLikes, saves, uploads, shares] = await Promise.all([
+          const [views, profiles, likes, guestLikes, saves, uploads, shares, adClicksResult] = await Promise.all([
             serviceClient.from("video_views").select("id", { count: "exact", head: true })
               .gte("viewed_at", hourStartStr).lt("viewed_at", hourEndStr),
             serviceClient.from("profiles").select("id", { count: "exact", head: true })
@@ -482,16 +482,37 @@ Deno.serve(async (req) => {
               .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
             serviceClient.from("shares").select("id", { count: "exact", head: true })
               .gte("created_at", hourStartStr).lt("created_at", hourEndStr),
+            serviceClient.from("ad_clicks").select("id", { count: "exact", head: true })
+              .gte("clicked_at", hourStartStr).lt("clicked_at", hourEndStr),
           ]);
 
+          // Compute avg watch time and videos/session for this bucket from allViews
+          const bucketViews = allViews.filter((v: any) => {
+            const t = new Date(v.viewed_at).getTime();
+            return t >= hourStart.getTime() && t < hourEnd.getTime();
+          });
+          const bucketWatchDurations = bucketViews.filter((v: any) => v.watch_duration_seconds > 0).map((v: any) => v.watch_duration_seconds);
+          const bucketAvgWatchTime = bucketWatchDurations.length > 0 ? Math.round(bucketWatchDurations.reduce((a: number, b: number) => a + b, 0) / bucketWatchDurations.length) : 0;
+          
+          const bucketSessions = new Set(bucketViews.filter((v: any) => v.session_id).map((v: any) => v.session_id));
+          const bucketVideosPerSession = bucketSessions.size > 0 ? Math.round((bucketViews.length / bucketSessions.size) * 10) / 10 : 0;
+
+          const bucketTotalLikes = (likes.count || 0) + (guestLikes.count || 0);
+          const bucketViews_count = views.count || 0;
+          const bucketEngagementRate = bucketViews_count > 0 ? Math.round(((bucketTotalLikes + (saves.count || 0)) / bucketViews_count) * 10000) / 100 : 0;
+
           return {
-            date: hourStartStr, // Full ISO string for hourly data
-            views: views.count || 0,
+            date: hourStartStr,
+            views: bucketViews_count,
             profilesCreated: profiles.count || 0,
-            likes: (likes.count || 0) + (guestLikes.count || 0),
+            likes: bucketTotalLikes,
             saves: saves.count || 0,
             uploads: uploads.count || 0,
             shares: shares.count || 0,
+            avgWatchTime: bucketAvgWatchTime,
+            videosPerSession: bucketVideosPerSession,
+            engagementRate: bucketEngagementRate,
+            adClicks: adClicksResult.count || 0,
           };
         });
 
