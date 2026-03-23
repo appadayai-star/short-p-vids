@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, ArrowLeft, UserPlus, UserMinus, Search, Camera, Loader2, MoreVertical, Trash2, Pencil } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import { VideoThumbnail } from "@/components/VideoThumbnail";
+import { EditVideoDialog } from "@/components/EditVideoDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
