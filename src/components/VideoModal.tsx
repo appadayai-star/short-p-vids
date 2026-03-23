@@ -657,7 +657,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-background border-border z-50">
-                        <DropdownMenuItem onClick={() => handleOpenEdit(video)} className="cursor-pointer">
+                        <DropdownMenuItem onClick={() => handleOpenEdit()} className="cursor-pointer">
                           <Pencil className="h-4 w-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
