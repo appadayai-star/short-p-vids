@@ -84,7 +84,7 @@ export const AdminUsers = () => {
 
     const debounce = setTimeout(fetchUsers, 300);
     return () => clearTimeout(debounce);
-  }, [search, roleFilter, page]);
+  }, [search, roleFilter, page, session]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {

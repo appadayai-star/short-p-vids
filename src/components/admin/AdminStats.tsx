@@ -386,7 +386,7 @@ export const AdminStats = () => {
       isCancelled = true;
       abortController.abort();
     };
-  }, [fetchKey]);
+  }, [fetchKey, session]);
 
   // Fetch category clicks
   useEffect(() => {

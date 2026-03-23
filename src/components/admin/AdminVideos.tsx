@@ -113,7 +113,7 @@ export const AdminVideos = () => {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
