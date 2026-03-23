@@ -124,9 +124,6 @@ export const FeedItem = memo(({
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editTitle, setEditTitle] = useState(video.title || "");
-  const [editTags, setEditTags] = useState((video.tags || []).join(", "));
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [localVideo, setLocalVideo] = useState(video);
   const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
   
