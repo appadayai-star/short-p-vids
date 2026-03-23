@@ -709,9 +709,14 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-background border-border z-50">
+                        <DropdownMenuItem onClick={() => handleOpenEdit(video)} className="cursor-pointer">
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleDelete(video.id)} className="text-destructive focus:text-destructive cursor-pointer">
                           <Trash2 className="h-4 w-4 mr-2" />
                           Delete
+                        </DropdownMenuItem>
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
