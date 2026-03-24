@@ -1122,6 +1122,71 @@ export const AdminStats = () => {
         )}
       </div>
 
+      {/* Search Analytics */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Search Analytics</h3>
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
+          <StatCard
+            title="Total Searches"
+            value={searchStats?.totalSearches ?? 0}
+            icon={Search}
+            color="text-violet-500"
+            bgColor="bg-violet-500/10"
+            loading={searchStatsLoading}
+          />
+          <StatCard
+            title="Unique Queries"
+            value={searchStats?.topQueries.length ?? 0}
+            icon={Search}
+            color="text-cyan-500"
+            bgColor="bg-cyan-500/10"
+            loading={searchStatsLoading}
+          />
+        </div>
+        {searchStats && searchStats.topQueries.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Top Searched Terms</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {searchStats.topQueries.map((item, i) => {
+                  const maxCount = searchStats.topQueries[0]?.count || 1;
+                  const barWidth = Math.max(5, (item.count / maxCount) * 100);
+                  return (
+                    <div key={item.query} className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground w-5 text-right flex-shrink-0">{i + 1}.</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-sm font-medium truncate">{item.query}</span>
+                          <div className="flex items-center gap-3 flex-shrink-0 ml-2">
+                            <span className="text-sm font-semibold">{item.count}×</span>
+                            <span className="text-xs text-muted-foreground">{item.avgResults} avg results</span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-violet-500 transition-all"
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {searchStats && searchStats.topQueries.length === 0 && !searchStatsLoading && (
+          <Card>
+            <CardContent className="py-8">
+              <p className="text-sm text-muted-foreground text-center">No search data yet for this period</p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       {/* Trend Chart */}
       {datePreset !== "lifetime" && (
         <Card>
