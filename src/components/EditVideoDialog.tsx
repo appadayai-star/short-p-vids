@@ -29,6 +29,10 @@ const CATEGORIES = [
   { id: "stepsis", name: "Stepsis" },
   { id: "anal", name: "Anal" },
   { id: "blowjob", name: "Blowjob" },
+  { id: "teen", name: "Teen" },
+  { id: "goth", name: "Goth" },
+  { id: "cumshot", name: "Cumshot" },
+  { id: "squirt", name: "Squirt" },
 ];
 
 interface EditVideoDialogProps {
