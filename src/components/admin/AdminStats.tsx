@@ -498,6 +498,59 @@ export const AdminStats = () => {
     fetchAdStats();
   }, [fetchKey]);
 
+
+  // Fetch search analytics
+  useEffect(() => {
+    const fetchSearchStats = async () => {
+      setSearchStatsLoading(true);
+      try {
+        let query = supabase.from("search_queries").select("query, results_count, created_at");
+        
+        if (datePreset !== "lifetime") {
+          const presetDates = getDateRangeForPreset(datePreset);
+          if (presetDates) {
+            query = query.gte("created_at", presetDates.startDate).lte("created_at", presetDates.endDate);
+          } else if (dateRange?.from && dateRange?.to) {
+            query = query.gte("created_at", toUTCStartOfDay(dateRange.from).toISOString()).lte("created_at", toUTCEndOfDay(dateRange.to).toISOString());
+          }
+        }
+
+        const { data, error } = await query.order("created_at", { ascending: false }).limit(5000);
+        if (error) throw error;
+
+        const totalSearches = data?.length || 0;
+
+        // Aggregate by query term
+        const queryMap = new Map<string, { count: number; totalResults: number }>();
+        (data || []).forEach((row: any) => {
+          const q = (row.query || "").toLowerCase().trim();
+          if (!q) return;
+          const existing = queryMap.get(q) || { count: 0, totalResults: 0 };
+          existing.count++;
+          existing.totalResults += row.results_count || 0;
+          queryMap.set(q, existing);
+        });
+
+        const topQueries = Array.from(queryMap.entries())
+          .map(([query, stats]) => ({
+            query,
+            count: stats.count,
+            avgResults: stats.count > 0 ? Math.round(stats.totalResults / stats.count) : 0,
+          }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 20);
+
+        setSearchStats({ totalSearches, topQueries });
+      } catch (err) {
+        console.error("Error fetching search stats:", err);
+      } finally {
+        setSearchStatsLoading(false);
+      }
+    };
+
+    fetchSearchStats();
+  }, [fetchKey]);
+
   const chartData = stats?.daily?.map(d => ({
     ...d,
     date: stats?.isHourlyBreakdown 
