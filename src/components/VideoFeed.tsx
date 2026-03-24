@@ -5,6 +5,7 @@ import { LivestreamAdItem } from "./LivestreamAdItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 import { getBestThumbnailUrl, preloadImage } from "@/lib/cloudinary";
+import { createAdPicker, type Ad } from "@/lib/adRotation";
 
 const PAGE_SIZE = 10;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
