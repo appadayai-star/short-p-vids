@@ -14,6 +14,7 @@ interface LivestreamAdItemProps {
   ad: Ad;
   index: number;
   isActive: boolean;
+  shouldPreload?: boolean;
   currentUserId: string | null;
 }
 
