@@ -452,9 +452,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         }
         
         if (entry.type === 'ad') {
+          const shouldPreload = Math.abs(index - activeIndex) <= 1;
           return (
             <LivestreamAdItem key={key} ad={entry.data} index={index}
-              isActive={index === activeIndex} currentUserId={userId} />
+              isActive={index === activeIndex} shouldPreload={shouldPreload} currentUserId={userId} />
           );
         }
 
