@@ -18,7 +18,7 @@ interface LivestreamAdItemProps {
   currentUserId: string | null;
 }
 
-export const LivestreamAdItem = memo(({ ad, index, isActive, currentUserId }: LivestreamAdItemProps) => {
+export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = false, currentUserId }: LivestreamAdItemProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewTrackedRef = useRef(false);
   const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
