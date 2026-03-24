@@ -10,7 +10,7 @@ import {
   Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2, Video, 
   Users, Play, Clock, TrendingUp, TrendingDown, Percent, 
   RefreshCw, ArrowRight, Upload, Share2, UserCheck, Zap, Timer,
-  Bug, Grid3x3
+  Bug, Grid3x3, Search
 } from "lucide-react";
 import { format, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
