@@ -14,10 +14,11 @@ interface LivestreamAdItemProps {
   ad: Ad;
   index: number;
   isActive: boolean;
+  shouldPreload?: boolean;
   currentUserId: string | null;
 }
 
-export const LivestreamAdItem = memo(({ ad, index, isActive, currentUserId }: LivestreamAdItemProps) => {
+export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = false, currentUserId }: LivestreamAdItemProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewTrackedRef = useRef(false);
   const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
@@ -97,11 +98,11 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, currentUserId }: Li
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain bg-black"
         style={{ paddingBottom: navOffset }}
-        src={isActive ? ad.video_url : undefined}
+        src={isActive || shouldPreload ? ad.video_url : undefined}
         loop
         playsInline
         muted
-        preload={isActive ? "auto" : "none"}
+        preload={isActive ? "auto" : shouldPreload ? "auto" : "none"}
       />
 
       {/* Dark overlay for livestream feel */}
