@@ -247,6 +247,13 @@ export const AdminStats = () => {
   } | null>(null);
   const [adStatsLoading, setAdStatsLoading] = useState(true);
 
+  // Search analytics state
+  const [searchStats, setSearchStats] = useState<{
+    totalSearches: number;
+    topQueries: { query: string; count: number; avgResults: number }[];
+  } | null>(null);
+  const [searchStatsLoading, setSearchStatsLoading] = useState(true);
+
   const toUTCStartOfDay = (date: Date) => {
     const d = new Date(date);
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0));
