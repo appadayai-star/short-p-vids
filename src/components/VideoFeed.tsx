@@ -139,15 +139,41 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const hasFetchedRef = useRef(false);
   const cursorRef = useRef<FeedCursor | null>(null);
 
-  // Fetch active ads
+  // Ad picker ref (stable across renders, regenerated when ads change)
+  const adPickerRef = useRef<ReturnType<typeof createAdPicker>>(() => null);
+
+  // Fetch active ads + their performance stats, then build the picker
   useEffect(() => {
     const fetchAds = async () => {
       try {
-        const { data } = await supabase
+        const { data: adsData } = await supabase
           .from("ads")
           .select("id, title, video_url, thumbnail_url, external_link")
           .eq("is_active", true);
-        setAds(data || []);
+        const adsList: Ad[] = adsData || [];
+        setAds(adsList);
+
+        if (adsList.length === 0) return;
+
+        // Fetch view & click counts for each ad
+        const adIds = adsList.map(a => a.id);
+        const [{ data: viewsData }, { data: clicksData }] = await Promise.all([
+          supabase.from("ad_views").select("ad_id").in("ad_id", adIds),
+          supabase.from("ad_clicks").select("ad_id").in("ad_id", adIds),
+        ]);
+
+        const statsMap = new Map<string, { views: number; clicks: number }>();
+        adIds.forEach(id => statsMap.set(id, { views: 0, clicks: 0 }));
+        (viewsData || []).forEach((r: { ad_id: string }) => {
+          const s = statsMap.get(r.ad_id);
+          if (s) s.views++;
+        });
+        (clicksData || []).forEach((r: { ad_id: string }) => {
+          const s = statsMap.get(r.ad_id);
+          if (s) s.clicks++;
+        });
+
+        adPickerRef.current = createAdPicker(adsList, statsMap);
       } catch (err) {
         console.error("[VideoFeed] Failed to fetch ads:", err);
       }
@@ -158,12 +184,11 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   const feedEntries: FeedEntry[] = useMemo(() => {
     if (ads.length === 0) return videos.map(v => ({ type: 'video' as const, data: v }));
     const entries: FeedEntry[] = [];
-    let adIndex = 0;
     for (let i = 0; i < videos.length; i++) {
       entries.push({ type: 'video', data: videos[i] });
       if ((i + 1) % 10 === 0 && ads.length > 0) {
-        entries.push({ type: 'ad', data: ads[adIndex % ads.length] });
-        adIndex++;
+        const picked = adPickerRef.current();
+        if (picked) entries.push({ type: 'ad', data: picked });
       }
     }
     return entries;
