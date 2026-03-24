@@ -98,11 +98,11 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain bg-black"
         style={{ paddingBottom: navOffset }}
-        src={isActive ? ad.video_url : undefined}
+        src={isActive || shouldPreload ? ad.video_url : undefined}
         loop
         playsInline
         muted
-        preload={isActive ? "auto" : "none"}
+        preload={isActive ? "auto" : shouldPreload ? "auto" : "none"}
       />
 
       {/* Dark overlay for livestream feel */}
