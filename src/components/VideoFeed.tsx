@@ -34,13 +34,7 @@ interface Video {
   };
 }
 
-interface Ad {
-  id: string;
-  title: string;
-  video_url: string;
-  thumbnail_url: string | null;
-  external_link: string;
-}
+// Ad type imported from adRotation
 
 type FeedEntry = 
   | { type: 'video'; data: Video }
