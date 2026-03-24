@@ -150,6 +150,16 @@ const Search = () => {
       
       setSearchResults(uniqueVideos);
       setUserResults(data.users || []);
+
+      // Log search query for analytics (fire-and-forget)
+      const totalResults = uniqueVideos.length + (data.users || []).length;
+      const sessionId = localStorage.getItem('video_session_v2') || null;
+      supabase.from("search_queries").insert({
+        query: query.trim().toLowerCase(),
+        user_id: user?.id || null,
+        session_id: sessionId,
+        results_count: totalResults,
+      }).then(() => {});
     } catch (error: any) {
       toast.error("Search failed");
       console.error(error);

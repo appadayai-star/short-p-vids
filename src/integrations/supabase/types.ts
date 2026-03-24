@@ -568,6 +568,33 @@ export type Database = {
           },
         ]
       }
+      search_queries: {
+        Row: {
+          created_at: string
+          id: string
+          query: string
+          results_count: number | null
+          session_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          query: string
+          results_count?: number | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          query?: string
+          results_count?: number | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       shares: {
         Row: {
           created_at: string

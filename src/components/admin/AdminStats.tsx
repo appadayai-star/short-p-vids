@@ -10,7 +10,7 @@ import {
   Eye, UserPlus, Heart, Bookmark, CalendarIcon, Loader2, Video, 
   Users, Play, Clock, TrendingUp, TrendingDown, Percent, 
   RefreshCw, ArrowRight, Upload, Share2, UserCheck, Zap, Timer,
-  Bug, Grid3x3
+  Bug, Grid3x3, Search
 } from "lucide-react";
 import { format, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -246,6 +246,13 @@ export const AdminStats = () => {
     perAd: { id: string; title: string; link: string; views: number; clicks: number; ctr: number }[];
   } | null>(null);
   const [adStatsLoading, setAdStatsLoading] = useState(true);
+
+  // Search analytics state
+  const [searchStats, setSearchStats] = useState<{
+    totalSearches: number;
+    topQueries: { query: string; count: number; avgResults: number }[];
+  } | null>(null);
+  const [searchStatsLoading, setSearchStatsLoading] = useState(true);
 
   const toUTCStartOfDay = (date: Date) => {
     const d = new Date(date);
@@ -489,6 +496,59 @@ export const AdminStats = () => {
     };
 
     fetchAdStats();
+  }, [fetchKey]);
+
+
+  // Fetch search analytics
+  useEffect(() => {
+    const fetchSearchStats = async () => {
+      setSearchStatsLoading(true);
+      try {
+        let query = supabase.from("search_queries").select("query, results_count, created_at");
+        
+        if (datePreset !== "lifetime") {
+          const presetDates = getDateRangeForPreset(datePreset);
+          if (presetDates) {
+            query = query.gte("created_at", presetDates.startDate).lte("created_at", presetDates.endDate);
+          } else if (dateRange?.from && dateRange?.to) {
+            query = query.gte("created_at", toUTCStartOfDay(dateRange.from).toISOString()).lte("created_at", toUTCEndOfDay(dateRange.to).toISOString());
+          }
+        }
+
+        const { data, error } = await query.order("created_at", { ascending: false }).limit(5000);
+        if (error) throw error;
+
+        const totalSearches = data?.length || 0;
+
+        // Aggregate by query term
+        const queryMap = new Map<string, { count: number; totalResults: number }>();
+        (data || []).forEach((row: any) => {
+          const q = (row.query || "").toLowerCase().trim();
+          if (!q) return;
+          const existing = queryMap.get(q) || { count: 0, totalResults: 0 };
+          existing.count++;
+          existing.totalResults += row.results_count || 0;
+          queryMap.set(q, existing);
+        });
+
+        const topQueries = Array.from(queryMap.entries())
+          .map(([query, stats]) => ({
+            query,
+            count: stats.count,
+            avgResults: stats.count > 0 ? Math.round(stats.totalResults / stats.count) : 0,
+          }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 20);
+
+        setSearchStats({ totalSearches, topQueries });
+      } catch (err) {
+        console.error("Error fetching search stats:", err);
+      } finally {
+        setSearchStatsLoading(false);
+      }
+    };
+
+    fetchSearchStats();
   }, [fetchKey]);
 
   const chartData = stats?.daily?.map(d => ({
@@ -1057,6 +1117,71 @@ export const AdminStats = () => {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Search Analytics */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Search Analytics</h3>
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
+          <StatCard
+            title="Total Searches"
+            value={searchStats?.totalSearches ?? 0}
+            icon={Search}
+            color="text-violet-500"
+            bgColor="bg-violet-500/10"
+            loading={searchStatsLoading}
+          />
+          <StatCard
+            title="Unique Queries"
+            value={searchStats?.topQueries.length ?? 0}
+            icon={Search}
+            color="text-cyan-500"
+            bgColor="bg-cyan-500/10"
+            loading={searchStatsLoading}
+          />
+        </div>
+        {searchStats && searchStats.topQueries.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Top Searched Terms</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {searchStats.topQueries.map((item, i) => {
+                  const maxCount = searchStats.topQueries[0]?.count || 1;
+                  const barWidth = Math.max(5, (item.count / maxCount) * 100);
+                  return (
+                    <div key={item.query} className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground w-5 text-right flex-shrink-0">{i + 1}.</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-sm font-medium truncate">{item.query}</span>
+                          <div className="flex items-center gap-3 flex-shrink-0 ml-2">
+                            <span className="text-sm font-semibold">{item.count}×</span>
+                            <span className="text-xs text-muted-foreground">{item.avgResults} avg results</span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-violet-500 transition-all"
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {searchStats && searchStats.topQueries.length === 0 && !searchStatsLoading && (
+          <Card>
+            <CardContent className="py-8">
+              <p className="text-sm text-muted-foreground text-center">No search data yet for this period</p>
             </CardContent>
           </Card>
         )}
