@@ -255,6 +255,11 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       }
 
       if (isActive) {
+        // If already playing this video, don't restart
+        if (!videoEl.paused && videoEl.currentTime > 0) {
+          return;
+        }
+
         // Play active video
         videoEl.currentTime = 0;
         setPlaybackFailed(prev => ({ ...prev, [video.id]: false }));
@@ -302,7 +307,9 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         };
       } else {
         // Pause non-active videos
-        videoEl.pause();
+        if (!videoEl.paused) {
+          videoEl.pause();
+        }
         setHasStartedPlaying(prev => ({ ...prev, [video.id]: false }));
       }
     });
