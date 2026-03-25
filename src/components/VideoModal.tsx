@@ -657,8 +657,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       <div 
         ref={scrollContainerRef} 
         className="h-screen overflow-y-scroll snap-y snap-mandatory scrollbar-hide"
-        onScroll={handleScroll}
-        onWheel={handleWheel}
+        style={{ overscrollBehavior: 'none', scrollSnapType: 'y mandatory' }}
       >
         {isLoading ? (
           <div className="flex items-center justify-center h-screen">
@@ -666,6 +665,15 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
           </div>
         ) : (
           videos.map((video, index) => {
+            const isInRange = Math.abs(index - activeIndex) <= 2;
+            
+            // Empty placeholder for out-of-range items (matching main feed)
+            if (!isInRange) {
+              return (
+                <div key={video.id} className="w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always" />
+              );
+            }
+
             const videoSrc = getBestVideoSource(
               video.cloudinary_public_id || null,
               video.optimized_video_url || null,
@@ -674,39 +682,67 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
             );
             const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
             const isActive = index === activeIndex;
-            const isNearby = Math.abs(index - activeIndex) <= 1;
+            const distFromActive = index - activeIndex;
+            const shouldAttachSource = Math.abs(distFromActive) <= 2;
+            const shouldPreload = distFromActive === 1;
+            const shouldPreloadMeta = isScrollSettled && Math.abs(distFromActive) === 2;
             const isOwnVideo = userId === video.user_id;
+            const videoStarted = hasStartedPlaying[video.id] || false;
+            const videoFailed = playbackFailed[video.id] || false;
 
             return (
               <div key={video.id} className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center">
-                {/* Poster/Thumbnail */}
+                {/* Poster/Thumbnail layer (always visible, video fades in over it) */}
                 {posterSrc && (
                   <img 
                     src={posterSrc} 
                     alt="" 
-                    className="absolute inset-0 w-full h-full object-contain bg-black"
-                    style={{ paddingBottom: navOffset, opacity: isActive ? 0 : 1 }}
+                    className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none"
+                    style={{ paddingBottom: navOffset }}
                   />
                 )}
 
-                {/* Video - only load nearby videos */}
-                {isNearby && (
-                  <video
-                    ref={(el) => {
-                      if (el) videoRefs.current.set(video.id, el);
-                    }}
-                    src={videoSrc}
-                    poster={posterSrc || undefined}
-                    className="absolute inset-0 w-full h-full object-contain bg-black"
-                    style={{ paddingBottom: navOffset }}
-                    loop
-                    muted={isMuted}
-                    playsInline
-                    preload={isActive ? "auto" : "metadata"}
-                    onClick={(e) => handleVideoTap(e, video.id)}
-                    onTimeUpdate={isActive ? handleTimeUpdate : undefined}
-                    onLoadedMetadata={isActive ? handleLoadedMetadata : undefined}
-                  />
+                {/* Video player - tiered preloading matching main feed */}
+                <video
+                  ref={(el) => {
+                    if (el) videoRefs.current.set(video.id, el);
+                  }}
+                  src={shouldAttachSource ? videoSrc : undefined}
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                  style={{ 
+                    paddingBottom: navOffset,
+                    opacity: isActive && videoStarted ? 1 : 0,
+                    transition: 'opacity 150ms ease',
+                  }}
+                  loop
+                  muted={isMuted}
+                  playsInline
+                  preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
+                  onClick={(e) => handleVideoTap(e, video.id)}
+                  onTimeUpdate={isActive ? handleTimeUpdate : undefined}
+                  onLoadedMetadata={isActive ? handleLoadedMetadata : undefined}
+                />
+
+                {/* Playback failed - retry UI */}
+                {videoFailed && isActive && (
+                  <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30 pointer-events-none">
+                    <button 
+                      onClick={() => {
+                        const videoEl = videoRefs.current.get(video.id);
+                        if (!videoEl) return;
+                        retryCountRefs.current.set(video.id, 0);
+                        setPlaybackFailed(prev => ({ ...prev, [video.id]: false }));
+                        videoEl.load();
+                        videoEl.play().catch(() => {
+                          setPlaybackFailed(prev => ({ ...prev, [video.id]: true }));
+                        });
+                      }}
+                      className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm pointer-events-auto"
+                    >
+                      <RefreshCw className="h-8 w-8 text-white" />
+                      <span className="text-white text-sm">Tap to retry</span>
+                    </button>
+                  </div>
                 )}
 
                 {/* Double-tap heart animation */}
