@@ -374,32 +374,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }
   };
 
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (isScrollingRef.current) return;
-    
-    const container = e.currentTarget;
-    const scrollTop = container.scrollTop;
-    const height = window.innerHeight;
-    const newIndex = Math.round(scrollTop / height);
-    
-    if (newIndex !== activeIndex && newIndex >= 0 && newIndex < videos.length) {
-      setActiveIndex(newIndex);
-    }
-  }, [activeIndex, videos.length]);
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (isScrollingRef.current) return;
-    
-    const direction = e.deltaY > 0 ? 1 : -1;
-    const newIndex = Math.max(0, Math.min(videos.length - 1, activeIndex + direction));
-    
-    if (newIndex !== activeIndex) {
-      isScrollingRef.current = true;
-      setActiveIndex(newIndex);
-      scrollToIndex(newIndex);
-      setTimeout(() => { isScrollingRef.current = false; }, 400);
-    }
-  }, [activeIndex, videos.length]);
+  // handleScroll and handleWheel are now replaced by the scroll-settle listener above
 
   // Unmute only (not toggle) - used for single tap
   const unmute = useCallback(() => {
