@@ -8,9 +8,36 @@ import { VideoModal } from "@/components/VideoModal";
 import { VideoThumbnail } from "@/components/VideoThumbnail";
 import { SEO } from "@/components/SEO";
 import { Input } from "@/components/ui/input";
-import { Search as SearchIcon, TrendingUp, Clock } from "lucide-react";
+import { Search as SearchIcon, TrendingUp, Clock, ChevronRight, Grid3x3 } from "lucide-react";
 import { toast } from "sonner";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+
+const ALL_CATEGORIES = [
+  { id: "beauty", name: "Beauty" },
+  { id: "real", name: "Real" },
+  { id: "public", name: "Public" },
+  { id: "homemade", name: "Homemade" },
+  { id: "pov", name: "POV" },
+  { id: "mom", name: "Mom" },
+  { id: "milf", name: "MILF" },
+  { id: "amateur", name: "Amateur" },
+  { id: "latina", name: "Latina" },
+  { id: "asian", name: "Asian" },
+  { id: "big_ass", name: "Big Ass" },
+  { id: "big_tits", name: "Big Tits" },
+  { id: "lesbian", name: "Lesbian" },
+  { id: "blonde", name: "Blonde" },
+  { id: "brunettes", name: "Brunettes" },
+  { id: "red_head", name: "Red Head" },
+  { id: "small", name: "Small" },
+  { id: "stepsis", name: "Stepsis" },
+  { id: "anal", name: "Anal" },
+  { id: "blowjob", name: "Blowjob" },
+  { id: "teen", name: "Teen" },
+  { id: "goth", name: "Goth" },
+  { id: "cumshot", name: "Cumshot" },
+  { id: "squirt", name: "Squirt" },
+];
 
 interface Video {
   id: string;
