@@ -158,7 +158,7 @@ const Search = () => {
     setSearchQuery(query);
 
     // Save to recent searches
-    const updated = [query, ...recentSearches.filter((s) => s !== query)].slice(0, 10);
+    const updated = [query, ...recentSearches.filter((s) => s !== query)].slice(0, 5);
     setRecentSearches(updated);
     localStorage.setItem("recentSearches", JSON.stringify(updated));
 
