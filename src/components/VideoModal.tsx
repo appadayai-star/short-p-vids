@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { X, Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil } from "lucide-react";
+import { X, Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
