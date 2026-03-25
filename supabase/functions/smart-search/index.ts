@@ -99,10 +99,11 @@ serve(async (req) => {
       throw videosError;
     }
 
-    // Search users
+    // Search users - use server-side filtering to find relevant profiles
     const { data: users, error: usersError } = await supabase
       .from("profiles")
       .select("id, username, avatar_url, bio, followers_count, following_count")
+      .or(`username.ilike.%${searchTerm}%,bio.ilike.%${searchTerm}%`)
       .limit(50);
 
     if (usersError) {
