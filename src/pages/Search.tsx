@@ -137,7 +137,7 @@ const Search = () => {
       // Get top 10
       const trending = Object.entries(tagCounts)
         .sort(([, a], [, b]) => b - a)
-        .slice(0, 10)
+        .slice(0, 5)
         .map(([tag]) => tag);
 
       setTrendingHashtags(trending);
