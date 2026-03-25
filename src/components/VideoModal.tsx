@@ -90,7 +90,19 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
   const [saveCounts, setSaveCounts] = useState<Record<string, number>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
-  const isScrollingRef = useRef(false);
+  
+  // Scroll-settle state (matching main feed)
+  const SCROLL_SETTLE_MS = 140;
+  const [isScrollSettled, setIsScrollSettled] = useState(true);
+  const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActiveIndexRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
+  
+  // Per-video playback state
+  const [hasStartedPlaying, setHasStartedPlaying] = useState<Record<string, boolean>>({});
+  const [playbackFailed, setPlaybackFailed] = useState<Record<string, boolean>>({});
+  const startupTimeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const retryCountRefs = useRef<Map<string, number>>(new Map());
   
   // Double-tap like state
   const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
@@ -130,6 +142,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         const index = providedVideos.findIndex(v => v.id === initialVideoId);
         const targetIndex = index >= 0 ? index : 0;
         setActiveIndex(targetIndex);
+        lastActiveIndexRef.current = targetIndex;
         setIsLoading(false);
         
         setTimeout(() => {
@@ -147,20 +160,153 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     return () => { document.body.style.overflow = 'unset'; };
   }, [isOpen, initialVideoId, providedVideos]);
 
-  // Auto-play active video
+  // === MAIN FEED SCROLL-SETTLE ACTIVE INDEX DETECTION ===
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || videos.length === 0 || isLoading) return;
+
+    const getItemHeight = () => container.clientHeight || window.innerHeight || 1;
+
+    const updateFromScrollPosition = () => {
+      const itemHeight = getItemHeight();
+      const rawIndex = Math.round(container.scrollTop / itemHeight);
+      const nextIndex = Math.max(0, Math.min(rawIndex, videos.length - 1));
+
+      if (nextIndex !== lastActiveIndexRef.current) {
+        lastActiveIndexRef.current = nextIndex;
+        setActiveIndex(nextIndex);
+      }
+    };
+
+    const handleScroll = () => {
+      setIsScrollSettled(false);
+
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+      scrollRafRef.current = requestAnimationFrame(updateFromScrollPosition);
+
+      if (scrollSettleTimerRef.current) clearTimeout(scrollSettleTimerRef.current);
+      scrollSettleTimerRef.current = setTimeout(() => {
+        updateFromScrollPosition();
+        setIsScrollSettled(true);
+      }, SCROLL_SETTLE_MS);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    updateFromScrollPosition();
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollSettleTimerRef.current) clearTimeout(scrollSettleTimerRef.current);
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, [videos, isLoading]);
+
+  // === TIERED PLAYBACK LOGIC (matching main feed) ===
   useEffect(() => {
     videos.forEach((video, index) => {
       const videoEl = videoRefs.current.get(video.id);
       if (!videoEl) return;
-      
-      if (index === activeIndex) {
-        videoEl.currentTime = 0;
-        videoEl.play().catch(() => {});
-      } else {
+
+      const distFromActive = index - activeIndex;
+      const isActive = index === activeIndex;
+      const shouldAttachSource = Math.abs(distFromActive) <= 2;
+      const shouldPreload = distFromActive === 1;
+      const shouldPreloadMeta = isScrollSettled && Math.abs(distFromActive) === 2;
+
+      const videoSrc = getBestVideoSource(
+        video.cloudinary_public_id || null,
+        video.optimized_video_url || null,
+        video.stream_url || null,
+        video.video_url
+      );
+
+      // Detach source for far-away videos
+      if (!shouldAttachSource) {
         videoEl.pause();
+        try {
+          videoEl.removeAttribute('src');
+          videoEl.load();
+        } catch {}
+        // Clear startup timeout
+        const timeout = startupTimeoutRefs.current.get(video.id);
+        if (timeout) { clearTimeout(timeout); startupTimeoutRefs.current.delete(video.id); }
+        setHasStartedPlaying(prev => ({ ...prev, [video.id]: false }));
+        setPlaybackFailed(prev => ({ ...prev, [video.id]: false }));
+        return;
+      }
+
+      // Attach source if needed
+      if (!videoEl.src || videoEl.src === '' || !videoEl.src.includes(videoSrc.substring(0, 30))) {
+        videoEl.src = videoSrc;
+      }
+
+      // Set preload level
+      if (isActive || shouldPreload) {
+        videoEl.preload = 'auto';
+      } else if (shouldPreloadMeta) {
+        videoEl.preload = 'metadata';
+      } else {
+        videoEl.preload = 'none';
+      }
+
+      if (isActive) {
+        // Play active video
+        videoEl.currentTime = 0;
+        setPlaybackFailed(prev => ({ ...prev, [video.id]: false }));
+        setHasStartedPlaying(prev => ({ ...prev, [video.id]: false }));
+        retryCountRefs.current.set(video.id, 0);
+
+        const handlePlaying = () => {
+          const t = startupTimeoutRefs.current.get(video.id);
+          if (t) { clearTimeout(t); startupTimeoutRefs.current.delete(video.id); }
+          setPlaybackFailed(prev => ({ ...prev, [video.id]: false }));
+          setHasStartedPlaying(prev => ({ ...prev, [video.id]: true }));
+          videoEl.removeEventListener('playing', handlePlaying);
+        };
+
+        videoEl.addEventListener('playing', handlePlaying);
+
+        const attemptPlay = () => {
+          videoEl.play().catch((err) => {
+            if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
+            const retries = retryCountRefs.current.get(video.id) || 0;
+            if (retries <= 1) {
+              retryCountRefs.current.set(video.id, retries + 1);
+              setTimeout(() => { videoEl.load(); attemptPlay(); }, 250);
+              return;
+            }
+            setPlaybackFailed(prev => ({ ...prev, [video.id]: true }));
+          });
+        };
+
+        // Clear any existing startup timeout
+        const existingTimeout = startupTimeoutRefs.current.get(video.id);
+        if (existingTimeout) clearTimeout(existingTimeout);
+
+        // Set startup timeout (4.5s like main feed)
+        startupTimeoutRefs.current.set(video.id, setTimeout(() => {
+          if (index !== lastActiveIndexRef.current) return;
+          if (!videoEl.paused && videoEl.currentTime > 0) return;
+          setPlaybackFailed(prev => ({ ...prev, [video.id]: true }));
+        }, 4500));
+
+        attemptPlay();
+
+        return () => {
+          videoEl.removeEventListener('playing', handlePlaying);
+        };
+      } else {
+        // Pause non-active videos
+        videoEl.pause();
+        setHasStartedPlaying(prev => ({ ...prev, [video.id]: false }));
       }
     });
-  }, [activeIndex, videos]);
+  }, [activeIndex, videos, isScrollSettled]);
 
   const scrollToIndex = (index: number) => {
     if (scrollContainerRef.current) {
