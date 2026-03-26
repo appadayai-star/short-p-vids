@@ -46,13 +46,14 @@ export const AdminTracking = () => {
   const rangeStart = getDateRangeStart(dateRange);
 
   const { data: clickStats = [] } = useQuery({
-    queryKey: ["tracking-clicks-stats", rangeStart, links.map((l: any) => l.id).join(",")],
+    queryKey: ["tracking-clicks-stats", dateRange, links.map((l: any) => l.id).join(",")],
     enabled: links.length > 0,
     queryFn: async () => {
+      const start = getDateRangeStart(dateRange);
       const { data, error } = await supabase
         .from("tracking_clicks")
         .select("link_id, clicked_at")
-        .gte("clicked_at", rangeStart);
+        .gte("clicked_at", start);
       if (error) throw error;
       return data;
     },
