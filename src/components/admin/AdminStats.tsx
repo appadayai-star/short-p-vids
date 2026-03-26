@@ -564,24 +564,28 @@ export const AdminStats = ({ datePreset, onDatePresetChange }: AdminStatsProps) 
   return (
     <div className="space-y-8">
       {/* Time Range Selector */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-        <Select value={datePreset} onValueChange={handlePresetChange}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Select time range" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="24h">Last 24 hours</SelectItem>
-            <SelectItem value="7d">Last 7 days</SelectItem>
-            <SelectItem value="30d">Last 30 days</SelectItem>
-            <SelectItem value="lifetime">Lifetime</SelectItem>
-            <SelectItem value="custom">Custom range</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap gap-2 items-center">
+        {[
+          { value: "24h", label: "24h" },
+          { value: "7d", label: "7d" },
+          { value: "30d", label: "30d" },
+          { value: "lifetime", label: "All Time" },
+          { value: "custom", label: "Custom" },
+        ].map((preset) => (
+          <Button
+            key={preset.value}
+            variant={datePreset === preset.value ? "default" : "outline"}
+            size="sm"
+            onClick={() => handlePresetChange(preset.value)}
+          >
+            {preset.label}
+          </Button>
+        ))}
 
         {datePreset === "custom" && (
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" className={cn("justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
+              <Button variant="outline" size="sm" className={cn("justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
                 <CalendarIcon className="mr-2 h-4 w-4" />
                 {dateRange?.from ? (
                   dateRange.to ? (
@@ -606,7 +610,8 @@ export const AdminStats = ({ datePreset, onDatePresetChange }: AdminStatsProps) 
                     setFetchKey(prev => prev + 1);
                   }
                 }} 
-                numberOfMonths={2} 
+                numberOfMonths={2}
+                className="p-3 pointer-events-auto"
               />
             </PopoverContent>
           </Popover>
