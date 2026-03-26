@@ -13,12 +13,17 @@ import { format, subDays, subHours } from "date-fns";
 
 const DOMAIN = "shortpornvids.com";
 
-const DATE_RANGES = [
-  { label: "24h", getValue: () => subHours(new Date(), 24) },
-  { label: "7d", getValue: () => subDays(new Date(), 7) },
-  { label: "30d", getValue: () => subDays(new Date(), 30) },
-  { label: "All Time", getValue: () => new Date(0) },
-];
+const DATE_RANGE_LABELS = ["24h", "7d", "30d", "All Time"] as const;
+
+const getDateRangeStart = (index: number): string => {
+  const now = new Date();
+  switch (index) {
+    case 0: return subHours(now, 24).toISOString();
+    case 1: return subDays(now, 7).toISOString();
+    case 2: return subDays(now, 30).toISOString();
+    default: return new Date(0).toISOString();
+  }
+};
 
 export const AdminTracking = () => {
   const queryClient = useQueryClient();
@@ -38,16 +43,17 @@ export const AdminTracking = () => {
     },
   });
 
-  const rangeStart = DATE_RANGES[dateRange].getValue().toISOString();
+  
 
   const { data: clickStats = [] } = useQuery({
-    queryKey: ["tracking-clicks-stats", rangeStart, links.map((l: any) => l.id).join(",")],
+    queryKey: ["tracking-clicks-stats", dateRange, links.map((l: any) => l.id).join(",")],
     enabled: links.length > 0,
     queryFn: async () => {
+      const start = getDateRangeStart(dateRange);
       const { data, error } = await supabase
         .from("tracking_clicks")
         .select("link_id, clicked_at")
-        .gte("clicked_at", rangeStart);
+        .gte("clicked_at", start);
       if (error) throw error;
       return data;
     },
@@ -155,14 +161,14 @@ export const AdminTracking = () => {
           <Badge variant="secondary">{totalClicks} total clicks</Badge>
         </div>
         <div className="flex gap-1">
-          {DATE_RANGES.map((r, i) => (
+          {DATE_RANGE_LABELS.map((label, i) => (
             <Button
-              key={r.label}
+              key={label}
               variant={dateRange === i ? "default" : "outline"}
               size="sm"
               onClick={() => setDateRange(i)}
             >
-              {r.label}
+              {label}
             </Button>
           ))}
         </div>
