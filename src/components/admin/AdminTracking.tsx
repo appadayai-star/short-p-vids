@@ -43,7 +43,7 @@ export const AdminTracking = () => {
     },
   });
 
-  const rangeStart = getDateRangeStart(dateRange);
+  
 
   const { data: clickStats = [] } = useQuery({
     queryKey: ["tracking-clicks-stats", dateRange, links.map((l: any) => l.id).join(",")],
