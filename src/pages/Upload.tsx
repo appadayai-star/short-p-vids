@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { Loader2, ArrowLeft, Check } from "lucide-react";
+import { Loader2, ArrowLeft, Check, Upload as UploadIcon } from "lucide-react";
 
 const CATEGORIES = [
   { id: "beauty", name: "Beauty" },
@@ -354,7 +354,7 @@ const Upload = () => {
           className="flex-1 flex flex-col items-center justify-center p-8 cursor-pointer"
           onClick={() => fileInputRef.current?.click()}
         >
-          <Upload className="h-12 w-12 text-muted-foreground mb-3" />
+          <UploadIcon className="h-12 w-12 text-muted-foreground mb-3" />
           <p className="text-muted-foreground text-sm">Tap to select a video</p>
         </div>
       )}
