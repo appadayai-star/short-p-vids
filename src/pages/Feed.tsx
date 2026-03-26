@@ -1,8 +1,6 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { VideoFeed } from "@/components/VideoFeed";
-import { UploadModal } from "@/components/UploadModal";
 import { BottomNav } from "@/components/BottomNav";
-import { SEO } from "@/components/SEO";
 import { EntryGate } from "@/components/EntryGate";
 import { Search, X } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
@@ -17,7 +15,7 @@ const Feed = () => {
   const categoryFilter = searchParams.get('category') || '';
   
   const { user, status: authStatus } = useAuth();
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
@@ -60,19 +58,11 @@ const Feed = () => {
           userId={user?.id || null} 
         />
         <BottomNav
-          onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
           isAuthenticated={!!user}
           onHomeRefresh={handleRefresh}
           unreadCount={unreadCount}
           isAdmin={isAdmin}
         />
-        {user && (
-          <UploadModal 
-            open={isUploadOpen} 
-            onOpenChange={setIsUploadOpen}
-            userId={user.id}
-          />
-        )}
       </div>
     </EntryGate>
   );
