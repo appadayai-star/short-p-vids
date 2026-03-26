@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
-import { UploadModal } from "@/components/UploadModal";
+
 import { VideoModal } from "@/components/VideoModal";
 import { VideoThumbnail } from "@/components/VideoThumbnail";
 import { SEO } from "@/components/SEO";
@@ -72,7 +72,7 @@ const Search = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  
   const unreadCount = useUnreadNotifications(user?.id || null);
   const [inputValue, setInputValue] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -447,18 +447,10 @@ const Search = () => {
       </div>
 
       <BottomNav 
-        onUploadClick={user ? () => setIsUploadOpen(true) : undefined} 
         isAuthenticated={!!user}
         onHomeRefresh={undefined}
         unreadCount={unreadCount}
       />
-      {user && (
-        <UploadModal 
-          open={isUploadOpen} 
-          onOpenChange={setIsUploadOpen}
-          userId={user.id}
-        />
-      )}
 
       {selectedVideoId && (
         <VideoModal

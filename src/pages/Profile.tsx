@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { BottomNav } from "@/components/BottomNav";
-import { UploadModal } from "@/components/UploadModal";
+
 import { FollowersModal } from "@/components/FollowersModal";
 import { VideoModal } from "@/components/VideoModal";
 import { SEO } from "@/components/SEO";
@@ -33,7 +33,7 @@ const Profile = () => {
   const [totalLikes, setTotalLikes] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  
   const [followersModalOpen, setFollowersModalOpen] = useState(false);
   const [followersModalType, setFollowersModalType] = useState<"followers" | "following">("followers");
   const unreadCount = useUnreadNotifications(currentUser?.id || null);
@@ -685,19 +685,10 @@ const Profile = () => {
       </div>
 
       <BottomNav 
-        onUploadClick={currentUser ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!currentUser}
         onHomeRefresh={undefined}
         unreadCount={unreadCount}
       />
-      
-      {currentUser && (
-        <UploadModal 
-          open={isUploadOpen} 
-          onOpenChange={setIsUploadOpen}
-          userId={currentUser.id}
-        />
-      )}
 
       <FollowersModal
         isOpen={followersModalOpen}

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
-import { UploadModal } from "@/components/UploadModal";
+
 import { SEO } from "@/components/SEO";
 import { Heart, MessageCircle, Bookmark, UserPlus, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -31,7 +31,7 @@ const Inbox = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const unreadCount = useUnreadNotifications(user?.id || null);
@@ -273,19 +273,10 @@ const Inbox = () => {
       </ScrollArea>
 
       <BottomNav
-        onUploadClick={user ? () => setIsUploadOpen(true) : undefined}
         isAuthenticated={!!user}
         onHomeRefresh={undefined}
         unreadCount={unreadCount}
       />
-
-      {user && (
-        <UploadModal
-          open={isUploadOpen}
-          onOpenChange={setIsUploadOpen}
-          userId={user.id}
-        />
-      )}
     </div>
   );
 };
