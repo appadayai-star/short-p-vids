@@ -223,12 +223,16 @@ const MetricSection = ({ title, children }: { title: string; children: React.Rea
   </div>
 );
 
-export const AdminStats = () => {
+interface AdminStatsProps {
+  datePreset: string;
+  onDatePresetChange: (preset: string) => void;
+}
+
+export const AdminStats = ({ datePreset, onDatePresetChange }: AdminStatsProps) => {
   const { session } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [datePreset, setDatePreset] = useState("7d");
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
     to: new Date(),
@@ -314,8 +318,7 @@ export const AdminStats = () => {
         newRange = dateRange;
     }
     
-    // Batch the state updates and trigger a single fetch
-    setDatePreset(preset);
+    onDatePresetChange(preset);
     setDateRange(newRange);
     setFetchKey(prev => prev + 1);
   };
