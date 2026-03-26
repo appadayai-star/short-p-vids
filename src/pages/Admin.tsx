@@ -4,11 +4,11 @@ import { useAdmin } from "@/hooks/useAdmin";
 import { AdminStats } from "@/components/admin/AdminStats";
 import { AdminUsers } from "@/components/admin/AdminUsers";
 import { AdminVideos } from "@/components/admin/AdminVideos";
-import { AdminReprocess } from "@/components/admin/AdminReprocess";
 import { AdminAds } from "@/components/admin/AdminAds";
+import { AdminTracking } from "@/components/admin/AdminTracking";
 import { SEO } from "@/components/SEO";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, RefreshCw, Radio } from "lucide-react";
+import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, Link2, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const Admin = () => {
@@ -78,9 +78,9 @@ const Admin = () => {
               <Radio className="h-4 w-4" />
               <span className="hidden sm:inline">Ads</span>
             </TabsTrigger>
-            <TabsTrigger value="reprocess" className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4" />
-              <span className="hidden sm:inline">Reprocess</span>
+            <TabsTrigger value="tracking" className="flex items-center gap-2">
+              <Link2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Tracking</span>
             </TabsTrigger>
           </TabsList>
 
@@ -100,8 +100,8 @@ const Admin = () => {
             <AdminAds />
           </TabsContent>
 
-          <TabsContent value="reprocess">
-            <AdminReprocess />
+          <TabsContent value="tracking">
+            <AdminTracking />
           </TabsContent>
         </Tabs>
       </main>
