@@ -13,12 +13,17 @@ import { format, subDays, subHours } from "date-fns";
 
 const DOMAIN = "shortpornvids.com";
 
-const DATE_RANGES = [
-  { label: "24h", getValue: () => subHours(new Date(), 24) },
-  { label: "7d", getValue: () => subDays(new Date(), 7) },
-  { label: "30d", getValue: () => subDays(new Date(), 30) },
-  { label: "All Time", getValue: () => new Date(0) },
-];
+const DATE_RANGE_LABELS = ["24h", "7d", "30d", "All Time"] as const;
+
+const getDateRangeStart = (index: number): string => {
+  const now = new Date();
+  switch (index) {
+    case 0: return subHours(now, 24).toISOString();
+    case 1: return subDays(now, 7).toISOString();
+    case 2: return subDays(now, 30).toISOString();
+    default: return new Date(0).toISOString();
+  }
+};
 
 export const AdminTracking = () => {
   const queryClient = useQueryClient();
