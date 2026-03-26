@@ -279,14 +279,7 @@ const Upload = () => {
           <ArrowLeft className="h-6 w-6" />
         </button>
         <h1 className="text-lg font-semibold text-foreground">New post</h1>
-        <Button
-          onClick={handleSubmit}
-          disabled={isUploading || !videoFile || uploadStage === 'complete'}
-          size="sm"
-          className="rounded-full px-6 gap-2"
-        >
-          {getButtonContent()}
-        </Button>
+        <div className="w-10" /> {/* Spacer for centering */}
       </div>
 
       {/* Progress Bar */}
@@ -303,7 +296,7 @@ const Upload = () => {
 
       {/* Main content */}
       {videoPreview ? (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-24">
           {/* Caption + Preview row */}
           <div className="flex gap-4 p-4">
             <div className="flex-1 min-w-0">
@@ -357,10 +350,25 @@ const Upload = () => {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center p-8">
-          <p className="text-muted-foreground text-sm">Select a video to get started</p>
+        <div
+          className="flex-1 flex flex-col items-center justify-center p-8 cursor-pointer"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Upload className="h-12 w-12 text-muted-foreground mb-3" />
+          <p className="text-muted-foreground text-sm">Tap to select a video</p>
         </div>
       )}
+
+      {/* Bottom Post Button */}
+      <div className="sticky bottom-0 p-4 bg-background border-t border-border" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)' }}>
+        <Button
+          onClick={handleSubmit}
+          disabled={isUploading || !videoFile || uploadStage === 'complete'}
+          className="w-full rounded-full gap-2 h-12 text-base"
+        >
+          {getButtonContent()}
+        </Button>
+      </div>
     </div>
   );
 };
