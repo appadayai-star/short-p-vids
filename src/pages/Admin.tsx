@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAdmin } from "@/hooks/useAdmin";
 import { AdminStats } from "@/components/admin/AdminStats";
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 const Admin = () => {
   const navigate = useNavigate();
   const { user, isAdmin, loading } = useAdmin();
+  const [datePreset, setDatePreset] = useState("7d");
 
   useEffect(() => {
     if (!loading) {
@@ -108,7 +109,7 @@ const Admin = () => {
           </TabsList>
 
           <TabsContent value="overview">
-            <AdminStats />
+            <AdminStats datePreset={datePreset} onDatePresetChange={setDatePreset} />
           </TabsContent>
 
           <TabsContent value="users">
@@ -124,7 +125,7 @@ const Admin = () => {
           </TabsContent>
 
           <TabsContent value="tracking">
-            <AdminTracking />
+            <AdminTracking datePreset={datePreset} onDatePresetChange={setDatePreset} />
           </TabsContent>
         </Tabs>
       </main>
