@@ -43,7 +43,7 @@ export const AdminTracking = () => {
     },
   });
 
-  const rangeStart = DATE_RANGES[dateRange].getValue().toISOString();
+  const rangeStart = getDateRangeStart(dateRange);
 
   const { data: clickStats = [] } = useQuery({
     queryKey: ["tracking-clicks-stats", rangeStart, links.map((l: any) => l.id).join(",")],
