@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 
 const RESERVED_ROUTES = [
   "feed", "auth", "search", "categories", "inbox",
-  "profile", "video", "admin",
+  "profile", "video", "admin", "upload",
 ];
 
 const TrackingRedirect = () => {

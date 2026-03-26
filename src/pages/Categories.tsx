@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
-import { UploadModal } from "@/components/UploadModal";
+
 import { SEO } from "@/components/SEO";
 import { Grid3x3 } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
@@ -39,7 +39,7 @@ const Categories = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  
   const [categories, setCategories] = useState<typeof ALL_CATEGORIES>([]);
   const [loading, setLoading] = useState(true);
   const unreadCount = useUnreadNotifications(user?.id || null);
@@ -135,18 +135,10 @@ const Categories = () => {
       </div>
 
       <BottomNav 
-        onUploadClick={user ? () => setIsUploadOpen(true) : undefined} 
         isAuthenticated={!!user}
         onHomeRefresh={undefined}
         unreadCount={unreadCount}
       />
-      {user && (
-        <UploadModal 
-          open={isUploadOpen} 
-          onOpenChange={setIsUploadOpen}
-          userId={user.id}
-        />
-      )}
     </div>
   );
 };

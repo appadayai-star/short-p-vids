@@ -4,14 +4,13 @@ import { NavLink } from "@/components/NavLink";
 import { useNavigate, useLocation } from "react-router-dom";
 
 interface BottomNavProps {
-  onUploadClick?: () => void;
   isAuthenticated: boolean;
   onHomeRefresh?: () => void;
   unreadCount?: number;
   isAdmin?: boolean;
 }
 
-export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh, unreadCount = 0, isAdmin = false }: BottomNavProps) => {
+export const BottomNav = ({ isAuthenticated, onHomeRefresh, unreadCount = 0, isAdmin = false }: BottomNavProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
@@ -85,9 +84,9 @@ export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh, unrea
                 </div>
               </div>
             </button>
-          ) : onUploadClick ? (
+          ) : (
             <button
-              onClick={onUploadClick}
+              onClick={() => navigate("/upload")}
               className="relative -mt-4 mx-2"
             >
               <div className="relative">
@@ -97,7 +96,7 @@ export const BottomNav = ({ onUploadClick, isAuthenticated, onHomeRefresh, unrea
                 </div>
               </div>
             </button>
-          ) : null
+          )
         )}
 
         <NavLink

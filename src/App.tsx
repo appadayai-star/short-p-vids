@@ -14,6 +14,7 @@ import Inbox from "./pages/Inbox";
 import Video from "./pages/Video";
 import Admin from "./pages/Admin";
 import TrackingRedirect from "./pages/TrackingRedirect";
+import Upload from "./pages/Upload";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ const App = () => (
               <Route path="/profile/:userId" element={<Profile />} />
               <Route path="/video/:videoId" element={<Video />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/upload" element={<Upload />} />
               <Route path="/:slug" element={<TrackingRedirect />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
