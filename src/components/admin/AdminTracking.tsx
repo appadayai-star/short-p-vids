@@ -160,14 +160,14 @@ export const AdminTracking = () => {
           <Badge variant="secondary">{totalClicks} total clicks</Badge>
         </div>
         <div className="flex gap-1">
-          {DATE_RANGES.map((r, i) => (
+          {DATE_RANGE_LABELS.map((label, i) => (
             <Button
-              key={r.label}
+              key={label}
               variant={dateRange === i ? "default" : "outline"}
               size="sm"
               onClick={() => setDateRange(i)}
             >
-              {r.label}
+              {label}
             </Button>
           ))}
         </div>
