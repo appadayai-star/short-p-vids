@@ -38,7 +38,30 @@ const Admin = () => {
   }
 
   return (
-    <div className="min-h-screen light" style={{ colorScheme: 'light' }} data-theme="light">
+    <div
+      className="min-h-screen bg-background text-foreground"
+      style={{
+        '--background': '0 0% 100%',
+        '--foreground': '0 0% 0%',
+        '--card': '0 0% 100%',
+        '--card-foreground': '0 0% 0%',
+        '--popover': '0 0% 100%',
+        '--popover-foreground': '0 0% 0%',
+        '--primary': '45 100% 50%',
+        '--primary-foreground': '0 0% 0%',
+        '--secondary': '0 0% 96%',
+        '--secondary-foreground': '0 0% 9%',
+        '--muted': '0 0% 96%',
+        '--muted-foreground': '0 0% 45%',
+        '--accent': '0 0% 96%',
+        '--accent-foreground': '0 0% 9%',
+        '--destructive': '0 84.2% 60.2%',
+        '--destructive-foreground': '0 0% 100%',
+        '--border': '0 0% 90%',
+        '--input': '0 0% 90%',
+        '--ring': '45 100% 50%',
+      } as React.CSSProperties}
+    >
       <SEO title="Admin Dashboard" noIndex />
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
         <div className="container mx-auto px-4 py-4">
