@@ -37,7 +37,7 @@ const App = () => (
               <Route path="/profile/:userId" element={<Profile />} />
               <Route path="/video/:videoId" element={<Video />} />
               <Route path="/admin" element={<Admin />} />
-              <Route path="/t/:slug" element={<TrackingRedirect />} />
+              <Route path="/:slug" element={<TrackingRedirect />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
