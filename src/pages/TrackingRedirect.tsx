@@ -3,19 +3,23 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
 
+const RESERVED_ROUTES = [
+  "feed", "auth", "search", "categories", "inbox",
+  "profile", "video", "admin",
+];
+
 const TrackingRedirect = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
   useEffect(() => {
     const trackAndRedirect = async () => {
-      if (!slug) {
+      if (!slug || RESERVED_ROUTES.includes(slug.toLowerCase())) {
         navigate("/feed", { replace: true });
         return;
       }
 
       try {
-        // Look up the tracking link
         const { data: link } = await supabase
           .from("tracking_links")
           .select("id")
@@ -24,7 +28,6 @@ const TrackingRedirect = () => {
           .maybeSingle();
 
         if (link) {
-          // Log the click
           await supabase.from("tracking_clicks").insert({
             link_id: link.id,
             referrer: document.referrer || null,
@@ -35,7 +38,6 @@ const TrackingRedirect = () => {
         console.error("Tracking error:", err);
       }
 
-      // Always redirect to feed
       navigate("/feed", { replace: true });
     };
 
