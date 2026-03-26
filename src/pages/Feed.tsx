@@ -1,6 +1,7 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { VideoFeed } from "@/components/VideoFeed";
 import { BottomNav } from "@/components/BottomNav";
+import { SEO } from "@/components/SEO";
 import { EntryGate } from "@/components/EntryGate";
 import { Search, X } from "lucide-react";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
@@ -15,7 +16,6 @@ const Feed = () => {
   const categoryFilter = searchParams.get('category') || '';
   
   const { user, status: authStatus } = useAuth();
-  const [refreshKey, setRefreshKey] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const unreadCount = useUnreadNotifications(user?.id || null);
   const { isAdmin } = useAdmin();
