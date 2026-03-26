@@ -89,7 +89,7 @@ export const AdminTracking = () => {
   });
 
   const copyLink = (slug: string) => {
-    navigator.clipboard.writeText(`https://${DOMAIN}/x/${slug}`);
+    navigator.clipboard.writeText(`https://${DOMAIN}/${slug}`);
     toast.success("Link copied to clipboard");
   };
 
@@ -125,7 +125,7 @@ export const AdminTracking = () => {
             <div className="flex-1 space-y-1">
               <Label htmlFor="link-slug">Slug</Label>
               <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground whitespace-nowrap">{DOMAIN}/x/</span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{DOMAIN}/</span>
                 <Input
                   id="link-slug"
                   placeholder="twitter"
