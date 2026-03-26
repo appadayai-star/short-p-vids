@@ -14,22 +14,27 @@ import { format, subDays, subHours } from "date-fns";
 const DOMAIN = "shortpornvids.com";
 
 const DATE_RANGE_LABELS = ["24h", "7d", "30d", "All Time"] as const;
+const DATE_RANGE_PRESETS = ["24h", "7d", "30d", "lifetime"] as const;
 
-const getDateRangeStart = (index: number): string => {
+const getDateRangeStart = (preset: string): string => {
   const now = new Date();
-  switch (index) {
-    case 0: return subHours(now, 24).toISOString();
-    case 1: return subDays(now, 7).toISOString();
-    case 2: return subDays(now, 30).toISOString();
+  switch (preset) {
+    case "24h": return subHours(now, 24).toISOString();
+    case "7d": return subDays(now, 7).toISOString();
+    case "30d": return subDays(now, 30).toISOString();
     default: return new Date(0).toISOString();
   }
 };
 
-export const AdminTracking = () => {
+interface AdminTrackingProps {
+  datePreset: string;
+  onDatePresetChange: (preset: string) => void;
+}
+
+export const AdminTracking = ({ datePreset, onDatePresetChange }: AdminTrackingProps) => {
   const queryClient = useQueryClient();
   const [newName, setNewName] = useState("");
   const [newSlug, setNewSlug] = useState("");
-  const [dateRange, setDateRange] = useState(1); // index into DATE_RANGES
 
   const { data: links = [], isLoading: linksLoading } = useQuery({
     queryKey: ["tracking-links"],
@@ -46,10 +51,10 @@ export const AdminTracking = () => {
   
 
   const { data: clickStats = [] } = useQuery({
-    queryKey: ["tracking-clicks-stats", dateRange, links.map((l: any) => l.id).join(",")],
+    queryKey: ["tracking-clicks-stats", datePreset, links.map((l: any) => l.id).join(",")],
     enabled: links.length > 0,
     queryFn: async () => {
-      const start = getDateRangeStart(dateRange);
+      const start = getDateRangeStart(datePreset);
       const { data, error } = await supabase
         .from("tracking_clicks")
         .select("link_id, clicked_at")
@@ -164,9 +169,9 @@ export const AdminTracking = () => {
           {DATE_RANGE_LABELS.map((label, i) => (
             <Button
               key={label}
-              variant={dateRange === i ? "default" : "outline"}
+              variant={datePreset === DATE_RANGE_PRESETS[i] ? "default" : "outline"}
               size="sm"
-              onClick={() => setDateRange(i)}
+              onClick={() => onDatePresetChange(DATE_RANGE_PRESETS[i])}
             >
               {label}
             </Button>
