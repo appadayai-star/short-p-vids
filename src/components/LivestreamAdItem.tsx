@@ -101,6 +101,11 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
         src={isActive || shouldPreload ? ad.video_url : undefined}
         loop
         playsInline
+        // @ts-ignore - WebView-specific attributes to prevent auto-fullscreen in in-app browsers
+        webkit-playsinline="true"
+        x5-playsinline="true"
+        x5-video-player-type="h5"
+        x5-video-player-fullscreen="false"
         muted
         preload={isActive ? "auto" : shouldPreload ? "auto" : "none"}
       />

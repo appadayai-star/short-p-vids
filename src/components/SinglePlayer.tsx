@@ -285,6 +285,11 @@ export const SinglePlayer = memo(({
         className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
         loop
         playsInline
+        // @ts-ignore - WebView-specific attributes to prevent auto-fullscreen in in-app browsers
+        webkit-playsinline="true"
+        x5-playsinline="true"
+        x5-video-player-type="h5"
+        x5-video-player-fullscreen="false"
         muted={isMuted}
         preload="auto"
         poster={posterSrc || undefined}
