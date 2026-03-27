@@ -724,6 +724,11 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                   loop
                   muted={isMuted}
                   playsInline
+                  // @ts-ignore - WebView-specific attributes to prevent auto-fullscreen in in-app browsers
+                  webkit-playsinline="true"
+                  x5-playsinline="true"
+                  x5-video-player-type="h5"
+                  x5-video-player-fullscreen="false"
                   preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
                   onClick={(e) => handleVideoTap(e, video.id)}
                   onTimeUpdate={isActive ? handleTimeUpdate : undefined}

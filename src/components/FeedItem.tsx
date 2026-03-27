@@ -560,6 +560,11 @@ export const FeedItem = memo(({
             src={shouldAttachSource ? videoSrc : undefined}
             loop
             playsInline
+            // @ts-ignore - WebView-specific attributes to prevent auto-fullscreen in in-app browsers (X, Instagram, etc.)
+            webkit-playsinline="true"
+            x5-playsinline="true"
+            x5-video-player-type="h5"
+            x5-video-player-fullscreen="false"
             muted={isMuted}
             preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
             aria-hidden={!isActive}
