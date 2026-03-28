@@ -1,31 +1,45 @@
-// Cloudinary URL generation utilities
-// Generate dynamic transformation URLs from public_id
+// Video URL generation utilities
+// Hybrid: Cloudflare Stream (preferred) + Cloudinary (legacy fallback)
 // Optimized for instant startup and mobile streaming
 
 const CLOUDINARY_CLOUD_NAME = 'domj6omwb';
 
+// Cloudflare Stream customer subdomain - extracted from first successful playback
+// For now we use the iframe/videodelivery.net pattern for HLS
+const CLOUDFLARE_CUSTOMER_SUBDOMAIN = 'customer-domj6omwb'; // placeholder until we know the real one
+
 // Static placeholder for missing thumbnails - gradient placeholder
 export const DEFAULT_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="480" height="852" viewBox="0 0 480 852"%3E%3Cdefs%3E%3ClinearGradient id="g" x1="0%25" y1="0%25" x2="0%25" y2="100%25"%3E%3Cstop offset="0%25" style="stop-color:%231a1a2e"%2F%3E%3Cstop offset="100%25" style="stop-color:%230f0f1a"%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect fill="url(%23g)" width="480" height="852"%2F%3E%3C%2Fsvg%3E';
 
+// ===== CLOUDFLARE STREAM UTILITIES =====
+
+// Get Cloudflare Stream HLS URL for native <video> playback
+export function getCloudflareStreamUrl(cloudflareVideoId: string): string {
+  return `https://customer-f33mdyre2vhg0apn.cloudflarestream.com/${cloudflareVideoId}/manifest/video.m3u8`;
+}
+
+// Get Cloudflare Stream MP4 download URL (fallback for non-HLS browsers)
+export function getCloudflareDownloadUrl(cloudflareVideoId: string): string {
+  return `https://customer-f33mdyre2vhg0apn.cloudflarestream.com/${cloudflareVideoId}/downloads/default.mp4`;
+}
+
+// Get Cloudflare Stream thumbnail
+export function getCloudflareThumbnailUrl(cloudflareVideoId: string): string {
+  return `https://customer-f33mdyre2vhg0apn.cloudflarestream.com/${cloudflareVideoId}/thumbnails/thumbnail.jpg?time=0s&height=852&width=480`;
+}
+
+// ===== CLOUDINARY UTILITIES (LEGACY) =====
+
 export function getOptimizedVideoUrl(publicId: string): string {
-  // Simple MP4 - let Cloudinary auto-optimize
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/f_auto,q_auto/${publicId}`;
 }
 
 export function getStreamUrl(publicId: string): string {
-  // HLS adaptive streaming - simplified
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${publicId}.m3u8`;
 }
 
 export function getThumbnailUrl(publicId: string): string {
-  // 9:16 letterboxed thumbnail (no crop) so poster matches video framing exactly
-  const url = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_pad,b_black,f_auto,q_auto,so_0/${publicId}.jpg`;
-  // Debug: log the first generated URL
-  if (typeof window !== 'undefined' && !(window as any).__thumbnailLogged) {
-    console.log('[Cloudinary] Generated thumbnail URL:', url);
-    (window as any).__thumbnailLogged = true;
-  }
-  return url;
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/w_480,h_852,c_pad,b_black,f_auto,q_auto,so_0/${publicId}.jpg`;
 }
 
 // Check if browser supports HLS natively (Safari, iOS)
@@ -35,43 +49,53 @@ export function supportsHlsNatively(): boolean {
   return video.canPlayType('application/vnd.apple.mpegurl') !== '';
 }
 
-// Get best video source for playback
-// Priority: optimized_video_url > cloudinary MP4 > original
+// ===== HYBRID VIDEO SOURCE LOGIC =====
+
+// Get best video source - Cloudflare first, then Cloudinary fallback
+// Priority: cloudflare_video_id > optimized_video_url > cloudinary_public_id > original
 export function getBestVideoSource(
   cloudinaryPublicId: string | null,
   optimizedVideoUrl: string | null,
   streamUrl: string | null,
-  originalVideoUrl: string
+  originalVideoUrl: string,
+  cloudflareVideoId?: string | null
 ): string {
+  // 1. Cloudflare Stream (new, preferred)
+  if (cloudflareVideoId) {
+    // Use HLS for native support (Safari/iOS), MP4 download fallback otherwise
+    if (supportsHlsNatively()) {
+      return getCloudflareStreamUrl(cloudflareVideoId);
+    }
+    // For non-HLS browsers, use the MP4 download link
+    return getCloudflareDownloadUrl(cloudflareVideoId);
+  }
+
+  // 2. Legacy Cloudinary logic
   const looksDynamicCloudinary = (url: string) => {
     if (!url.includes('res.cloudinary.com')) return false;
     return url.includes('f_auto') || url.includes('q_auto') || /\/upload\/[a-z0-9_,:]+\//i.test(url);
   };
 
-  // 1. Pre-generated optimized URL (fastest, CDN-cached)
-  // If URL looks like on-the-fly transform, prefer canonical public_id URL instead.
   if (optimizedVideoUrl && !looksDynamicCloudinary(optimizedVideoUrl)) {
     return optimizedVideoUrl;
   }
-  // 2. Cloudinary public ID — generate canonical MP4 URL
   if (cloudinaryPublicId) {
     return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${cloudinaryPublicId}.mp4`;
   }
-  // 2b. Dynamic optimized URL fallback if no public id is available
   if (optimizedVideoUrl) {
     return optimizedVideoUrl;
   }
-  // 3. Fallback to original (slowest, unoptimized)
   return originalVideoUrl;
 }
 
-export type VideoSourceType = 'optimized' | 'cloudinary' | 'original';
+export type VideoSourceType = 'cloudflare' | 'optimized' | 'cloudinary' | 'original';
 
 export function getVideoSourceCandidates(
   cloudinaryPublicId: string | null,
   optimizedVideoUrl: string | null,
   streamUrl: string | null,
-  originalVideoUrl: string
+  originalVideoUrl: string,
+  cloudflareVideoId?: string | null
 ): Array<{ url: string; type: VideoSourceType }> {
   const seen = new Set<string>();
   const candidates: Array<{ url: string; type: VideoSourceType }> = [];
@@ -83,6 +107,15 @@ export function getVideoSourceCandidates(
     candidates.push({ url, type });
   };
 
+  // Cloudflare first
+  if (cloudflareVideoId) {
+    if (supportsHlsNatively()) {
+      addCandidate(getCloudflareStreamUrl(cloudflareVideoId), 'cloudflare');
+    }
+    addCandidate(getCloudflareDownloadUrl(cloudflareVideoId), 'cloudflare');
+  }
+
+  // Then Cloudinary fallbacks
   const primary = getBestVideoSource(cloudinaryPublicId, optimizedVideoUrl, streamUrl, originalVideoUrl);
   const canonicalCloudinary = cloudinaryPublicId
     ? `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/${cloudinaryPublicId}.mp4`
@@ -99,19 +132,21 @@ export function getVideoSourceCandidates(
   return candidates;
 }
 
-// Get best thumbnail - ALWAYS returns a valid image URL, never undefined
-// Priority: 1) cloudinary_public_id, 2) thumbnail_url, 3) placeholder
+// Get best thumbnail - Cloudflare first, then Cloudinary, then placeholder
 export function getBestThumbnailUrl(
   cloudinaryPublicId: string | null,
-  thumbnailUrl: string | null
+  thumbnailUrl: string | null,
+  cloudflareVideoId?: string | null
 ): string {
+  if (cloudflareVideoId) {
+    return getCloudflareThumbnailUrl(cloudflareVideoId);
+  }
   if (cloudinaryPublicId) {
     return getThumbnailUrl(cloudinaryPublicId);
   }
   if (thumbnailUrl) {
     return thumbnailUrl;
   }
-  // Always return placeholder - never null/undefined
   return DEFAULT_PLACEHOLDER;
 }
 
@@ -119,13 +154,10 @@ export function getBestThumbnailUrl(
 export function getOptimizedAvatarUrl(avatarUrl: string | null, size: number = 80): string {
   if (!avatarUrl) return '';
   
-  // If it's a Cloudinary URL, apply transformation
   if (avatarUrl.includes('res.cloudinary.com')) {
-    // Insert resize transform before the upload path
     return avatarUrl.replace('/upload/', `/upload/w_${size},h_${size},c_fill,g_face,f_auto,q_auto/`);
   }
   
-  // If it's a Supabase storage URL, add render transform
   if (avatarUrl.includes('supabase.co/storage')) {
     const separator = avatarUrl.includes('?') ? '&' : '?';
     return `${avatarUrl}${separator}width=${size}&height=${size}&resize=cover`;
@@ -146,9 +178,7 @@ export function preloadImage(src: string): void {
 }
 
 // Warm video source - completely non-blocking, never throws
-// Using Image instead of fetch to avoid CORS issues
 export function warmVideoSource(src: string): void {
   if (!src) return;
   // Don't actually make requests - just let video preload handle it
-  // Previous HEAD requests caused CORS issues
 }

@@ -36,6 +36,12 @@ verify_jwt = false
 [functions.batch-reprocess-videos]
 verify_jwt = true
 
+[functions.process-video-cloudflare]
+verify_jwt = true
+
+[functions.migrate-videos-cloudflare]
+verify_jwt = true
+
 [functions.verify-turnstile]
 verify_jwt = false
 
