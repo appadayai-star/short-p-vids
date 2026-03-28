@@ -137,7 +137,7 @@ serve(async (req) => {
       .from("videos")
       .select(`
         id, title, description, video_url, optimized_video_url, stream_url,
-        cloudinary_public_id, thumbnail_url, processing_status,
+        cloudinary_public_id, cloudflare_video_id, thumbnail_url, processing_status,
         views_count, likes_count, tags, created_at, user_id,
         duration_seconds,
         profiles!inner(username, avatar_url)

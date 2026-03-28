@@ -83,6 +83,7 @@ Deno.serve(async (req) => {
         processing_status,
         thumbnail_url,
         cloudinary_public_id,
+        cloudflare_video_id,
         views_count,
         likes_count,
         created_at,
