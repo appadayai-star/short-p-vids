@@ -9,13 +9,23 @@ import { AdminTracking } from "@/components/admin/AdminTracking";
 import { AdminReprocess } from "@/components/admin/AdminReprocess";
 import { SEO } from "@/components/SEO";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, Link2, Radio, Cloud } from "lucide-react";
+import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, Link2, Radio, Cloud, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 
 const Admin = () => {
   const navigate = useNavigate();
   const { user, isAdmin, loading } = useAdmin();
   const [datePreset, setDatePreset] = useState("7d");
+  const [unmigratedCount, setUnmigratedCount] = useState(0);
+
+  useEffect(() => {
+    supabase
+      .from("videos")
+      .select("*", { count: "exact", head: true })
+      .is("cloudflare_video_id", null)
+      .then(({ count }) => setUnmigratedCount(count || 0));
+  }, []);
 
   useEffect(() => {
     if (!loading) {
