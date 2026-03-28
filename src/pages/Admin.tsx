@@ -132,6 +132,10 @@ const Admin = () => {
           <TabsContent value="tracking">
             <AdminTracking datePreset={datePreset} onDatePresetChange={setDatePreset} />
           </TabsContent>
+
+          <TabsContent value="migration">
+            <AdminReprocess />
+          </TabsContent>
         </Tabs>
       </main>
     </div>
