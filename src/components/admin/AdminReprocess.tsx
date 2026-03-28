@@ -90,6 +90,8 @@ export function AdminReprocess() {
     }
   };
 
+  const progressPercent = stats ? (stats.total > 0 ? Math.round((stats.migrated / stats.total) * 100) : 0) : 0;
+
   return (
     <Card>
       <CardHeader>
@@ -109,10 +111,9 @@ export function AdminReprocess() {
           </div>
         ) : stats ? (
           <div className="space-y-3">
-            {/* Progress bar */}
             <div className="space-y-1">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Migration Progress</span>
+                <span className="text-muted-foreground">Migration Progress {autoMigrate && `(Batch #${batchCount})`}</span>
                 <span className="font-medium">{progressPercent}%</span>
               </div>
               <div className="h-2 bg-muted rounded-full overflow-hidden">
@@ -123,29 +124,28 @@ export function AdminReprocess() {
               </div>
             </div>
 
-            {/* Stats grid */}
             <div className="grid grid-cols-3 gap-3">
               <div className="text-center p-2 rounded-lg bg-muted/50">
                 <p className="text-lg font-bold">{stats.total}</p>
                 <p className="text-xs text-muted-foreground">Total</p>
               </div>
-              <div className="text-center p-2 rounded-lg bg-green-500/10">
-                <p className="text-lg font-bold text-green-600">{stats.migrated}</p>
+              <div className="text-center p-2 rounded-lg bg-muted/50">
+                <p className="text-lg font-bold text-primary">{stats.migrated}</p>
                 <p className="text-xs text-muted-foreground">Migrated</p>
               </div>
-              <div className="text-center p-2 rounded-lg bg-yellow-500/10">
-                <p className="text-lg font-bold text-yellow-600">{stats.remaining}</p>
+              <div className="text-center p-2 rounded-lg bg-muted/50">
+                <p className="text-lg font-bold text-destructive">{stats.remaining}</p>
                 <p className="text-xs text-muted-foreground">Remaining</p>
               </div>
             </div>
 
             {stats.remaining === 0 ? (
-              <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-600">
+              <div className="flex items-center gap-2 p-3 bg-primary/10 border border-primary/20 rounded-lg text-primary">
                 <CheckCircle className="h-5 w-5" />
                 <span>All videos have been migrated to Cloudflare Stream!</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-600">
+              <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive">
                 <AlertCircle className="h-5 w-5" />
                 <span>{stats.remaining} videos still need migration</span>
               </div>
@@ -153,30 +153,49 @@ export function AdminReprocess() {
           </div>
         ) : null}
 
-        {/* Migrate button */}
-        <Button
-          onClick={handleMigrate}
-          disabled={isLoading || stats?.remaining === 0}
-          className="w-full"
-        >
-          {isLoading ? (
-            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Migrating (batch of 10)...</>
-          ) : (
-            <><RefreshCw className="h-4 w-4 mr-2" />Migrate Next Batch (10 videos)</>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => {
+              if (autoMigrate) {
+                setAutoMigrate(false);
+              } else {
+                setAutoMigrate(true);
+                if (!isLoading) handleMigrate();
+              }
+            }}
+            disabled={stats?.remaining === 0}
+            variant={autoMigrate ? "destructive" : "default"}
+            className="flex-1"
+          >
+            {autoMigrate ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Stop Auto-Migration</>
+            ) : (
+              <><RefreshCw className="h-4 w-4 mr-2" />Auto-Migrate All</>
+            )}
+          </Button>
+          <Button
+            onClick={handleMigrate}
+            disabled={isLoading || stats?.remaining === 0 || autoMigrate}
+            variant="outline"
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              "Single Batch"
+            )}
+          </Button>
+        </div>
 
-        {/* Results */}
         {results.length > 0 && (
           <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
-            <p className="text-sm font-medium">Results:</p>
-            {results.map((result) => (
+            <p className="text-sm font-medium">Results ({results.length} recent):</p>
+            {results.map((result, i) => (
               <div
-                key={result.id}
+                key={`${result.id}-${i}`}
                 className={`text-xs p-2 rounded ${
                   result.status === 'migrated'
-                    ? 'bg-green-500/10 text-green-600'
-                    : 'bg-red-500/10 text-red-600'
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-destructive/10 text-destructive'
                 }`}
               >
                 <span className="font-mono">{result.id.substring(0, 8)}...</span>
