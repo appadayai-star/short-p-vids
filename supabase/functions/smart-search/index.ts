@@ -16,6 +16,7 @@ interface Video {
   optimized_video_url: string | null;
   stream_url: string | null;
   cloudinary_public_id: string | null;
+  cloudflare_video_id: string | null;
   thumbnail_url: string | null;
   duration_seconds: number | null;
   views_count: number;
@@ -80,6 +81,7 @@ serve(async (req) => {
         optimized_video_url,
         stream_url,
         cloudinary_public_id,
+        cloudflare_video_id,
         thumbnail_url,
         duration_seconds,
         views_count,

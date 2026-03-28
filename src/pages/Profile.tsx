@@ -141,6 +141,7 @@ const Profile = () => {
           optimized_video_url,
           stream_url,
           cloudinary_public_id,
+          cloudflare_video_id,
           thumbnail_url,
           views_count,
           likes_count,

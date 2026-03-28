@@ -3,126 +3,152 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, CheckCircle, AlertCircle } from "lucide-react";
+import { Loader2, RefreshCw, CheckCircle, AlertCircle, Cloud } from "lucide-react";
 
-interface ReprocessResult {
+interface MigrationResult {
   id: string;
   status: string;
+  cloudflareVideoId?: string;
   error?: string;
 }
 
 export function AdminReprocess() {
   const [isLoading, setIsLoading] = useState(false);
-  const [videosMissing, setVideosMissing] = useState<number | null>(null);
-  const [results, setResults] = useState<ReprocessResult[]>([]);
+  const [stats, setStats] = useState<{ total: number; migrated: number; remaining: number } | null>(null);
+  const [results, setResults] = useState<MigrationResult[]>([]);
   const [isChecking, setIsChecking] = useState(true);
 
-  // Check how many videos need reprocessing
   useEffect(() => {
-    checkMissingVideos();
+    checkMigrationStatus();
   }, []);
 
-  const checkMissingVideos = async () => {
+  const checkMigrationStatus = async () => {
     setIsChecking(true);
     try {
-      const { count, error } = await supabase
-        .from("videos")
-        .select("*", { count: "exact", head: true })
-        .is("cloudinary_public_id", null);
-
-      if (error) throw error;
-      setVideosMissing(count || 0);
+      const [{ count: total }, { count: migrated }, { count: remaining }] = await Promise.all([
+        supabase.from("videos").select("*", { count: "exact", head: true }),
+        supabase.from("videos").select("*", { count: "exact", head: true }).not("cloudflare_video_id", "is", null),
+        supabase.from("videos").select("*", { count: "exact", head: true }).is("cloudflare_video_id", null),
+      ]);
+      setStats({ total: total || 0, migrated: migrated || 0, remaining: remaining || 0 });
     } catch (error) {
-      console.error("Error checking videos:", error);
-      setVideosMissing(null);
+      console.error("Error checking migration status:", error);
     } finally {
       setIsChecking(false);
     }
   };
 
-  const handleReprocess = async () => {
+  const handleMigrate = async () => {
     setIsLoading(true);
     setResults([]);
 
     try {
-      const { data, error } = await supabase.functions.invoke('batch-reprocess-videos');
+      const { data, error } = await supabase.functions.invoke('migrate-videos-cloudflare', {
+        body: { limit: 10 }
+      });
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      if (error) throw new Error(error.message);
 
       if (data?.results) {
         setResults(data.results);
-        const succeeded = data.results.filter((r: ReprocessResult) => r.status === 'completed').length;
-        const failed = data.results.filter((r: ReprocessResult) => r.status === 'failed').length;
-        
+        const succeeded = data.results.filter((r: MigrationResult) => r.status === 'migrated').length;
+        const failed = data.results.filter((r: MigrationResult) => r.status === 'failed').length;
+
         if (succeeded > 0 && failed === 0) {
-          toast.success(`Successfully reprocessed ${succeeded} videos`);
-        } else if (succeeded > 0 && failed > 0) {
-          toast.warning(`Reprocessed ${succeeded} videos, ${failed} failed`);
+          toast.success(`Migrated ${succeeded} videos to Cloudflare Stream`);
+        } else if (succeeded > 0) {
+          toast.warning(`Migrated ${succeeded}, failed ${failed}`);
         } else if (failed > 0) {
-          toast.error(`Failed to reprocess ${failed} videos`);
+          toast.error(`Failed to migrate ${failed} videos`);
         } else {
-          toast.info("No videos needed reprocessing");
+          toast.info("No videos needed migration");
         }
       }
 
-      // Refresh the count
-      await checkMissingVideos();
+      await checkMigrationStatus();
     } catch (error) {
-      console.error("Reprocess error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to reprocess videos");
+      console.error("Migration error:", error);
+      toast.error(error instanceof Error ? error.message : "Migration failed");
     } finally {
       setIsLoading(false);
     }
   };
 
+  const progressPercent = stats ? (stats.total > 0 ? Math.round((stats.migrated / stats.total) * 100) : 0) : 0;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <RefreshCw className="h-5 w-5" />
-          Video Reprocessing
+          <Cloud className="h-5 w-5" />
+          Cloudflare Stream Migration
         </CardTitle>
         <CardDescription>
-          Reprocess existing videos to enable Cloudinary CDN thumbnails and optimized playback
+          Migrate videos from Cloudinary to Cloudflare Stream for improved performance
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Status banner */}
         {isChecking ? (
           <div className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Checking videos...
+            Checking migration status...
           </div>
-        ) : videosMissing !== null && videosMissing > 0 ? (
-          <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-600">
-            <AlertCircle className="h-5 w-5" />
-            <span>{videosMissing} videos are missing Cloudinary processing</span>
-          </div>
-        ) : videosMissing === 0 ? (
-          <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-600">
-            <CheckCircle className="h-5 w-5" />
-            <span>All videos have been processed</span>
+        ) : stats ? (
+          <div className="space-y-3">
+            {/* Progress bar */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Migration Progress</span>
+                <span className="font-medium">{progressPercent}%</span>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-500"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Stats grid */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="text-center p-2 rounded-lg bg-muted/50">
+                <p className="text-lg font-bold">{stats.total}</p>
+                <p className="text-xs text-muted-foreground">Total</p>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-green-500/10">
+                <p className="text-lg font-bold text-green-600">{stats.migrated}</p>
+                <p className="text-xs text-muted-foreground">Migrated</p>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-yellow-500/10">
+                <p className="text-lg font-bold text-yellow-600">{stats.remaining}</p>
+                <p className="text-xs text-muted-foreground">Remaining</p>
+              </div>
+            </div>
+
+            {stats.remaining === 0 ? (
+              <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-600">
+                <CheckCircle className="h-5 w-5" />
+                <span>All videos have been migrated to Cloudflare Stream!</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-yellow-600">
+                <AlertCircle className="h-5 w-5" />
+                <span>{stats.remaining} videos still need migration</span>
+              </div>
+            )}
           </div>
         ) : null}
 
-        {/* Reprocess button */}
-        <Button 
-          onClick={handleReprocess} 
-          disabled={isLoading || videosMissing === 0}
+        {/* Migrate button */}
+        <Button
+          onClick={handleMigrate}
+          disabled={isLoading || stats?.remaining === 0}
           className="w-full"
         >
           {isLoading ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Reprocessing...
-            </>
+            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Migrating (batch of 10)...</>
           ) : (
-            <>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Reprocess Existing Videos
-            </>
+            <><RefreshCw className="h-4 w-4 mr-2" />Migrate Next Batch (10 videos)</>
           )}
         </Button>
 
@@ -131,11 +157,11 @@ export function AdminReprocess() {
           <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
             <p className="text-sm font-medium">Results:</p>
             {results.map((result) => (
-              <div 
-                key={result.id} 
+              <div
+                key={result.id}
                 className={`text-xs p-2 rounded ${
-                  result.status === 'completed' 
-                    ? 'bg-green-500/10 text-green-600' 
+                  result.status === 'migrated'
+                    ? 'bg-green-500/10 text-green-600'
                     : 'bg-red-500/10 text-red-600'
                 }`}
               >

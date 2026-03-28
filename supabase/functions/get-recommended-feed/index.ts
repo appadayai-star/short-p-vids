@@ -27,7 +27,7 @@ serve(async (req) => {
       const { data: videos, error } = await supabase
         .from("videos")
         .select(`
-          id, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
+          id, video_url, optimized_video_url, stream_url, cloudinary_public_id, cloudflare_video_id, thumbnail_url,
           views_count, likes_count, user_id
         `)
         .order("created_at", { ascending: false })
@@ -90,7 +90,7 @@ serve(async (req) => {
     let query = supabase
       .from("videos")
       .select(`
-        id, user_id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url,
+        id, user_id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, cloudflare_video_id, thumbnail_url,
         views_count, likes_count, comments_count, tags, created_at,
         profiles(username, avatar_url)
       `);

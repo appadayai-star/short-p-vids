@@ -137,7 +137,7 @@ serve(async (req) => {
       .from("videos")
       .select(`
         id, title, description, video_url, optimized_video_url, stream_url,
-        cloudinary_public_id, thumbnail_url, processing_status,
+        cloudinary_public_id, cloudflare_video_id, thumbnail_url, processing_status,
         views_count, likes_count, tags, created_at, user_id,
         duration_seconds,
         profiles!inner(username, avatar_url)
@@ -529,20 +529,24 @@ serve(async (req) => {
 
       // Quality bonus: strongly prefer videos with optimized assets (faster loading)
       let qualityBonus = 0;
-      const sourceType = video.optimized_video_url
-        ? 'optimized'
-        : video.cloudinary_public_id
-          ? 'cloudinary'
-          : 'original';
+      const hasCloudflare = !!(video as any).cloudflare_video_id;
+      const sourceType = hasCloudflare
+        ? 'cloudflare'
+        : video.optimized_video_url
+          ? 'optimized'
+          : video.cloudinary_public_id
+            ? 'cloudinary'
+            : 'original';
 
-      if (video.optimized_video_url) {
-        qualityBonus = 0.1; // strong bonus for pre-processed video
+      if (hasCloudflare) {
+        qualityBonus = 0.15; // strongest bonus for Cloudflare Stream
+      } else if (video.optimized_video_url) {
+        qualityBonus = 0.1;
       } else if (video.cloudinary_public_id) {
-        qualityBonus = 0.03; // neutral/slight boost for Cloudinary fallback
+        qualityBonus = 0.03;
       }
-      // Penalty for completely unprocessed videos
-      if (!video.optimized_video_url && !video.cloudinary_public_id) {
-        qualityBonus = -0.2; // downrank unprocessed content hard
+      if (!hasCloudflare && !video.optimized_video_url && !video.cloudinary_public_id) {
+        qualityBonus = -0.2;
       }
 
       // Penalize assets with consistently poor startup behavior

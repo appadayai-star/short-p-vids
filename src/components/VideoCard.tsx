@@ -55,6 +55,7 @@ interface Video {
   optimized_video_url?: string | null;
   stream_url?: string | null;
   cloudinary_public_id?: string | null;
+  cloudflare_video_id?: string | null;
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
@@ -101,16 +102,17 @@ export const VideoCard = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  // Core video state - use dynamic Cloudinary URLs when available
+  // Core video state - use Cloudflare when available, fallback to Cloudinary
   const primarySrc = getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     video.stream_url || null,
-    video.video_url
+    video.video_url,
+    video.cloudflare_video_id || null
   );
   const fallbackSrc = video.optimized_video_url || video.video_url;
   const lastResortSrc = video.video_url;
-  const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+  const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.cloudflare_video_id || null);
   
   const [src, setSrc] = useState(primarySrc);
   const [status, setStatus] = useState<VideoStatus>("idle");

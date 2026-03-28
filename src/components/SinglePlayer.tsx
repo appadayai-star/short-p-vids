@@ -19,6 +19,7 @@ interface Video {
   optimized_video_url?: string | null;
   stream_url?: string | null;
   cloudinary_public_id?: string | null;
+  cloudflare_video_id?: string | null;
   thumbnail_url: string | null;
 }
 
@@ -48,17 +49,18 @@ export const SinglePlayer = memo(({
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
 
-  // Compute video sources - always use MP4 for reliability
+  // Compute video sources
   const primarySrc = video ? getBestVideoSource(
     video.cloudinary_public_id || null,
     video.optimized_video_url || null,
     null,
-    video.video_url
+    video.video_url,
+    video.cloudflare_video_id || null
   ) : "";
   
   const fallbackSrc = video?.optimized_video_url || video?.video_url || "";
   const lastResortSrc = video?.video_url || "";
-  const posterSrc = video ? getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url) : "";
+  const posterSrc = video ? getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.cloudflare_video_id || null) : "";
 
   const [src, setSrc] = useState(primarySrc);
 
