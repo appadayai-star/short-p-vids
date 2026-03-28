@@ -200,11 +200,9 @@ Deno.serve(async (req) => {
       const savedCount = savedCountMap.get(v.id) || 0;
       const engagement = v.views_count > 0 ? (v.likes_count / v.views_count) * 100 : 0;
       const startup = startupMetricsMap.get(v.id);
-      const sourceType = v.optimized_video_url
-        ? "optimized"
-        : v.cloudinary_public_id
-          ? "cloudinary"
-          : "original";
+      const sourceType = v.cloudflare_video_id
+        ? "cloudflare"
+        : "original";
 
       return {
         ...v,
