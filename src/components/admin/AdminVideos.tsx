@@ -21,6 +21,7 @@ interface VideoItem {
   processing_status: string | null;
   thumbnail_url: string | null;
   cloudinary_public_id: string | null;
+  cloudflare_video_id: string | null;
   views_count: number;
   likes_count: number;
   saved_count: number;
@@ -48,7 +49,7 @@ const VideoThumbnailCell = ({ video }: { video: VideoItem }) => (
   <div className="flex items-center gap-3">
     <div className="w-16 h-10 rounded bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
       <VideoThumbnail
-        cloudinaryPublicId={video.cloudinary_public_id}
+        cloudflareVideoId={video.cloudflare_video_id}
         thumbnailUrl={video.thumbnail_url}
         title={video.title}
         videoId={video.id}

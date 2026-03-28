@@ -569,7 +569,7 @@ const Profile = () => {
                     }}
                   >
                     <VideoThumbnail
-                      cloudinaryPublicId={video.cloudinary_public_id}
+                      cloudflareVideoId={video.cloudflare_video_id}
                       thumbnailUrl={video.thumbnail_url}
                       videoUrl={video.video_url}
                       title={video.title}
@@ -632,7 +632,7 @@ const Profile = () => {
                       }}
                     >
                       <VideoThumbnail
-                        cloudinaryPublicId={video.cloudinary_public_id}
+                        cloudflareVideoId={video.cloudflare_video_id}
                         thumbnailUrl={video.thumbnail_url}
                         videoUrl={video.video_url}
                         title={video.title}
@@ -666,7 +666,7 @@ const Profile = () => {
                       }}
                     >
                       <VideoThumbnail
-                        cloudinaryPublicId={video.cloudinary_public_id}
+                        cloudflareVideoId={video.cloudflare_video_id}
                         thumbnailUrl={video.thumbnail_url}
                         videoUrl={video.video_url}
                         title={video.title}

@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl, supportsHlsNatively } from "@/lib/cloudinary";
+import { getVideoSource, getThumbnailUrl, supportsHlsNatively } from "@/lib/cloudinary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -102,17 +102,11 @@ export const VideoCard = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  // Core video state - use Cloudflare when available, fallback to Cloudinary
-  const primarySrc = getBestVideoSource(
-    video.cloudinary_public_id || null,
-    video.optimized_video_url || null,
-    video.stream_url || null,
-    video.video_url,
-    video.cloudflare_video_id || null
-  );
-  const fallbackSrc = video.optimized_video_url || video.video_url;
+  // Cloudflare-only video source
+  const primarySrc = getVideoSource(video.cloudflare_video_id, video.video_url);
+  const fallbackSrc = video.video_url;
   const lastResortSrc = video.video_url;
-  const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.cloudflare_video_id || null);
+  const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
   
   const [src, setSrc] = useState(primarySrc);
   const [status, setStatus] = useState<VideoStatus>("idle");
