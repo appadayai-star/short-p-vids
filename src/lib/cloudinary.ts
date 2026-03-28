@@ -6,7 +6,7 @@ const CLOUDINARY_CLOUD_NAME = 'domj6omwb';
 
 // Cloudflare Stream customer subdomain - extracted from first successful playback
 // For now we use the iframe/videodelivery.net pattern for HLS
-const CLOUDFLARE_CUSTOMER_SUBDOMAIN = 'customer-domj6omwb'; // placeholder until we know the real one
+const CLOUDFLARE_CUSTOMER_SUBDOMAIN = 'customer-qb7mect5e41byr1i';
 
 // Static placeholder for missing thumbnails - gradient placeholder
 export const DEFAULT_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="480" height="852" viewBox="0 0 480 852"%3E%3Cdefs%3E%3ClinearGradient id="g" x1="0%25" y1="0%25" x2="0%25" y2="100%25"%3E%3Cstop offset="0%25" style="stop-color:%231a1a2e"%2F%3E%3Cstop offset="100%25" style="stop-color:%230f0f1a"%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect fill="url(%23g)" width="480" height="852"%2F%3E%3C%2Fsvg%3E';
@@ -15,17 +15,17 @@ export const DEFAULT_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns="http://www.
 
 // Get Cloudflare Stream HLS URL for native <video> playback
 export function getCloudflareStreamUrl(cloudflareVideoId: string): string {
-  return `https://customer-f33mdyre2vhg0apn.cloudflarestream.com/${cloudflareVideoId}/manifest/video.m3u8`;
+  return `https://customer-qb7mect5e41byr1i.cloudflarestream.com/${cloudflareVideoId}/manifest/video.m3u8`;
 }
 
 // Get Cloudflare Stream MP4 download URL (fallback for non-HLS browsers)
 export function getCloudflareDownloadUrl(cloudflareVideoId: string): string {
-  return `https://customer-f33mdyre2vhg0apn.cloudflarestream.com/${cloudflareVideoId}/downloads/default.mp4`;
+  return `https://customer-qb7mect5e41byr1i.cloudflarestream.com/${cloudflareVideoId}/downloads/default.mp4`;
 }
 
 // Get Cloudflare Stream thumbnail
 export function getCloudflareThumbnailUrl(cloudflareVideoId: string): string {
-  return `https://customer-f33mdyre2vhg0apn.cloudflarestream.com/${cloudflareVideoId}/thumbnails/thumbnail.jpg?time=0s&height=852&width=480`;
+  return `https://customer-qb7mect5e41byr1i.cloudflarestream.com/${cloudflareVideoId}/thumbnails/thumbnail.jpg?time=0s&height=852&width=480`;
 }
 
 // ===== CLOUDINARY UTILITIES (LEGACY) =====
