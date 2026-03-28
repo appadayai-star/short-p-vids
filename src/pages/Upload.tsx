@@ -165,6 +165,12 @@ const Upload = () => {
         if (!videoFile) navigate(-1);
         return;
       }
+      if (tempVideo.duration > 60) {
+        toast.error("Video must be 60 seconds or shorter");
+        URL.revokeObjectURL(objectUrl);
+        if (!videoFile) navigate(-1);
+        return;
+      }
       setVideoFile(file);
       setVideoPreview(objectUrl);
     };

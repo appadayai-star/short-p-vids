@@ -131,10 +131,11 @@ serve(async (req) => {
         if (status?.state === "ready") {
           isReady = true;
 
-          // Check duration - reject if under 10 seconds
+          // Check duration - reject if under 10 seconds or over 60 seconds
           const duration = statusResult.result.duration;
-          if (duration && duration < 10) {
-            console.error(`Video too short: ${duration}s (minimum 10s)`);
+          if (duration && (duration < 10 || duration > 60)) {
+            const reason = duration < 10 ? "Video must be at least 10 seconds long" : "Video must be 60 seconds or shorter";
+            console.error(`Video duration invalid: ${duration}s`);
 
             // Delete from Cloudflare
             await fetch(
@@ -149,7 +150,7 @@ serve(async (req) => {
             await supabase.from("videos").delete().eq("id", videoId);
 
             return new Response(
-              JSON.stringify({ error: "Video must be at least 10 seconds long" }),
+              JSON.stringify({ error: reason }),
               { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
           }
