@@ -3,13 +3,14 @@ import { getThumbnailUrl, DEFAULT_PLACEHOLDER } from "@/lib/cloudinary";
 import { AlertTriangle } from "lucide-react";
 
 interface VideoThumbnailProps {
-  cloudinaryPublicId: string | null;
+  cloudflareVideoId?: string | null;
+  cloudinaryPublicId?: string | null; // kept for API compat, ignored
   thumbnailUrl: string | null;
-  videoUrl?: string; // optional - kept for API compatibility but NOT used
+  videoUrl?: string;
   title: string;
   videoId?: string;
   className?: string;
-  showDebug?: boolean; // dev-only: show error overlay
+  showDebug?: boolean;
 }
 
 /**
@@ -17,7 +18,7 @@ interface VideoThumbnailProps {
  * Always renders an image with guaranteed fallback to placeholder
  */
 export function VideoThumbnail({ 
-  cloudinaryPublicId, 
+  cloudflareVideoId,
   thumbnailUrl, 
   title,
   videoId,
@@ -27,16 +28,14 @@ export function VideoThumbnail({
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
-  // Determine if this is using a real thumbnail or placeholder
-  const hasRealThumbnail = !!(cloudinaryPublicId || thumbnailUrl);
+  const hasRealThumbnail = !!(cloudflareVideoId || thumbnailUrl);
 
-  // Always get a valid image source - never undefined
   const imgSrc = useMemo(() => {
     if (imgError) {
       return DEFAULT_PLACEHOLDER;
     }
-    return getBestThumbnailUrl(cloudinaryPublicId, thumbnailUrl);
-  }, [cloudinaryPublicId, thumbnailUrl, imgError]);
+    return getThumbnailUrl(cloudflareVideoId, thumbnailUrl);
+  }, [cloudflareVideoId, thumbnailUrl, imgError]);
 
   const isPlaceholder = imgSrc === DEFAULT_PLACEHOLDER;
 
@@ -56,7 +55,6 @@ export function VideoThumbnail({
         }}
       />
       
-      {/* Show "processing" indicator when using placeholder */}
       {isPlaceholder && !imgError && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-white/50 text-xs bg-black/40 px-2 py-1 rounded">
@@ -65,9 +63,8 @@ export function VideoThumbnail({
         </div>
       )}
 
-      {/* Dev-only: show error overlay if image failed to load (not for placeholders) */}
       {showDebug && imgError && hasRealThumbnail && (
-        <div className="absolute top-1 right-1 bg-red-500/80 rounded p-1">
+        <div className="absolute top-1 right-1 bg-destructive/80 rounded p-1">
           <AlertTriangle className="h-3 w-3 text-white" />
         </div>
       )}
