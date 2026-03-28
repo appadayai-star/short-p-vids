@@ -829,6 +829,7 @@ export type Database = {
       }
       videos: {
         Row: {
+          cloudflare_video_id: string | null
           cloudinary_public_id: string | null
           comments_count: number
           created_at: string
@@ -849,6 +850,7 @@ export type Database = {
           views_count: number
         }
         Insert: {
+          cloudflare_video_id?: string | null
           cloudinary_public_id?: string | null
           comments_count?: number
           created_at?: string
@@ -869,6 +871,7 @@ export type Database = {
           views_count?: number
         }
         Update: {
+          cloudflare_video_id?: string | null
           cloudinary_public_id?: string | null
           comments_count?: number
           created_at?: string
