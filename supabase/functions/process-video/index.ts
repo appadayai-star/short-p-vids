@@ -175,7 +175,7 @@ serve(async (req) => {
       await supabase.from("videos").delete().eq("id", videoId);
 
       return new Response(
-        JSON.stringify({ error: "Video must be at least 10 seconds long" }),
+        JSON.stringify({ error: reason }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
