@@ -6,10 +6,10 @@ import { AdminUsers } from "@/components/admin/AdminUsers";
 import { AdminVideos } from "@/components/admin/AdminVideos";
 import { AdminAds } from "@/components/admin/AdminAds";
 import { AdminTracking } from "@/components/admin/AdminTracking";
-import { AdminReprocess } from "@/components/admin/AdminReprocess";
+
 import { SEO } from "@/components/SEO";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, Link2, Radio, Cloud, AlertTriangle } from "lucide-react";
+import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, Link2, Radio, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -26,6 +26,7 @@ const Admin = () => {
       .is("cloudflare_video_id", null)
       .then(({ count }) => setUnmigratedCount(count || 0));
   }, []);
+
 
   useEffect(() => {
     if (!loading) {
@@ -98,14 +99,14 @@ const Admin = () => {
         <div className="container mx-auto px-4 pt-4">
           <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
             <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span><strong>{unmigratedCount}</strong> video{unmigratedCount !== 1 ? 's' : ''} missing Cloudflare Stream ID — go to the Migration tab to fix.</span>
+            <span><strong>{unmigratedCount}</strong> video{unmigratedCount !== 1 ? 's' : ''} missing Cloudflare Stream ID.</span>
           </div>
         </div>
       )}
 
       <main className="container mx-auto px-4 py-6">
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full max-w-3xl grid-cols-6">
+          <TabsList className="grid w-full max-w-3xl grid-cols-5">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <LayoutDashboard className="h-4 w-4" />
               <span className="hidden sm:inline">Overview</span>
@@ -125,10 +126,6 @@ const Admin = () => {
             <TabsTrigger value="tracking" className="flex items-center gap-2">
               <Link2 className="h-4 w-4" />
               <span className="hidden sm:inline">Tracking</span>
-            </TabsTrigger>
-            <TabsTrigger value="migration" className="flex items-center gap-2">
-              <Cloud className="h-4 w-4" />
-              <span className="hidden sm:inline">Migration</span>
             </TabsTrigger>
           </TabsList>
 
@@ -152,9 +149,6 @@ const Admin = () => {
             <AdminTracking datePreset={datePreset} onDatePresetChange={setDatePreset} />
           </TabsContent>
 
-          <TabsContent value="migration">
-            <AdminReprocess />
-          </TabsContent>
         </Tabs>
       </main>
     </div>
