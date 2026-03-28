@@ -21,6 +21,7 @@ interface VideoItem {
   processing_status: string | null;
   thumbnail_url: string | null;
   cloudinary_public_id: string | null;
+  cloudflare_video_id: string | null;
   views_count: number;
   likes_count: number;
   saved_count: number;
