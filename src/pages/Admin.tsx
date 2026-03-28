@@ -94,6 +94,15 @@ const Admin = () => {
         </div>
       </header>
 
+      {unmigratedCount > 0 && (
+        <div className="container mx-auto px-4 pt-4">
+          <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span><strong>{unmigratedCount}</strong> video{unmigratedCount !== 1 ? 's' : ''} missing Cloudflare Stream ID — go to the Migration tab to fix.</span>
+          </div>
+        </div>
+      )}
+
       <main className="container mx-auto px-4 py-6">
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="grid w-full max-w-3xl grid-cols-6">
