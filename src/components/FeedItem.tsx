@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getBestVideoSource, getBestThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { getVideoSource, getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import {
@@ -139,14 +139,8 @@ export const FeedItem = memo(({
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const videoSrc = getBestVideoSource(
-    video.cloudinary_public_id || null,
-    video.optimized_video_url || null,
-    video.stream_url || null,
-    video.video_url,
-    video.cloudflare_video_id || null
-  );
-  const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.cloudflare_video_id || null);
+  const videoSrc = getVideoSource(video.cloudflare_video_id, video.video_url);
+  const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   const clearStartupTimeout = useCallback(() => {
     if (startupTimeoutRef.current) {

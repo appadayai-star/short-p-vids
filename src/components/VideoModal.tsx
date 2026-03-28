@@ -3,7 +3,7 @@ import { X, Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pen
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { getVideoSource, getThumbnailUrl } from "@/lib/cloudinary";
 import { ShareDrawer } from "./ShareDrawer";
 import { cn } from "@/lib/utils";
 import { EditVideoDialog } from "./EditVideoDialog";
@@ -219,13 +219,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       const shouldPreload = distFromActive === 1;
       const shouldPreloadMeta = isScrollSettled && Math.abs(distFromActive) === 2;
 
-      const videoSrc = getBestVideoSource(
-        video.cloudinary_public_id || null,
-        video.optimized_video_url || null,
-        video.stream_url || null,
-        video.video_url,
-        video.cloudflare_video_id || null
-      );
+      const videoSrc = getVideoSource(video.cloudflare_video_id, video.video_url);
 
       // Detach source for far-away videos
       if (!shouldAttachSource) {
@@ -683,14 +677,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
               );
             }
 
-            const videoSrc = getBestVideoSource(
-              video.cloudinary_public_id || null,
-              video.optimized_video_url || null,
-              video.stream_url || null,
-              video.video_url,
-              video.cloudflare_video_id || null
-            );
-            const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.cloudflare_video_id || null);
+            const videoSrc = getVideoSource(video.cloudflare_video_id, video.video_url);
+            const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
             const isActive = index === activeIndex;
             const distFromActive = index - activeIndex;
             const shouldAttachSource = Math.abs(distFromActive) <= 2;

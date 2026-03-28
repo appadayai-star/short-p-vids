@@ -4,7 +4,7 @@ import { FeedItem } from "./FeedItem";
 import { LivestreamAdItem } from "./LivestreamAdItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
-import { getBestThumbnailUrl, preloadImage } from "@/lib/cloudinary";
+import { getThumbnailUrl, preloadImage } from "@/lib/cloudinary";
 import { createAdPicker, type Ad } from "@/lib/adRotation";
 
 const PAGE_SIZE = 10;
@@ -232,7 +232,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setVideos(resultVideos);
           setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
           if (resultVideos.length > 1) {
-            preloadImage(getBestThumbnailUrl(resultVideos[1].cloudinary_public_id || null, resultVideos[1].thumbnail_url, resultVideos[1].cloudflare_video_id || null));
+            preloadImage(getThumbnailUrl(resultVideos[1].cloudflare_video_id, resultVideos[1].thumbnail_url));
           }
         }
       } catch (err) {

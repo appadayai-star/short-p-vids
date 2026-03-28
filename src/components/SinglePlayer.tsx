@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Loader2, RefreshCw, Play, Volume2, VolumeX } from "lucide-react";
-import { getBestVideoSource, getBestThumbnailUrl } from "@/lib/cloudinary";
+import { getVideoSource, getThumbnailUrl } from "@/lib/cloudinary";
 
 // Global mute state - persisted across videos
 let globalMuted = true;
@@ -50,17 +50,10 @@ export const SinglePlayer = memo(({
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
 
   // Compute video sources
-  const primarySrc = video ? getBestVideoSource(
-    video.cloudinary_public_id || null,
-    video.optimized_video_url || null,
-    null,
-    video.video_url,
-    video.cloudflare_video_id || null
-  ) : "";
-  
-  const fallbackSrc = video?.optimized_video_url || video?.video_url || "";
+  const primarySrc = video ? getVideoSource(video.cloudflare_video_id, video.video_url) : "";
+  const fallbackSrc = video?.video_url || "";
   const lastResortSrc = video?.video_url || "";
-  const posterSrc = video ? getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.cloudflare_video_id || null) : "";
+  const posterSrc = video ? getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url) : "";
 
   const [src, setSrc] = useState(primarySrc);
 

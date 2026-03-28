@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { getBestThumbnailUrl, DEFAULT_PLACEHOLDER } from "@/lib/cloudinary";
+import { getThumbnailUrl, DEFAULT_PLACEHOLDER } from "@/lib/cloudinary";
 import { AlertTriangle } from "lucide-react";
 
 interface VideoThumbnailProps {
