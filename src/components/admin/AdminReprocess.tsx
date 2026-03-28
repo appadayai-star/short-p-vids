@@ -14,13 +14,29 @@ interface MigrationResult {
 
 export function AdminReprocess() {
   const [isLoading, setIsLoading] = useState(false);
+  const [autoMigrate, setAutoMigrate] = useState(false);
   const [stats, setStats] = useState<{ total: number; migrated: number; remaining: number } | null>(null);
   const [results, setResults] = useState<MigrationResult[]>([]);
   const [isChecking, setIsChecking] = useState(true);
+  const [batchCount, setBatchCount] = useState(0);
 
   useEffect(() => {
     checkMigrationStatus();
   }, []);
+
+  // Auto-migrate: trigger next batch when current one finishes
+  useEffect(() => {
+    if (autoMigrate && !isLoading && stats && stats.remaining > 0) {
+      const timer = setTimeout(() => {
+        handleMigrate();
+      }, 2000); // 2s pause between batches
+      return () => clearTimeout(timer);
+    }
+    if (autoMigrate && stats?.remaining === 0) {
+      setAutoMigrate(false);
+      toast.success("All videos migrated!");
+    }
+  }, [autoMigrate, isLoading, stats]);
 
   const checkMigrationStatus = async () => {
     setIsChecking(true);
@@ -40,7 +56,6 @@ export function AdminReprocess() {
 
   const handleMigrate = async () => {
     setIsLoading(true);
-    setResults([]);
 
     try {
       const { data, error } = await supabase.functions.invoke('migrate-videos-cloudflare', {
@@ -50,17 +65,17 @@ export function AdminReprocess() {
       if (error) throw new Error(error.message);
 
       if (data?.results) {
-        setResults(data.results);
+        setResults(prev => [...data.results, ...prev].slice(0, 50));
+        setBatchCount(c => c + 1);
         const succeeded = data.results.filter((r: MigrationResult) => r.status === 'migrated').length;
         const failed = data.results.filter((r: MigrationResult) => r.status === 'failed').length;
 
-        if (succeeded > 0 && failed === 0) {
-          toast.success(`Migrated ${succeeded} videos to Cloudflare Stream`);
-        } else if (succeeded > 0) {
-          toast.warning(`Migrated ${succeeded}, failed ${failed}`);
-        } else if (failed > 0) {
-          toast.error(`Failed to migrate ${failed} videos`);
-        } else {
+        if (failed > 0 && autoMigrate) {
+          setAutoMigrate(false);
+          toast.error(`Auto-migration paused: ${failed} failures in batch`);
+        } else if (succeeded > 0 && failed === 0) {
+          toast.success(`Batch done: migrated ${succeeded} videos`);
+        } else if (succeeded === 0 && failed === 0) {
           toast.info("No videos needed migration");
         }
       }
@@ -69,12 +84,11 @@ export function AdminReprocess() {
     } catch (error) {
       console.error("Migration error:", error);
       toast.error(error instanceof Error ? error.message : "Migration failed");
+      setAutoMigrate(false);
     } finally {
       setIsLoading(false);
     }
   };
-
-  const progressPercent = stats ? (stats.total > 0 ? Math.round((stats.migrated / stats.total) * 100) : 0) : 0;
 
   return (
     <Card>
