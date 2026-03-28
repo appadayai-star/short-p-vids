@@ -261,7 +261,7 @@ const Search = () => {
                             className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden relative group hover:opacity-80 transition-opacity"
                           >
                             <VideoThumbnail
-                              cloudinaryPublicId={video.cloudinary_public_id || null}
+                              cloudflareVideoId={video.cloudflare_video_id}
                               thumbnailUrl={video.thumbnail_url}
                               videoUrl={video.video_url}
                               title={video.title}
@@ -354,7 +354,7 @@ const Search = () => {
                             className="aspect-[9/16] bg-white/5 rounded-lg overflow-hidden relative group hover:opacity-80 transition-opacity"
                           >
                             <VideoThumbnail
-                              cloudinaryPublicId={video.cloudinary_public_id || null}
+                              cloudflareVideoId={video.cloudflare_video_id}
                               thumbnailUrl={video.thumbnail_url}
                               videoUrl={video.video_url}
                               title={video.title}
