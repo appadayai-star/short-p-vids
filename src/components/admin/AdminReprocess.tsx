@@ -44,7 +44,7 @@ export function AdminReprocess() {
 
     try {
       const { data, error } = await supabase.functions.invoke('migrate-videos-cloudflare', {
-        body: { limit: 10 }
+        body: { limit: 3 }
       });
 
       if (error) throw new Error(error.message);
@@ -146,9 +146,9 @@ export function AdminReprocess() {
           className="w-full"
         >
           {isLoading ? (
-            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Migrating (batch of 10)...</>
+            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Migrating (batch of 3)...</>
           ) : (
-            <><RefreshCw className="h-4 w-4 mr-2" />Migrate Next Batch (10 videos)</>
+            <><RefreshCw className="h-4 w-4 mr-2" />Migrate Next Batch (3 videos)</>
           )}
         </Button>
 
