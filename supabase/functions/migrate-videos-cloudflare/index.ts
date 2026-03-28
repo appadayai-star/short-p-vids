@@ -6,8 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const BATCH_SIZE = 5; // Process 5 at a time to avoid rate limits
-const DELAY_BETWEEN_UPLOADS_MS = 2000; // 2 second delay between uploads
+const BATCH_SIZE = 3; // Process 3 at a time (each needs polling time)
+const DELAY_BETWEEN_UPLOADS_MS = 1000;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
