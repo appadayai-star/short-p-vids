@@ -44,7 +44,7 @@ export function AdminReprocess() {
 
     try {
       const { data, error } = await supabase.functions.invoke('migrate-videos-cloudflare', {
-        body: { limit: 10 }
+        body: { limit: 3 }
       });
 
       if (error) throw new Error(error.message);
