@@ -102,7 +102,6 @@ serve(async (req) => {
         console.log(`Migrating video: ${video.id}`);
 
         // Determine best source URL for migration
-        // Prefer optimized URL, then original
         const sourceUrl = video.optimized_video_url || video.video_url;
 
         // Upload to Cloudflare Stream via URL copy
@@ -128,15 +127,49 @@ serve(async (req) => {
         }
 
         const cloudflareVideoId = cfResult.result.uid;
+        console.log(`Upload initiated for ${video.id}, CF ID: ${cloudflareVideoId}. Polling for ready state...`);
 
-        // Update database immediately (don't wait for processing)
+        // Poll for ready state (up to 3 minutes per video)
+        let isReady = false;
+        const maxPollAttempts = 90;
+        for (let i = 0; i < maxPollAttempts; i++) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+          const statusResponse = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/stream/${cloudflareVideoId}`,
+            {
+              headers: { "Authorization": `Bearer ${CLOUDFLARE_API_TOKEN}` },
+            }
+          );
+
+          const statusResult = await statusResponse.json();
+          if (statusResult.success && statusResult.result?.status) {
+            const state = statusResult.result.status.state;
+            if (state === "ready") {
+              isReady = true;
+              break;
+            }
+            if (state === "error") {
+              throw new Error(`Cloudflare processing failed: ${statusResult.result.status.errorReasonText || "Unknown"}`);
+            }
+          }
+        }
+
+        if (!isReady) {
+          // Clean up — don't leave an unready video ID in the DB
+          console.error(`Video ${video.id} did not become ready in time`);
+          results.push({ id: video.id, status: "failed", error: "Processing timed out" });
+          continue;
+        }
+
+        // Only save cloudflare_video_id AFTER confirmed ready
         await supabase
           .from("videos")
           .update({ cloudflare_video_id: cloudflareVideoId })
           .eq("id", video.id);
 
         results.push({ id: video.id, status: "migrated", cloudflareVideoId });
-        console.log(`Video ${video.id} migrated to Cloudflare: ${cloudflareVideoId}`);
+        console.log(`Video ${video.id} migrated and ready: ${cloudflareVideoId}`);
 
         // Rate limit delay
         await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_UPLOADS_MS));
