@@ -250,8 +250,8 @@ export const UploadModal = ({ open, onOpenChange, userId }: UploadModalProps) =>
       setCurrentVideoId(insertResult.data.id);
       setUploadStage('processing');
 
-      // Trigger video processing (don't await - let it run in background)
-      supabase.functions.invoke('process-video', {
+      // Trigger video processing via Cloudflare (don't await - let it run in background)
+      supabase.functions.invoke('process-video-cloudflare', {
         body: { videoUrl: publicUrl, videoId: insertResult.data.id }
       }).catch(err => {
         console.error('Video processing error:', err);
