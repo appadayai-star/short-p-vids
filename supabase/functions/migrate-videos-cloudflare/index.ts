@@ -99,10 +99,20 @@ serve(async (req) => {
 
     for (const video of videos || []) {
       try {
-        console.log(`Migrating video: ${video.id}`);
+        // Re-check if this video was already migrated (race condition guard)
+        const { data: freshVideo } = await supabase
+          .from("videos")
+          .select("cloudflare_video_id")
+          .eq("id", video.id)
+          .maybeSingle();
 
-        // Use original Supabase storage URL (direct public file) — Cloudinary transformed URLs
-        // can cause "Bad Request" errors with Cloudflare's copy endpoint
+        if (freshVideo?.cloudflare_video_id) {
+          console.log(`Video ${video.id} already migrated, skipping`);
+          results.push({ id: video.id, status: "migrated", cloudflareVideoId: freshVideo.cloudflare_video_id });
+          continue;
+        }
+
+        console.log(`Migrating video: ${video.id}`);
         const sourceUrl = video.video_url;
         console.log(`Source URL: ${sourceUrl}`);
 
