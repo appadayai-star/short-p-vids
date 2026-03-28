@@ -98,7 +98,7 @@ const Upload = () => {
     const pollInterval = setInterval(async () => {
       const { data, error } = await supabase
         .from('videos')
-        .select('processing_status, optimized_video_url')
+        .select('processing_status, cloudflare_video_id')
         .eq('id', currentVideoId)
         .single();
 
@@ -218,7 +218,7 @@ const Upload = () => {
       setCurrentVideoId(insertResult.data.id);
       setUploadStage('processing');
 
-      supabase.functions.invoke('process-video', {
+      supabase.functions.invoke('process-video-cloudflare', {
         body: { videoUrl: publicUrl, videoId: insertResult.data.id }
       }).catch(err => console.error('Video processing error:', err));
     } catch (error: any) {
