@@ -163,12 +163,35 @@ serve(async (req) => {
       }
     }
 
-    // Update database with Cloudflare video ID
+    // Only save cloudflare_video_id once the video is fully ready to stream
+    if (!isReady) {
+      console.error("Cloudflare processing did not complete within timeout");
+      
+      // Clean up the Cloudflare video since it's not ready
+      await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/stream/${cloudflareVideoId}`,
+        {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${CLOUDFLARE_API_TOKEN}` },
+        }
+      ).catch(() => {});
+
+      await supabase
+        .from("videos")
+        .update({ processing_status: "failed", processing_error: "Cloudflare processing timed out" })
+        .eq("id", videoId);
+
+      return new Response(
+        JSON.stringify({ error: "Video processing timed out. Please try again." }),
+        { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { error: updateError } = await supabase
       .from("videos")
       .update({
         cloudflare_video_id: cloudflareVideoId,
-        processing_status: isReady ? "completed" : "processing",
+        processing_status: "completed",
       })
       .eq("id", videoId);
 
