@@ -55,6 +55,7 @@ interface Video {
   optimized_video_url?: string | null;
   stream_url?: string | null;
   cloudinary_public_id?: string | null;
+  cloudflare_video_id?: string | null;
   thumbnail_url: string | null;
   views_count: number;
   likes_count: number;
@@ -222,7 +223,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         video.cloudinary_public_id || null,
         video.optimized_video_url || null,
         video.stream_url || null,
-        video.video_url
+        video.video_url,
+        video.cloudflare_video_id || null
       );
 
       // Detach source for far-away videos
@@ -327,7 +329,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     try {
       const { data, error } = await supabase
         .from("videos")
-        .select(`id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, thumbnail_url, views_count, likes_count, user_id, tags, profiles(username, avatar_url)`)
+        .select(`id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, cloudflare_video_id, thumbnail_url, views_count, likes_count, user_id, tags, profiles(username, avatar_url)`)
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -685,9 +687,10 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
               video.cloudinary_public_id || null,
               video.optimized_video_url || null,
               video.stream_url || null,
-              video.video_url
+              video.video_url,
+              video.cloudflare_video_id || null
             );
-            const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url);
+            const posterSrc = getBestThumbnailUrl(video.cloudinary_public_id || null, video.thumbnail_url, video.cloudflare_video_id || null);
             const isActive = index === activeIndex;
             const distFromActive = index - activeIndex;
             const shouldAttachSource = Math.abs(distFromActive) <= 2;
