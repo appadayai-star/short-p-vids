@@ -101,8 +101,10 @@ serve(async (req) => {
       try {
         console.log(`Migrating video: ${video.id}`);
 
-        // Determine best source URL for migration
-        const sourceUrl = video.optimized_video_url || video.video_url;
+        // Use original Supabase storage URL (direct public file) — Cloudinary transformed URLs
+        // can cause "Bad Request" errors with Cloudflare's copy endpoint
+        const sourceUrl = video.video_url;
+        console.log(`Source URL: ${sourceUrl}`);
 
         // Upload to Cloudflare Stream via URL copy
         const cfResponse = await fetch(
@@ -121,9 +123,12 @@ serve(async (req) => {
         );
 
         const cfResult = await cfResponse.json();
+        console.log(`Cloudflare response for ${video.id}:`, JSON.stringify(cfResult));
 
         if (!cfResult.success) {
-          throw new Error(cfResult.errors?.[0]?.message || "Cloudflare upload failed");
+          const errorMsg = cfResult.errors?.[0]?.message || "Cloudflare upload failed";
+          const errorMessages = cfResult.messages?.map((m: any) => m.message || JSON.stringify(m)).join("; ") || "";
+          throw new Error(`${errorMsg}${errorMessages ? ` | Messages: ${errorMessages}` : ""}`);
         }
 
         const cloudflareVideoId = cfResult.result.uid;
