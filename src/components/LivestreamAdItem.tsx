@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, memo, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Radio, Users, ChevronRight } from "lucide-react";
+import { getVideoSource, getThumbnailUrl } from "@/lib/cloudinary";
 
 interface Ad {
   id: string;
@@ -8,6 +9,7 @@ interface Ad {
   video_url: string;
   thumbnail_url: string | null;
   external_link: string;
+  cloudflare_video_id?: string | null;
 }
 
 interface LivestreamAdItemProps {
@@ -23,12 +25,15 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
   const viewTrackedRef = useRef(false);
   const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
 
+  // Compute Cloudflare-based video source and poster
+  const videoSrc = getVideoSource(ad.cloudflare_video_id, ad.video_url);
+  const posterSrc = getThumbnailUrl(ad.cloudflare_video_id, ad.thumbnail_url);
+
   // Random viewer count - stable per ad per session
   const viewerCount = useMemo(() => {
     return Math.floor(3256 + Math.random() * (8965 - 3256));
   }, [ad.id]);
 
-  // Random fluctuating viewer count
   const [displayViewers, setDisplayViewers] = useState(viewerCount);
 
   useEffect(() => {
@@ -41,6 +46,21 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
     }, 3000);
     return () => clearInterval(interval);
   }, [isActive]);
+
+  // Attach/detach source based on proximity (same pattern as FeedItem)
+  const shouldAttachSource = isActive || shouldPreload;
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    if (!shouldAttachSource) {
+      videoEl.pause();
+      try {
+        videoEl.removeAttribute('src');
+        videoEl.load();
+      } catch {}
+    }
+  }, [shouldAttachSource]);
 
   // Play/pause
   useEffect(() => {
@@ -72,7 +92,6 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
   }, [isActive, ad.id, currentUserId]);
 
   const handleClick = () => {
-    // Track click
     const viewerId = localStorage.getItem('anonymous_viewer_id_v1') || 'unknown';
     const sessionId = localStorage.getItem('video_session_v2') || 'unknown';
 
@@ -83,7 +102,6 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
       user_id: currentUserId || null,
     }).then(() => {});
 
-    // Open link in new tab
     window.open(ad.external_link, '_blank', 'noopener,noreferrer');
   };
 
@@ -98,10 +116,11 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain bg-black"
         style={{ paddingBottom: navOffset }}
-        src={isActive || shouldPreload ? ad.video_url : undefined}
+        src={shouldAttachSource ? videoSrc : undefined}
+        poster={posterSrc}
         loop
         playsInline
-        // @ts-ignore - WebView-specific attributes to prevent auto-fullscreen in in-app browsers
+        // @ts-ignore
         webkit-playsinline="true"
         x5-playsinline="true"
         x5-video-player-type="h5"
@@ -110,23 +129,20 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
         preload={isActive ? "auto" : shouldPreload ? "auto" : "none"}
       />
 
-      {/* Dark overlay for livestream feel */}
+      {/* Dark overlay */}
       <div 
         className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70 pointer-events-none"
         style={{ paddingBottom: navOffset }}
       />
 
-      {/* Top bar - LIVE badge + viewer count */}
+      {/* Top bar */}
       <div className="absolute top-0 left-0 right-0 z-50 p-4 flex items-start justify-between">
         <div className="flex items-center gap-2">
-          {/* LIVE badge */}
           <div className="flex items-center gap-1.5 bg-red-600 px-3 py-1 rounded-md">
             <Radio className="h-3.5 w-3.5 text-white animate-pulse" />
             <span className="text-white text-sm font-bold tracking-wide">LIVE</span>
           </div>
         </div>
-
-        {/* Viewer count */}
         <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-full">
           <Users className="h-3.5 w-3.5 text-white" />
           <span className="text-white text-sm font-semibold">
@@ -135,14 +151,14 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
         </div>
       </div>
 
-      {/* Animated dots at top (like TikTok live) */}
+      {/* Animated dots */}
       <div className="absolute top-14 left-4 z-50 flex items-center gap-1">
         <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
         <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" style={{ animationDelay: '0.3s' }} />
         <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" style={{ animationDelay: '0.6s' }} />
       </div>
 
-      {/* Fake chat messages floating (like TikTok live comments) */}
+      {/* Floating comments */}
       {isActive && <FloatingComments />}
 
       {/* Bottom CTA */}
@@ -151,7 +167,6 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
         style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
       >
         <div className="space-y-3">
-          {/* Title */}
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-pink-500 flex items-center justify-center border-2 border-white">
               <Radio className="h-5 w-5 text-white" />
@@ -161,8 +176,6 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
               <p className="text-white/70 text-xs">Sponsored · Live</p>
             </div>
           </div>
-
-          {/* CTA Button */}
           <button
             className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
           >
@@ -177,7 +190,7 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
 
 LivestreamAdItem.displayName = 'LivestreamAdItem';
 
-// Floating fake comments for realism
+// Floating fake comments
 const FAKE_COMMENTS = [
   "🔥🔥🔥", "This is amazing!", "❤️", "How do I get this?",
   "Wow!!", "Link please!", "🙌", "Need this",

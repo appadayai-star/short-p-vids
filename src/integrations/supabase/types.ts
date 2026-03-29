@@ -86,6 +86,7 @@ export type Database = {
       }
       ads: {
         Row: {
+          cloudflare_video_id: string | null
           created_at: string
           created_by: string
           external_link: string
@@ -97,6 +98,7 @@ export type Database = {
           video_url: string
         }
         Insert: {
+          cloudflare_video_id?: string | null
           created_at?: string
           created_by: string
           external_link: string
@@ -108,6 +110,7 @@ export type Database = {
           video_url: string
         }
         Update: {
+          cloudflare_video_id?: string | null
           created_at?: string
           created_by?: string
           external_link?: string

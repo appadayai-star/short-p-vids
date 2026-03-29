@@ -149,7 +149,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       try {
         const { data: adsData } = await supabase
           .from("ads")
-          .select("id, title, video_url, thumbnail_url, external_link")
+          .select("id, title, video_url, thumbnail_url, external_link, cloudflare_video_id")
           .eq("is_active", true);
         const adsList: Ad[] = adsData || [];
         setAds(adsList);

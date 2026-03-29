@@ -24,6 +24,7 @@ export interface Ad {
   video_url: string;
   thumbnail_url: string | null;
   external_link: string;
+  cloudflare_video_id?: string | null;
 }
 
 const TOP_AD_PROBABILITY = 0.7;

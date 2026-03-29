@@ -1,0 +1,1 @@
+ALTER TABLE public.ads ADD COLUMN cloudflare_video_id text DEFAULT NULL;

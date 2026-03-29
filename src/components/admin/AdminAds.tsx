@@ -10,9 +10,10 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { 
   Plus, Loader2, Trash2, ExternalLink, Eye, MousePointer, 
-  Upload, Radio, TrendingUp, Play
+  Upload, Radio, TrendingUp, Play, AlertTriangle, CheckCircle2, CloudIcon
 } from "lucide-react";
 import { LivestreamAdItem } from "@/components/LivestreamAdItem";
+import { getCloudflareThumbnailUrl } from "@/lib/cloudinary";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +34,7 @@ interface Ad {
   external_link: string;
   is_active: boolean;
   created_at: string;
+  cloudflare_video_id: string | null;
   views_count?: number;
   clicks_count?: number;
   ctr?: number;
@@ -45,6 +47,7 @@ export const AdminAds = () => {
   const [showForm, setShowForm] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewAd, setPreviewAd] = useState<Ad | null>(null);
+  const [migratingIds, setMigratingIds] = useState<Set<string>>(new Set());
   // Form state
   const [title, setTitle] = useState("");
   const [externalLink, setExternalLink] = useState("");
@@ -61,7 +64,6 @@ export const AdminAds = () => {
 
       if (error) throw error;
 
-      // Fetch view/click counts for each ad
       const adsWithStats = await Promise.all(
         (adsData || []).map(async (ad: any) => {
           const [viewsRes, clicksRes] = await Promise.all([
@@ -104,11 +106,10 @@ export const AdminAds = () => {
     setUploading(true);
 
     try {
-      // Get current user first (needed for storage path and ad record)
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      // Upload video to storage using user's folder (matches RLS policies)
+      // Upload video to storage
       const fileExt = videoFile.name.split(".").pop();
       const fileName = `ad_${Date.now()}.${fileExt}`;
       const filePath = `${user.id}/${fileName}`;
@@ -125,31 +126,74 @@ export const AdminAds = () => {
 
       setUploading(false);
 
-
       // Create ad record
-      const { error: insertError } = await supabase.from("ads").insert({
+      const { data: adData, error: insertError } = await supabase.from("ads").insert({
         title: title.trim(),
         video_url: urlData.publicUrl,
         external_link: externalLink.trim(),
         is_active: true,
         created_by: user.id,
-      });
+      }).select("id").single();
 
       if (insertError) throw insertError;
 
-      toast.success("Ad created successfully");
+      toast.success("Ad created — processing on Cloudflare...");
       setTitle("");
       setExternalLink("");
       setVideoFile(null);
       setShowForm(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      fetchAds();
+      
+      // Refresh list then trigger Cloudflare migration for this ad
+      await fetchAds();
+      if (adData?.id) {
+        migrateAd(adData.id);
+      }
     } catch (err) {
       console.error("Error creating ad:", err);
       toast.error("Failed to create ad");
     } finally {
       setCreating(false);
       setUploading(false);
+    }
+  };
+
+  const migrateAd = async (adId: string) => {
+    setMigratingIds(prev => new Set(prev).add(adId));
+    try {
+      const { data, error } = await supabase.functions.invoke('process-ad-cloudflare', {
+        body: { adId },
+      });
+      if (error) throw error;
+      
+      const result = data?.results?.[0];
+      if (result?.status === 'migrated') {
+        toast.success("Ad video processed on Cloudflare");
+        fetchAds();
+      } else {
+        toast.error(`Cloudflare processing failed: ${result?.error || 'Unknown'}`);
+      }
+    } catch (err) {
+      console.error("Ad migration error:", err);
+      toast.error("Failed to process ad on Cloudflare");
+    } finally {
+      setMigratingIds(prev => {
+        const next = new Set(prev);
+        next.delete(adId);
+        return next;
+      });
+    }
+  };
+
+  const migrateAllAds = async () => {
+    const unmigrated = ads.filter(a => !a.cloudflare_video_id);
+    if (unmigrated.length === 0) {
+      toast.info("All ads are already on Cloudflare");
+      return;
+    }
+    toast.info(`Migrating ${unmigrated.length} ad(s) to Cloudflare...`);
+    for (const ad of unmigrated) {
+      await migrateAd(ad.id);
     }
   };
 
@@ -183,6 +227,8 @@ export const AdminAds = () => {
     }
   };
 
+  const unmigratedCount = ads.filter(a => !a.cloudflare_video_id).length;
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -206,6 +252,25 @@ export const AdminAds = () => {
           New Ad
         </Button>
       </div>
+
+      {/* Cloudflare Migration Warning */}
+      {unmigratedCount > 0 && (
+        <Card className="border-yellow-500/50 bg-yellow-500/10">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-sm">{unmigratedCount} ad(s) not on Cloudflare</p>
+                <p className="text-xs text-muted-foreground">These ads are using direct file URLs instead of Cloudflare Stream</p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={migrateAllAds} className="gap-2">
+              <CloudIcon className="h-4 w-4" />
+              Migrate All
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Create Form */}
       {showForm && (
@@ -321,17 +386,25 @@ export const AdminAds = () => {
             <Card key={ad.id} className={!ad.is_active ? "opacity-60" : ""}>
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
-                  {/* Video Preview - clickable */}
+                  {/* Video Preview */}
                   <div 
                     className="relative w-24 h-36 rounded-lg overflow-hidden bg-muted flex-shrink-0 cursor-pointer group"
                     onClick={() => setPreviewAd(ad)}
                   >
-                    <video
-                      src={ad.video_url}
-                      className="w-full h-full object-cover"
-                      muted
-                      preload="metadata"
-                    />
+                    {ad.cloudflare_video_id ? (
+                      <img
+                        src={getCloudflareThumbnailUrl(ad.cloudflare_video_id)}
+                        className="w-full h-full object-cover"
+                        alt={ad.title}
+                      />
+                    ) : (
+                      <video
+                        src={ad.video_url}
+                        className="w-full h-full object-cover"
+                        muted
+                        preload="metadata"
+                      />
+                    )}
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <Play className="h-8 w-8 text-white fill-white" />
                     </div>
@@ -390,6 +463,27 @@ export const AdminAds = () => {
                       </div>
                     </div>
 
+                    {/* Cloudflare status */}
+                    <div className="flex items-center gap-2">
+                      {ad.cloudflare_video_id ? (
+                        <Badge variant="outline" className="text-green-500 border-green-500/30 text-[10px] gap-1">
+                          <CheckCircle2 className="h-3 w-3" /> Cloudflare
+                        </Badge>
+                      ) : migratingIds.has(ad.id) ? (
+                        <Badge variant="outline" className="text-yellow-500 border-yellow-500/30 text-[10px] gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Processing...
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="text-yellow-500 border-yellow-500/30 text-[10px] gap-1 cursor-pointer hover:bg-yellow-500/10"
+                          onClick={() => migrateAd(ad.id)}
+                        >
+                          <AlertTriangle className="h-3 w-3" /> Not on Cloudflare — Click to migrate
+                        </Badge>
+                      )}
+                    </div>
+
                     {/* Stats Row */}
                     <div className="flex items-center gap-4 text-sm">
                       <span className="flex items-center gap-1 text-muted-foreground">
@@ -428,7 +522,6 @@ export const AdminAds = () => {
                 isActive={true}
                 currentUserId={null}
               />
-              {/* "Preview" watermark */}
               <div className="absolute top-16 right-4 z-[60] bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full">
                 <span className="text-white/80 text-xs font-medium">Preview Mode</span>
               </div>
