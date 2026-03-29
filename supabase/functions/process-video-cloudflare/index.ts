@@ -131,10 +131,10 @@ serve(async (req) => {
         if (status?.state === "ready") {
           isReady = true;
 
-          // Check duration - reject if under 10 seconds or over 60 seconds
+           // Check duration - reject if under 10 seconds or over 90 seconds
           const duration = statusResult.result.duration;
-          if (duration && (duration < 10 || duration > 60)) {
-            const reason = duration < 10 ? "Video must be at least 10 seconds long" : "Video must be 60 seconds or shorter";
+          if (duration && (duration < 10 || duration > 90)) {
+            const reason = duration < 10 ? "Video must be at least 10 seconds long" : "Video must be 90 seconds or shorter";
             console.error(`Video duration invalid: ${duration}s`);
 
             // Delete from Cloudflare

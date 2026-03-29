@@ -153,9 +153,9 @@ serve(async (req) => {
 
     console.log("Cloudinary public_id:", publicId);
 
-    // Server-side: reject videos shorter than 10 seconds or longer than 60 seconds
-    if (cloudinaryResult.duration && (cloudinaryResult.duration < 10 || cloudinaryResult.duration > 60)) {
-      const reason = cloudinaryResult.duration < 10 ? "Video must be at least 10 seconds long" : "Video must be 60 seconds or shorter";
+    // Server-side: reject videos shorter than 10 seconds or longer than 90 seconds
+    if (cloudinaryResult.duration && (cloudinaryResult.duration < 10 || cloudinaryResult.duration > 90)) {
+      const reason = cloudinaryResult.duration < 10 ? "Video must be at least 10 seconds long" : "Video must be 90 seconds or shorter";
       console.error(`Video duration invalid: ${cloudinaryResult.duration}s`);
       
       // Delete from Cloudinary
