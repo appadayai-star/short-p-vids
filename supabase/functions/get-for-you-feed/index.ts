@@ -549,20 +549,27 @@ serve(async (req) => {
         qualityBonus = -0.2;
       }
 
-      // Penalize assets with consistently poor startup behavior
+      // Penalize assets with consistently poor startup behavior (tightened for HLS)
       let startupPenalty = 0;
       if (metrics && metrics.startup_samples >= 3) {
-        if (metrics.fast_start_rate >= 0 && metrics.fast_start_rate < 0.45) {
-          startupPenalty -= 0.12;
+        // Tighter thresholds now that we use HLS adaptive streaming
+        if (metrics.fast_start_rate >= 0 && metrics.fast_start_rate < 0.5) {
+          startupPenalty -= 0.15; // more than half of starts are slow
+        }
+        if (metrics.avg_ttff_ms >= 1200) {
+          startupPenalty -= 0.12; // avg over 1.2s = noticeable delay
         }
         if (metrics.avg_ttff_ms >= 2500) {
-          startupPenalty -= 0.14;
+          startupPenalty -= 0.18; // avg over 2.5s = significant friction
         }
         if (metrics.avg_ttff_ms >= 5000) {
-          startupPenalty -= 0.2;
+          startupPenalty -= 0.25; // avg over 5s = near-removal
         }
-        if (metrics.stall_rate > 0.18) {
-          startupPenalty -= 0.22;
+        if (metrics.stall_rate > 0.15) {
+          startupPenalty -= 0.25; // high stall rate = broken experience
+        }
+        if (metrics.retry_rate > 0.2) {
+          startupPenalty -= 0.15; // many retries = unreliable
         }
       }
 
