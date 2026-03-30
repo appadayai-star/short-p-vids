@@ -181,27 +181,45 @@ export const generateVideoSEO = (video: {
   description?: string | null;
   thumbnail_url?: string | null;
   video_url: string;
+  cloudflare_video_id?: string | null;
   created_at?: string;
   views_count?: number;
   tags?: string[] | null;
   profiles?: { username: string } | null;
-}) => ({
-  title: video.title,
-  description: video.description || `Watch ${video.title} on ${defaults.siteName}`,
-  keywords: video.tags?.join(", ") || defaults.keywords,
-  image: video.thumbnail_url || defaults.image,
-  url: `${defaults.url}/video/${video.id}`,
-  type: "video.other" as const,
-  videoData: {
-    name: video.title,
-    description: video.description || `Watch ${video.title}`,
-    thumbnailUrl: video.thumbnail_url || defaults.image,
-    uploadDate: video.created_at || new Date().toISOString(),
-    contentUrl: video.video_url,
-    creator: video.profiles?.username,
-    viewCount: video.views_count,
-  },
-});
+}) => {
+  const mp4Url = video.cloudflare_video_id
+    ? `https://customer-qb7mect5e41byr1i.cloudflarestream.com/${video.cloudflare_video_id}/downloads/default.mp4`
+    : video.video_url;
+  const videoPageUrl = `${defaults.url}/video/${video.id}`;
+  const embedUrl = `${defaults.url}/embed/video/${video.id}`;
+  const supabaseProjectId = "mbuajcicosojebakdtsn";
+  const oembedUrl = `https://${supabaseProjectId}.supabase.co/functions/v1/video-oembed?url=${encodeURIComponent(videoPageUrl)}&format=json`;
+
+  return {
+    title: video.title,
+    description: video.description || `Watch ${video.title} on ${defaults.siteName}`,
+    keywords: video.tags?.join(", ") || defaults.keywords,
+    image: video.thumbnail_url || defaults.image,
+    url: videoPageUrl,
+    type: "video.other" as const,
+    videoData: {
+      name: video.title,
+      description: video.description || `Watch ${video.title}`,
+      thumbnailUrl: video.thumbnail_url || defaults.image,
+      uploadDate: video.created_at || new Date().toISOString(),
+      contentUrl: mp4Url,
+      creator: video.profiles?.username,
+      viewCount: video.views_count,
+    },
+    videoEmbed: {
+      mp4Url,
+      embedUrl,
+      oembedUrl,
+      width: 480,
+      height: 852,
+    },
+  };
+};
 
 // Export helper for generating category page metadata
 export const generateCategorySEO = (category: string) => ({

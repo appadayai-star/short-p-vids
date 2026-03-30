@@ -38,6 +38,7 @@ const App = () => (
               <Route path="/profile" element={<Profile />} />
               <Route path="/profile/:userId" element={<Profile />} />
               <Route path="/video/:videoId" element={<Video />} />
+              <Route path="/embed/video/:videoId" element={<EmbedVideo />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/upload" element={<Upload />} />
               <Route path="/:slug" element={<TrackingRedirect />} />
