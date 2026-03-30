@@ -180,19 +180,17 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    if (!shouldAttachSource) {
+    if (shouldAttachSource) {
+      // Attach HLS source (or direct URL for non-cloudflare)
+      attachSource(videoEl);
+    } else {
       clearStartupTimeout();
       setPlaybackFailed(false);
       stopWatching();
       videoEl.pause();
-      try {
-        videoEl.removeAttribute('src');
-        videoEl.load();
-      } catch {
-        // best-effort cancellation
-      }
+      detachSource(videoEl);
     }
-  }, [shouldAttachSource, stopWatching, clearStartupTimeout]);
+  }, [shouldAttachSource, stopWatching, clearStartupTimeout, attachSource, detachSource]);
 
   // Simple, reliable active playback logic
   useEffect(() => {
