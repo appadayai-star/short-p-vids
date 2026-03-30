@@ -551,11 +551,10 @@ export const FeedItem = memo(({
             className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
           />
 
-          {/* Video player - fades in over poster once playing */}
+          {/* Video player - HLS source managed by useHlsPlayer hook */}
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-contain bg-black"
-            src={shouldAttachSource ? videoSrc : undefined}
             loop
             playsInline
             // @ts-ignore - WebView-specific attributes to prevent auto-fullscreen in in-app browsers (X, Instagram, etc.)
