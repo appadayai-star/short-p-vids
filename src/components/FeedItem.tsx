@@ -140,7 +140,10 @@ export const FeedItem = memo(({
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const videoSrc = getVideoSource(video.cloudflare_video_id, video.video_url);
+  const { attachSource, detachSource } = useHlsPlayer({
+    cloudflareVideoId: video.cloudflare_video_id,
+    fallbackUrl: video.video_url,
+  });
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   const clearStartupTimeout = useCallback(() => {
