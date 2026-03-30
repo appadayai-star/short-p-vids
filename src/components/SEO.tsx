@@ -127,15 +127,38 @@ export const SEO = ({
       <meta property="og:site_name" content={defaults.siteName} />
       <meta property="og:locale" content="en_US" />
 
+      {/* Open Graph Video */}
+      {videoEmbed && (
+        <>
+          <meta property="og:video" content={videoEmbed.mp4Url} />
+          <meta property="og:video:secure_url" content={videoEmbed.mp4Url} />
+          <meta property="og:video:type" content="video/mp4" />
+          <meta property="og:video:width" content={String(videoEmbed.width || 480)} />
+          <meta property="og:video:height" content={String(videoEmbed.height || 852)} />
+        </>
+      )}
+
       {/* Twitter */}
-      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:card" content={videoEmbed ? "player" : "summary_large_image"} />
       <meta name="twitter:url" content={url} />
       <meta name="twitter:title" content={fullTitle} />
       <meta name="twitter:description" content={description} />
       <meta name="twitter:image" content={image} />
+      {videoEmbed && (
+        <>
+          <meta name="twitter:player" content={videoEmbed.embedUrl} />
+          <meta name="twitter:player:width" content={String(videoEmbed.width || 480)} />
+          <meta name="twitter:player:height" content={String(videoEmbed.height || 852)} />
+        </>
+      )}
 
       {/* Canonical */}
       <link rel="canonical" href={url} />
+
+      {/* oEmbed discovery */}
+      {videoEmbed && (
+        <link rel="alternate" type="application/json+oembed" href={videoEmbed.oembedUrl} title={title || ""} />
+      )}
 
       {/* JSON-LD Structured Data */}
       {structuredData && <script type="application/ld+json">{JSON.stringify(structuredData)}</script>}
