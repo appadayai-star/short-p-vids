@@ -733,7 +733,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                   ref={(el) => {
                     if (el) videoRefs.current.set(video.id, el);
                   }}
-                  src={shouldAttachSource ? videoSrc : undefined}
+                  
                   className="absolute inset-0 w-full h-full object-contain bg-black"
                   style={{ 
                     paddingBottom: navOffset,
