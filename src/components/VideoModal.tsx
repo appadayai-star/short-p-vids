@@ -106,6 +106,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
   const [playbackFailed, setPlaybackFailed] = useState<Record<string, boolean>>({});
   const startupTimeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const retryCountRefs = useRef<Map<string, number>>(new Map());
+  const hlsInstancesRef = useRef<Map<string, Hls>>(new Map());
+  const nativeHls = supportsHlsNatively();
   
   // Double-tap like state
   const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
