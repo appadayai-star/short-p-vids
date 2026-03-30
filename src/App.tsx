@@ -12,6 +12,7 @@ import Categories from "./pages/Categories";
 import Profile from "./pages/Profile";
 import Inbox from "./pages/Inbox";
 import Video from "./pages/Video";
+import EmbedVideo from "./pages/EmbedVideo";
 import Admin from "./pages/Admin";
 import TrackingRedirect from "./pages/TrackingRedirect";
 import Upload from "./pages/Upload";
@@ -37,6 +38,7 @@ const App = () => (
               <Route path="/profile" element={<Profile />} />
               <Route path="/profile/:userId" element={<Profile />} />
               <Route path="/video/:videoId" element={<Video />} />
+              <Route path="/embed/video/:videoId" element={<EmbedVideo />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/upload" element={<Upload />} />
               <Route path="/:slug" element={<TrackingRedirect />} />

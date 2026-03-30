@@ -21,6 +21,13 @@ interface SEOProps {
   type?: "website" | "video.other" | "profile";
   noIndex?: boolean;
   videoData?: VideoStructuredData;
+  videoEmbed?: {
+    mp4Url: string;
+    embedUrl: string;
+    oembedUrl: string;
+    width?: number;
+    height?: number;
+  };
 }
 
 const defaults = {
@@ -93,6 +100,7 @@ export const SEO = ({
   type = "website",
   noIndex = false,
   videoData,
+  videoEmbed,
 }: SEOProps) => {
   const fullTitle = title ? `${title} | ${defaults.siteName}` : defaults.title;
   const structuredData = videoData
@@ -119,15 +127,38 @@ export const SEO = ({
       <meta property="og:site_name" content={defaults.siteName} />
       <meta property="og:locale" content="en_US" />
 
+      {/* Open Graph Video */}
+      {videoEmbed && (
+        <>
+          <meta property="og:video" content={videoEmbed.mp4Url} />
+          <meta property="og:video:secure_url" content={videoEmbed.mp4Url} />
+          <meta property="og:video:type" content="video/mp4" />
+          <meta property="og:video:width" content={String(videoEmbed.width || 480)} />
+          <meta property="og:video:height" content={String(videoEmbed.height || 852)} />
+        </>
+      )}
+
       {/* Twitter */}
-      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:card" content={videoEmbed ? "player" : "summary_large_image"} />
       <meta name="twitter:url" content={url} />
       <meta name="twitter:title" content={fullTitle} />
       <meta name="twitter:description" content={description} />
       <meta name="twitter:image" content={image} />
+      {videoEmbed && (
+        <>
+          <meta name="twitter:player" content={videoEmbed.embedUrl} />
+          <meta name="twitter:player:width" content={String(videoEmbed.width || 480)} />
+          <meta name="twitter:player:height" content={String(videoEmbed.height || 852)} />
+        </>
+      )}
 
       {/* Canonical */}
       <link rel="canonical" href={url} />
+
+      {/* oEmbed discovery */}
+      {videoEmbed && (
+        <link rel="alternate" type="application/json+oembed" href={videoEmbed.oembedUrl} title={title || ""} />
+      )}
 
       {/* JSON-LD Structured Data */}
       {structuredData && <script type="application/ld+json">{JSON.stringify(structuredData)}</script>}
@@ -150,27 +181,45 @@ export const generateVideoSEO = (video: {
   description?: string | null;
   thumbnail_url?: string | null;
   video_url: string;
+  cloudflare_video_id?: string | null;
   created_at?: string;
   views_count?: number;
   tags?: string[] | null;
   profiles?: { username: string } | null;
-}) => ({
-  title: video.title,
-  description: video.description || `Watch ${video.title} on ${defaults.siteName}`,
-  keywords: video.tags?.join(", ") || defaults.keywords,
-  image: video.thumbnail_url || defaults.image,
-  url: `${defaults.url}/video/${video.id}`,
-  type: "video.other" as const,
-  videoData: {
-    name: video.title,
-    description: video.description || `Watch ${video.title}`,
-    thumbnailUrl: video.thumbnail_url || defaults.image,
-    uploadDate: video.created_at || new Date().toISOString(),
-    contentUrl: video.video_url,
-    creator: video.profiles?.username,
-    viewCount: video.views_count,
-  },
-});
+}) => {
+  const mp4Url = video.cloudflare_video_id
+    ? `https://customer-qb7mect5e41byr1i.cloudflarestream.com/${video.cloudflare_video_id}/downloads/default.mp4`
+    : video.video_url;
+  const videoPageUrl = `${defaults.url}/video/${video.id}`;
+  const embedUrl = `${defaults.url}/embed/video/${video.id}`;
+  const supabaseProjectId = "mbuajcicosojebakdtsn";
+  const oembedUrl = `https://${supabaseProjectId}.supabase.co/functions/v1/video-oembed?url=${encodeURIComponent(videoPageUrl)}&format=json`;
+
+  return {
+    title: video.title,
+    description: video.description || `Watch ${video.title} on ${defaults.siteName}`,
+    keywords: video.tags?.join(", ") || defaults.keywords,
+    image: video.thumbnail_url || defaults.image,
+    url: videoPageUrl,
+    type: "video.other" as const,
+    videoData: {
+      name: video.title,
+      description: video.description || `Watch ${video.title}`,
+      thumbnailUrl: video.thumbnail_url || defaults.image,
+      uploadDate: video.created_at || new Date().toISOString(),
+      contentUrl: mp4Url,
+      creator: video.profiles?.username,
+      viewCount: video.views_count,
+    },
+    videoEmbed: {
+      mp4Url,
+      embedUrl,
+      oembedUrl,
+      width: 480,
+      height: 852,
+    },
+  };
+};
 
 // Export helper for generating category page metadata
 export const generateCategorySEO = (category: string) => ({
