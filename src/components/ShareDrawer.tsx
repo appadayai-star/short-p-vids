@@ -25,7 +25,7 @@ const getSessionId = (): string => {
 
 export const ShareDrawer = ({ videoTitle, videoId, username, isOpen, onClose }: ShareDrawerProps) => {
   const { user } = useAuth();
-  const shareUrl = window.location.href;
+  const shareUrl = `https://shortpornvids.com/video/${videoId}`;
   const shareText = `Check out this video by @${username}`;
 
   const trackShare = async (shareType: string) => {
