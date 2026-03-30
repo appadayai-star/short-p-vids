@@ -71,8 +71,7 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
       hlsRef.current = hls;
     } else {
       // Fallback: direct MP4 (very rare)
-      const { getCloudflareDownloadUrl } = require("@/lib/cloudinary");
-      videoEl.src = getCloudflareDownloadUrl(cloudflareVideoId);
+      videoEl.src = fallbackUrl;
     }
   }, [cloudflareVideoId, fallbackUrl, destroyHls]);
 
