@@ -6,6 +6,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 import { getThumbnailUrl, preloadImage } from "@/lib/cloudinary";
 import { createAdPicker, type Ad } from "@/lib/adRotation";
+import { prefetchHlsManifest } from "@/hooks/use-hls-player";
 
 const PAGE_SIZE = 10;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -233,6 +234,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
           if (resultVideos.length > 1) {
             preloadImage(getThumbnailUrl(resultVideos[1].cloudflare_video_id, resultVideos[1].thumbnail_url));
+            prefetchHlsManifest(resultVideos[1].cloudflare_video_id);
+          }
+          if (resultVideos.length > 2) {
+            prefetchHlsManifest(resultVideos[2].cloudflare_video_id);
           }
         }
       } catch (err) {
@@ -346,6 +351,20 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       }
     };
   }, [feedEntries]);
+
+  // Prefetch HLS manifests for upcoming videos when activeIndex changes
+  useEffect(() => {
+    for (let offset = 1; offset <= 2; offset++) {
+      const nextIdx = activeIndex + offset;
+      if (nextIdx < feedEntries.length && feedEntries[nextIdx]?.type === 'video') {
+        const nextVideo = feedEntries[nextIdx].data as Video;
+        prefetchHlsManifest(nextVideo.cloudflare_video_id);
+        if (offset === 1) {
+          preloadImage(getThumbnailUrl(nextVideo.cloudflare_video_id, nextVideo.thumbnail_url));
+        }
+      }
+    }
+  }, [activeIndex, feedEntries]);
 
   // Load more
   useEffect(() => {

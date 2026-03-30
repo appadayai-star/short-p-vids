@@ -5,9 +5,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getVideoSource, getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
+import { useHlsPlayer } from "@/hooks/use-hls-player";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -139,7 +140,10 @@ export const FeedItem = memo(({
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const videoSrc = getVideoSource(video.cloudflare_video_id, video.video_url);
+  const { attachSource, detachSource } = useHlsPlayer({
+    cloudflareVideoId: video.cloudflare_video_id,
+    fallbackUrl: video.video_url,
+  });
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   const clearStartupTimeout = useCallback(() => {
@@ -176,19 +180,17 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    if (!shouldAttachSource) {
+    if (shouldAttachSource) {
+      // Attach HLS source (or direct URL for non-cloudflare)
+      attachSource(videoEl);
+    } else {
       clearStartupTimeout();
       setPlaybackFailed(false);
       stopWatching();
       videoEl.pause();
-      try {
-        videoEl.removeAttribute('src');
-        videoEl.load();
-      } catch {
-        // best-effort cancellation
-      }
+      detachSource(videoEl);
     }
-  }, [shouldAttachSource, stopWatching, clearStartupTimeout]);
+  }, [shouldAttachSource, stopWatching, clearStartupTimeout, attachSource, detachSource]);
 
   // Simple, reliable active playback logic
   useEffect(() => {
@@ -259,7 +261,7 @@ export const FeedItem = memo(({
       videoEl.removeEventListener('playing', handlePlaying);
       videoEl.removeEventListener('error', handleError);
     };
-  }, [isActive, hasEntered, markLoadStart, markStartupFailure, stopWatching, clearStartupTimeout, videoSrc]);
+  }, [isActive, hasEntered, markLoadStart, markStartupFailure, stopWatching, clearStartupTimeout, video.cloudflare_video_id]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
@@ -549,11 +551,10 @@ export const FeedItem = memo(({
             className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
           />
 
-          {/* Video player - fades in over poster once playing */}
+          {/* Video player - HLS source managed by useHlsPlayer hook */}
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-contain bg-black"
-            src={shouldAttachSource ? videoSrc : undefined}
             loop
             playsInline
             // @ts-ignore - WebView-specific attributes to prevent auto-fullscreen in in-app browsers (X, Instagram, etc.)

@@ -549,20 +549,27 @@ serve(async (req) => {
         qualityBonus = -0.2;
       }
 
-      // Penalize assets with consistently poor startup behavior
+      // Penalize assets with consistently poor startup behavior (tightened for HLS)
       let startupPenalty = 0;
       if (metrics && metrics.startup_samples >= 3) {
-        if (metrics.fast_start_rate >= 0 && metrics.fast_start_rate < 0.45) {
-          startupPenalty -= 0.12;
+        // Tighter thresholds now that we use HLS adaptive streaming
+        if (metrics.fast_start_rate >= 0 && metrics.fast_start_rate < 0.5) {
+          startupPenalty -= 0.15; // more than half of starts are slow
+        }
+        if (metrics.avg_ttff_ms >= 1200) {
+          startupPenalty -= 0.12; // avg over 1.2s = noticeable delay
         }
         if (metrics.avg_ttff_ms >= 2500) {
-          startupPenalty -= 0.14;
+          startupPenalty -= 0.18; // avg over 2.5s = significant friction
         }
         if (metrics.avg_ttff_ms >= 5000) {
-          startupPenalty -= 0.2;
+          startupPenalty -= 0.25; // avg over 5s = near-removal
         }
-        if (metrics.stall_rate > 0.18) {
-          startupPenalty -= 0.22;
+        if (metrics.stall_rate > 0.15) {
+          startupPenalty -= 0.25; // high stall rate = broken experience
+        }
+        if (metrics.retry_rate > 0.2) {
+          startupPenalty -= 0.15; // many retries = unreliable
         }
       }
 
@@ -578,26 +585,26 @@ serve(async (req) => {
         }
       }
 
-      // === WEIGHT DISTRIBUTION v2.1 (retention-maximized, hook-boosted) ===
-      // Completion:  26% — primary retention signal
-      // Watch time:  22% — engagement depth
-      // Hook:        18% — first impression quality (increased)
-      // Startup:      9% — playback reliability
+      // === WEIGHT DISTRIBUTION v2.2 (binge-optimized: startup reliability boosted) ===
+      // Completion:  24% — primary retention signal
+      // Watch time:  20% — engagement depth
+      // Hook:        17% — first impression quality
+      // Startup:     13% — playback reliability (boosted for binge flow)
       // Affinity:    10% — personalization
-      // Likes:        7% — social proof
-      // Shares:       6% — viral signal
-      // Recency:      5% — freshness
-      // Views:        2% — popularity
+      // Likes:        6% — social proof
+      // Shares:       5% — viral signal
+      // Recency:      4% — freshness
+      // Views:        1% — popularity
 
-      const wCompletion  = 0.26 * completionScore;
-      const wWatchTime   = 0.22 * watchTimeScore;
-      const wHook        = 0.18 * hookScore;
-      const wStartup     = 0.09 * startupReliabilityScore;
+      const wCompletion  = 0.24 * completionScore;
+      const wWatchTime   = 0.20 * watchTimeScore;
+      const wHook        = 0.17 * hookScore;
+      const wStartup     = 0.13 * startupReliabilityScore;
       const wAffinity    = 0.10 * Math.min(affinityScore, 1);
-      const wLikes       = 0.07 * normalizedLikes;
-      const wShares      = 0.06 * sharesScore;
-      const wRecency     = 0.05 * recencyScore;
-      const wViews       = 0.02 * normalizedViews;
+      const wLikes       = 0.06 * normalizedLikes;
+      const wShares      = 0.05 * sharesScore;
+      const wRecency     = 0.04 * recencyScore;
+      const wViews       = 0.01 * normalizedViews;
 
       const score =
         wCompletion +

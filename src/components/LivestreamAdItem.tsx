@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, memo, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Radio, Users, ChevronRight } from "lucide-react";
-import { getVideoSource, getThumbnailUrl } from "@/lib/cloudinary";
+import { getThumbnailUrl } from "@/lib/cloudinary";
+import { useHlsPlayer } from "@/hooks/use-hls-player";
 
 interface Ad {
   id: string;
@@ -25,8 +26,11 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
   const viewTrackedRef = useRef(false);
   const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
 
-  // Compute Cloudflare-based video source and poster
-  const videoSrc = getVideoSource(ad.cloudflare_video_id, ad.video_url);
+  // Use HLS player for adaptive streaming
+  const { attachSource, detachSource } = useHlsPlayer({
+    cloudflareVideoId: ad.cloudflare_video_id,
+    fallbackUrl: ad.video_url,
+  });
   const posterSrc = getThumbnailUrl(ad.cloudflare_video_id, ad.thumbnail_url);
 
   // Random viewer count - stable per ad per session
@@ -53,14 +57,13 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    if (!shouldAttachSource) {
+    if (shouldAttachSource) {
+      attachSource(videoEl);
+    } else {
       videoEl.pause();
-      try {
-        videoEl.removeAttribute('src');
-        videoEl.load();
-      } catch {}
+      detachSource(videoEl);
     }
-  }, [shouldAttachSource]);
+  }, [shouldAttachSource, attachSource, detachSource]);
 
   // Play/pause
   useEffect(() => {
@@ -116,7 +119,7 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain bg-black"
         style={{ paddingBottom: navOffset }}
-        src={shouldAttachSource ? videoSrc : undefined}
+        
         poster={posterSrc}
         loop
         playsInline
