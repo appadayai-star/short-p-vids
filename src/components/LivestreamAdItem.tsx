@@ -57,14 +57,13 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    if (!shouldAttachSource) {
+    if (shouldAttachSource) {
+      attachSource(videoEl);
+    } else {
       videoEl.pause();
-      try {
-        videoEl.removeAttribute('src');
-        videoEl.load();
-      } catch {}
+      detachSource(videoEl);
     }
-  }, [shouldAttachSource]);
+  }, [shouldAttachSource, attachSource, detachSource]);
 
   // Play/pause
   useEffect(() => {
