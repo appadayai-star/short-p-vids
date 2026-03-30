@@ -56,15 +56,17 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
       videoEl.src = hlsUrl;
     } else if (Hls.isSupported()) {
       const hls = new Hls({
-        maxBufferLength: 8,         // buffer 8s ahead
-        maxMaxBufferLength: 20,     // cap at 20s
-        maxBufferSize: 30 * 1000 * 1000, // 30MB max buffer
-        startLevel: -1,             // auto quality selection
-        capLevelToPlayerSize: true, // don't fetch higher res than viewport
+        maxBufferLength: 4,          // start with 4s buffer (faster startup)
+        maxMaxBufferLength: 20,      // can grow to 20s
+        maxBufferSize: 30 * 1000 * 1000,
+        startLevel: 0,               // start at lowest quality for instant first frame
+        capLevelToPlayerSize: true,
         testBandwidth: true,
         lowLatencyMode: false,
-        backBufferLength: 5,        // keep 5s behind
+        backBufferLength: 5,
         enableWorker: true,
+        abrEwmaDefaultEstimate: 1_000_000, // assume 1Mbps initially (conservative, fast start)
+        startFragPrefetch: true,     // prefetch first segment immediately
       });
       hls.loadSource(hlsUrl);
       hls.attachMedia(videoEl);
