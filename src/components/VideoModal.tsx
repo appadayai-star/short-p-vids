@@ -223,11 +223,12 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       const shouldPreload = distFromActive === 1;
       const shouldPreloadMeta = isScrollSettled && Math.abs(distFromActive) === 2;
 
-      const videoSrc = getVideoSource(video.cloudflare_video_id, video.video_url);
-
       // Detach source for far-away videos
       if (!shouldAttachSource) {
         videoEl.pause();
+        // Destroy HLS instance if exists
+        const existingHls = hlsInstancesRef.current.get(video.id);
+        if (existingHls) { existingHls.destroy(); hlsInstancesRef.current.delete(video.id); }
         try {
           videoEl.removeAttribute('src');
           videoEl.load();
@@ -240,9 +241,32 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         return;
       }
 
-      // Attach source if needed
-      if (!videoEl.src || videoEl.src === '' || !videoEl.src.includes(videoSrc.substring(0, 30))) {
-        videoEl.src = videoSrc;
+      // Attach HLS source if needed (only once per video)
+      if (!hlsInstancesRef.current.has(video.id) && !(nativeHls && videoEl.src && videoEl.src.includes('m3u8'))) {
+        if (video.cloudflare_video_id) {
+          const hlsUrl = getCloudflareStreamUrl(video.cloudflare_video_id);
+          if (nativeHls) {
+            videoEl.src = hlsUrl;
+          } else if (Hls.isSupported()) {
+            const hls = new Hls({
+              maxBufferLength: 8,
+              maxMaxBufferLength: 20,
+              maxBufferSize: 30 * 1000 * 1000,
+              startLevel: -1,
+              capLevelToPlayerSize: true,
+              lowLatencyMode: false,
+              backBufferLength: 5,
+              enableWorker: true,
+            });
+            hls.loadSource(hlsUrl);
+            hls.attachMedia(videoEl);
+            hlsInstancesRef.current.set(video.id, hls);
+          } else {
+            videoEl.src = getCloudflareDownloadUrl(video.cloudflare_video_id);
+          }
+        } else {
+          videoEl.src = video.video_url;
+        }
       }
 
       // Set preload level
