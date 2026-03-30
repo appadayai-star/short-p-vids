@@ -234,6 +234,10 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
           if (resultVideos.length > 1) {
             preloadImage(getThumbnailUrl(resultVideos[1].cloudflare_video_id, resultVideos[1].thumbnail_url));
+            prefetchHlsManifest(resultVideos[1].cloudflare_video_id);
+          }
+          if (resultVideos.length > 2) {
+            prefetchHlsManifest(resultVideos[2].cloudflare_video_id);
           }
         }
       } catch (err) {
