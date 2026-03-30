@@ -56,15 +56,17 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
       videoEl.src = hlsUrl;
     } else if (Hls.isSupported()) {
       const hls = new Hls({
-        maxBufferLength: 8,         // buffer 8s ahead
-        maxMaxBufferLength: 20,     // cap at 20s
-        maxBufferSize: 30 * 1000 * 1000, // 30MB max buffer
-        startLevel: -1,             // auto quality selection
-        capLevelToPlayerSize: true, // don't fetch higher res than viewport
+        maxBufferLength: 4,          // start with 4s buffer (faster startup)
+        maxMaxBufferLength: 20,      // can grow to 20s
+        maxBufferSize: 30 * 1000 * 1000,
+        startLevel: 0,               // start at lowest quality for instant first frame
+        capLevelToPlayerSize: true,
         testBandwidth: true,
         lowLatencyMode: false,
-        backBufferLength: 5,        // keep 5s behind
+        backBufferLength: 5,
         enableWorker: true,
+        abrEwmaDefaultEstimate: 1_000_000, // assume 1Mbps initially (conservative, fast start)
+        startFragPrefetch: true,     // prefetch first segment immediately
       });
       hls.loadSource(hlsUrl);
       hls.attachMedia(videoEl);
@@ -98,20 +100,43 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
 }
 
 /**
- * Prefetch an HLS manifest to warm the CDN edge cache.
- * Does a lightweight fetch of just the manifest (tiny file).
+ * Prefetch an HLS manifest AND warm the first segment to speed up next-video startup.
+ * Does lightweight fetches that don't compete with active playback.
  */
 export function prefetchHlsManifest(cloudflareVideoId: string | null | undefined): void {
   if (!cloudflareVideoId) return;
   try {
     const url = getCloudflareStreamUrl(cloudflareVideoId);
-    // Use low-priority fetch to not compete with active playback
+    // Fetch manifest, then try to warm the first segment
     fetch(url, { 
       priority: 'low' as any,
       mode: 'cors',
-    }).catch(() => {
-      // Silently ignore - this is best-effort prefetch
-    });
+    })
+      .then(res => {
+        if (!res.ok) return;
+        return res.text();
+      })
+      .then(manifest => {
+        if (!manifest) return;
+        // Parse m3u8 to find first segment URL
+        const lines = manifest.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#')) {
+            // First non-comment line is either a variant playlist or a segment
+            // For master playlists, warm the first variant playlist
+            const segUrl = trimmed.startsWith('http')
+              ? trimmed
+              : new URL(trimmed, url).href;
+            fetch(segUrl, {
+              priority: 'low' as any,
+              mode: 'cors',
+            }).catch(() => {});
+            break;
+          }
+        }
+      })
+      .catch(() => {});
   } catch {
     // Ignore
   }
