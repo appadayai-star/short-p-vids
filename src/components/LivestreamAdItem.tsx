@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, memo, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Radio, Users, ChevronRight } from "lucide-react";
-import { getVideoSource, getThumbnailUrl } from "@/lib/cloudinary";
+import { getThumbnailUrl } from "@/lib/cloudinary";
+import { useHlsPlayer } from "@/hooks/use-hls-player";
 
 interface Ad {
   id: string;
