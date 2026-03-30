@@ -82,6 +82,7 @@ const Video = () => {
     description: video.description,
     thumbnail_url: video.thumbnail_url,
     video_url: video.optimized_video_url || video.video_url,
+    cloudflare_video_id: video.cloudflare_video_id,
     created_at: video.created_at,
     views_count: video.views_count,
     tags: video.tags,
