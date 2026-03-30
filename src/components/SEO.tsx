@@ -100,6 +100,7 @@ export const SEO = ({
   type = "website",
   noIndex = false,
   videoData,
+  videoEmbed,
 }: SEOProps) => {
   const fullTitle = title ? `${title} | ${defaults.siteName}` : defaults.title;
   const structuredData = videoData
