@@ -21,6 +21,13 @@ interface SEOProps {
   type?: "website" | "video.other" | "profile";
   noIndex?: boolean;
   videoData?: VideoStructuredData;
+  videoEmbed?: {
+    mp4Url: string;
+    embedUrl: string;
+    oembedUrl: string;
+    width?: number;
+    height?: number;
+  };
 }
 
 const defaults = {
