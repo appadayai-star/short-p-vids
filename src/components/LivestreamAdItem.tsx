@@ -119,7 +119,7 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain bg-black"
         style={{ paddingBottom: navOffset }}
-        src={shouldAttachSource ? videoSrc : undefined}
+        
         poster={posterSrc}
         loop
         playsInline
