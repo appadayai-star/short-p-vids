@@ -12,6 +12,7 @@ import Categories from "./pages/Categories";
 import Profile from "./pages/Profile";
 import Inbox from "./pages/Inbox";
 import Video from "./pages/Video";
+import EmbedVideo from "./pages/EmbedVideo";
 import Admin from "./pages/Admin";
 import TrackingRedirect from "./pages/TrackingRedirect";
 import Upload from "./pages/Upload";
