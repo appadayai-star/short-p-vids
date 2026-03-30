@@ -162,7 +162,12 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     } else {
       document.body.style.overflow = 'unset';
     }
-    return () => { document.body.style.overflow = 'unset'; };
+    return () => {
+      document.body.style.overflow = 'unset';
+      // Cleanup all HLS instances on close
+      hlsInstancesRef.current.forEach(hls => hls.destroy());
+      hlsInstancesRef.current.clear();
+    };
   }, [isOpen, initialVideoId, providedVideos]);
 
   // === MAIN FEED SCROLL-SETTLE ACTIVE INDEX DETECTION ===
