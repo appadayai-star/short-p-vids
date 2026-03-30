@@ -261,7 +261,7 @@ export const FeedItem = memo(({
       videoEl.removeEventListener('playing', handlePlaying);
       videoEl.removeEventListener('error', handleError);
     };
-  }, [isActive, hasEntered, markLoadStart, markStartupFailure, stopWatching, clearStartupTimeout, videoSrc]);
+  }, [isActive, hasEntered, markLoadStart, markStartupFailure, stopWatching, clearStartupTimeout, video.cloudflare_video_id]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
