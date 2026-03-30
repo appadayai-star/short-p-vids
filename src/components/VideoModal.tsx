@@ -3,7 +3,9 @@ import { X, Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pen
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { getVideoSource, getThumbnailUrl } from "@/lib/cloudinary";
+import { getThumbnailUrl } from "@/lib/cloudinary";
+import { getCloudflareStreamUrl, getCloudflareDownloadUrl, supportsHlsNatively } from "@/lib/cloudinary";
+import Hls from "hls.js";
 import { ShareDrawer } from "./ShareDrawer";
 import { cn } from "@/lib/utils";
 import { EditVideoDialog } from "./EditVideoDialog";
