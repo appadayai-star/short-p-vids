@@ -352,6 +352,20 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [feedEntries]);
 
+  // Prefetch HLS manifests for upcoming videos when activeIndex changes
+  useEffect(() => {
+    for (let offset = 1; offset <= 2; offset++) {
+      const nextIdx = activeIndex + offset;
+      if (nextIdx < feedEntries.length && feedEntries[nextIdx]?.type === 'video') {
+        const nextVideo = feedEntries[nextIdx].data as Video;
+        prefetchHlsManifest(nextVideo.cloudflare_video_id);
+        if (offset === 1) {
+          preloadImage(getThumbnailUrl(nextVideo.cloudflare_video_id, nextVideo.thumbnail_url));
+        }
+      }
+    }
+  }, [activeIndex, feedEntries]);
+
   // Load more
   useEffect(() => {
     if (!hasMore || isLoadingMore || loading || videos.length === 0) return;
