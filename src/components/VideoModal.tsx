@@ -705,7 +705,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
               );
             }
 
-            const videoSrc = getVideoSource(video.cloudflare_video_id, video.video_url);
+            // HLS source is managed by the tiered playback effect, not via src attribute
             const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
             const isActive = index === activeIndex;
             const distFromActive = index - activeIndex;
