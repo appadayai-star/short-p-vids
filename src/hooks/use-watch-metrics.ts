@@ -277,7 +277,7 @@ export const useWatchMetrics = ({
 
     hasRecordedViewRef.current = true;
     
-    incrementSessionVideoCount();
+    const videoPosition = incrementSessionVideoCount();
 
     const insertData = {
       video_id: metrics.videoId,
@@ -289,6 +289,7 @@ export const useWatchMetrics = ({
       watch_completion_percent: metrics.watchCompletionPercent,
       time_to_first_frame_ms: metrics.timeToFirstFrameMs,
       feed_source: metrics.feedSource,
+      video_position: videoPosition,
     };
 
     // Track test mode logging
