@@ -121,6 +121,7 @@ const addSessionWatchData = (entry: SessionWatchEntry) => {
 
 export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProps) => {
   const { hasEntered } = useEntryGate();
+  const feedSource = searchQuery ? 'search' : categoryFilter ? 'category_feed' : 'main_feed';
   
   const [videos, setVideos] = useState<Video[]>([]);
   const [ads, setAds] = useState<Ad[]>([]);
