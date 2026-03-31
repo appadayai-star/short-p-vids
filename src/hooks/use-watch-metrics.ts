@@ -260,8 +260,9 @@ export const useWatchMetrics = ({
       videoDurationSeconds: videoDuration ? Math.round(videoDuration) : null,
       watchCompletionPercent: completionPercent,
       timeToFirstFrameMs: ttffRef.current,
+      feedSource,
     };
-  }, [videoId, userId, videoRef]);
+  }, [videoId, userId, videoRef, feedSource]);
 
   // Send metrics to database
   const sendMetrics = useCallback(async () => {
