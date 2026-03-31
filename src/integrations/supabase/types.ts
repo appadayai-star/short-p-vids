@@ -778,6 +778,7 @@ export type Database = {
           user_id: string | null
           video_duration_seconds: number | null
           video_id: string
+          video_position: number | null
           viewed_at: string
           viewer_id: string | null
           watch_completion_percent: number | null
@@ -791,6 +792,7 @@ export type Database = {
           user_id?: string | null
           video_duration_seconds?: number | null
           video_id: string
+          video_position?: number | null
           viewed_at?: string
           viewer_id?: string | null
           watch_completion_percent?: number | null
@@ -804,6 +806,7 @@ export type Database = {
           user_id?: string | null
           video_duration_seconds?: number | null
           video_id?: string
+          video_position?: number | null
           viewed_at?: string
           viewer_id?: string | null
           watch_completion_percent?: number | null
