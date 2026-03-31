@@ -352,6 +352,7 @@ export const useWatchMetrics = ({
       video_duration_seconds: metrics.videoDurationSeconds,
       watch_completion_percent: metrics.watchCompletionPercent,
       time_to_first_frame_ms: metrics.timeToFirstFrameMs,
+      feed_source: metrics.feedSource,
     });
 
     if (isTrackTestMode()) {
