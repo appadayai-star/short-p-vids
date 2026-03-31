@@ -143,6 +143,7 @@ serve(async (req) => {
         profiles!inner(username, avatar_url)
       `)
       .gte("created_at", thirtyDaysAgo.toISOString())
+      .not("cloudflare_video_id", "is", null) // Only show HLS-ready videos
       .order("created_at", { ascending: false })
       .limit(500);
 
@@ -156,7 +157,7 @@ serve(async (req) => {
     const eligibleVideos = (recentVideos || []).filter(
       (v: any) => !sessionExcludeSet.has(v.id)
     );
-    console.log(`[feed] Eligible: ${eligibleVideos.length} videos`);
+    console.log(`[feed] Eligible: ${eligibleVideos.length} videos (HLS-only)`);
 
     const videoIds = eligibleVideos.map((v: any) => v.id);
 
