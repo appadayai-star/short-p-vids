@@ -281,13 +281,14 @@ export const useWatchMetrics = ({
 
     const insertData = {
       video_id: metrics.videoId,
-      user_id: metrics.authUserId, // null for anonymous (FK to profiles)
-      viewer_id: metrics.viewerId, // always filled (auth OR anonymous)
-      session_id: metrics.sessionId, // always filled
+      user_id: metrics.authUserId,
+      viewer_id: metrics.viewerId,
+      session_id: metrics.sessionId,
       watch_duration_seconds: metrics.watchDurationSeconds,
       video_duration_seconds: metrics.videoDurationSeconds,
       watch_completion_percent: metrics.watchCompletionPercent,
       time_to_first_frame_ms: metrics.timeToFirstFrameMs,
+      feed_source: metrics.feedSource,
     };
 
     // Track test mode logging
