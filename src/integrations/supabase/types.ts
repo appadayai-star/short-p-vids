@@ -771,6 +771,7 @@ export type Database = {
       }
       video_views: {
         Row: {
+          feed_source: string | null
           id: string
           session_id: string | null
           time_to_first_frame_ms: number | null
@@ -783,6 +784,7 @@ export type Database = {
           watch_duration_seconds: number | null
         }
         Insert: {
+          feed_source?: string | null
           id?: string
           session_id?: string | null
           time_to_first_frame_ms?: number | null
@@ -795,6 +797,7 @@ export type Database = {
           watch_duration_seconds?: number | null
         }
         Update: {
+          feed_source?: string | null
           id?: string
           session_id?: string | null
           time_to_first_frame_ms?: number | null
