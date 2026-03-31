@@ -86,6 +86,7 @@ interface UseWatchMetricsProps {
   isActive: boolean;
   videoRef: React.RefObject<HTMLVideoElement>;
   videoIndex?: number;
+  feedSource?: string | null;
   onViewRecorded?: () => void;
 }
 
