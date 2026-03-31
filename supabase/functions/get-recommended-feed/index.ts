@@ -30,6 +30,7 @@ serve(async (req) => {
           id, video_url, optimized_video_url, stream_url, cloudinary_public_id, cloudflare_video_id, thumbnail_url,
           views_count, likes_count, user_id
         `)
+        .not("cloudflare_video_id", "is", null)
         .order("created_at", { ascending: false })
         .limit(limit);
 
@@ -100,6 +101,7 @@ serve(async (req) => {
     }
 
     const { data: videos, error } = await query
+      .not("cloudflare_video_id", "is", null)
       .order("created_at", { ascending: false })
       .limit(50);
 

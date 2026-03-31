@@ -143,6 +143,7 @@ serve(async (req) => {
         profiles!inner(username, avatar_url)
       `)
       .gte("created_at", thirtyDaysAgo.toISOString())
+      .not("cloudflare_video_id", "is", null) // Only show HLS-ready videos
       .order("created_at", { ascending: false })
       .limit(500);
 
@@ -156,7 +157,7 @@ serve(async (req) => {
     const eligibleVideos = (recentVideos || []).filter(
       (v: any) => !sessionExcludeSet.has(v.id)
     );
-    console.log(`[feed] Eligible: ${eligibleVideos.length} videos`);
+    console.log(`[feed] Eligible: ${eligibleVideos.length} videos (HLS-only)`);
 
     const videoIds = eligibleVideos.map((v: any) => v.id);
 
@@ -431,13 +432,14 @@ serve(async (req) => {
       let startupReliabilityScore = 0.5;
       if (metrics && metrics.startup_samples >= 3) {
         const fastRate = Math.max(metrics.fast_start_rate, 0);
-        const slowPenalty = metrics.slow_start_rate * 0.55;
-        const stallPenalty = metrics.stall_rate * 1.1;
-        const retryPenalty = metrics.retry_rate * 0.35;
+        const slowPenalty = metrics.slow_start_rate * 0.65; // increased from 0.55
+        const stallPenalty = metrics.stall_rate * 1.2; // increased from 1.1
+        const retryPenalty = metrics.retry_rate * 0.40; // increased from 0.35
         startupReliabilityScore = Math.max(0, Math.min(1.25, fastRate + 0.25 - slowPenalty - stallPenalty - retryPenalty));
 
-        if (metrics.avg_ttff_ms > 0 && metrics.avg_ttff_ms < 900) {
-          startupReliabilityScore = Math.min(startupReliabilityScore + 0.12, 1.25);
+        // Bonus for very fast videos (tightened from 900ms to 500ms)
+        if (metrics.avg_ttff_ms > 0 && metrics.avg_ttff_ms < 500) {
+          startupReliabilityScore = Math.min(startupReliabilityScore + 0.15, 1.25);
         }
       }
 
@@ -549,21 +551,24 @@ serve(async (req) => {
         qualityBonus = -0.2;
       }
 
-      // Penalize assets with consistently poor startup behavior (tightened for HLS)
+      // Penalize assets with consistently poor startup behavior (tightened for session depth)
       let startupPenalty = 0;
       if (metrics && metrics.startup_samples >= 3) {
-        // Tighter thresholds now that we use HLS adaptive streaming
+        // Tighter thresholds — data shows <500ms TTFF = 2x session depth vs >800ms
         if (metrics.fast_start_rate >= 0 && metrics.fast_start_rate < 0.5) {
-          startupPenalty -= 0.15; // more than half of starts are slow
+          startupPenalty -= 0.18; // more than half of starts are slow
+        }
+        if (metrics.avg_ttff_ms >= 800) {
+          startupPenalty -= 0.10; // avg over 800ms = noticeable delay
         }
         if (metrics.avg_ttff_ms >= 1200) {
-          startupPenalty -= 0.12; // avg over 1.2s = noticeable delay
+          startupPenalty -= 0.18; // avg over 1.2s = significant friction
         }
         if (metrics.avg_ttff_ms >= 2500) {
-          startupPenalty -= 0.18; // avg over 2.5s = significant friction
+          startupPenalty -= 0.25; // avg over 2.5s = near-removal
         }
         if (metrics.avg_ttff_ms >= 5000) {
-          startupPenalty -= 0.25; // avg over 5s = near-removal
+          startupPenalty -= 0.30; // avg over 5s = removal territory
         }
         if (metrics.stall_rate > 0.15) {
           startupPenalty -= 0.25; // high stall rate = broken experience
@@ -585,26 +590,26 @@ serve(async (req) => {
         }
       }
 
-      // === WEIGHT DISTRIBUTION v2.2 (binge-optimized: startup reliability boosted) ===
-      // Completion:  24% — primary retention signal
-      // Watch time:  20% — engagement depth
-      // Hook:        17% — first impression quality
-      // Startup:     13% — playback reliability (boosted for binge flow)
+      // === WEIGHT DISTRIBUTION v2.3 (session-depth-optimized: startup reliability boosted further) ===
+      // Completion:  22% — primary retention signal
+      // Watch time:  19% — engagement depth
+      // Hook:        16% — first impression quality
+      // Startup:     16% — playback reliability (critical for session depth)
       // Affinity:    10% — personalization
       // Likes:        6% — social proof
       // Shares:       5% — viral signal
       // Recency:      4% — freshness
-      // Views:        1% — popularity
+      // Views:        2% — popularity
 
-      const wCompletion  = 0.24 * completionScore;
-      const wWatchTime   = 0.20 * watchTimeScore;
-      const wHook        = 0.17 * hookScore;
-      const wStartup     = 0.13 * startupReliabilityScore;
+      const wCompletion  = 0.22 * completionScore;
+      const wWatchTime   = 0.19 * watchTimeScore;
+      const wHook        = 0.16 * hookScore;
+      const wStartup     = 0.16 * startupReliabilityScore;
       const wAffinity    = 0.10 * Math.min(affinityScore, 1);
       const wLikes       = 0.06 * normalizedLikes;
       const wShares      = 0.05 * sharesScore;
       const wRecency     = 0.04 * recencyScore;
-      const wViews       = 0.01 * normalizedViews;
+      const wViews       = 0.02 * normalizedViews;
 
       const score =
         wCompletion +
