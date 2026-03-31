@@ -99,40 +99,67 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
   return { attachSource, detachSource, destroyHls };
 }
 
+// ===== PREFETCH SYSTEM =====
+// Track what we've already prefetched to avoid duplicate fetches
+const prefetchedManifests = new Set<string>();
+const prefetchedSegments = new Set<string>();
+
 /**
- * Prefetch an HLS manifest AND warm the first segment to speed up next-video startup.
- * Does lightweight fetches that don't compete with active playback.
+ * Deep prefetch: manifest → variant playlist → first segment.
+ * This ensures the browser cache is warm so HLS.js can start instantly.
+ * Uses low priority to not compete with active playback.
  */
 export function prefetchHlsManifest(cloudflareVideoId: string | null | undefined): void {
   if (!cloudflareVideoId) return;
+  if (prefetchedManifests.has(cloudflareVideoId)) return;
+  prefetchedManifests.add(cloudflareVideoId);
+
   try {
     const url = getCloudflareStreamUrl(cloudflareVideoId);
-    // Fetch manifest, then try to warm the first segment
-    fetch(url, { 
-      priority: 'low' as any,
-      mode: 'cors',
-    })
+    
+    fetch(url, { priority: 'low' as any, mode: 'cors' })
       .then(res => {
         if (!res.ok) return;
         return res.text();
       })
       .then(manifest => {
         if (!manifest) return;
-        // Parse m3u8 to find first segment URL
+        // Parse master playlist to find variant playlists
         const lines = manifest.split('\n');
         for (const line of lines) {
           const trimmed = line.trim();
           if (trimmed && !trimmed.startsWith('#')) {
-            // First non-comment line is either a variant playlist or a segment
-            // For master playlists, warm the first variant playlist
-            const segUrl = trimmed.startsWith('http')
+            // First non-comment line = variant playlist (or segment for simple playlists)
+            const variantUrl = trimmed.startsWith('http')
               ? trimmed
               : new URL(trimmed, url).href;
-            fetch(segUrl, {
-              priority: 'low' as any,
-              mode: 'cors',
-            }).catch(() => {});
-            break;
+            
+            if (prefetchedSegments.has(variantUrl)) break;
+            prefetchedSegments.add(variantUrl);
+            
+            // Fetch the variant playlist, then warm its first segment
+            fetch(variantUrl, { priority: 'low' as any, mode: 'cors' })
+              .then(res => res.ok ? res.text() : null)
+              .then(variantManifest => {
+                if (!variantManifest) return;
+                // Find first .ts segment in variant playlist
+                const segLines = variantManifest.split('\n');
+                for (const segLine of segLines) {
+                  const seg = segLine.trim();
+                  if (seg && !seg.startsWith('#') && (seg.endsWith('.ts') || seg.includes('.ts?') || seg.includes('seg-'))) {
+                    const segUrl = seg.startsWith('http')
+                      ? seg
+                      : new URL(seg, variantUrl).href;
+                    if (!prefetchedSegments.has(segUrl)) {
+                      prefetchedSegments.add(segUrl);
+                      fetch(segUrl, { priority: 'low' as any, mode: 'cors' }).catch(() => {});
+                    }
+                    break;
+                  }
+                }
+              })
+              .catch(() => {});
+            break; // Only warm the first (lowest quality) variant
           }
         }
       })
@@ -140,4 +167,61 @@ export function prefetchHlsManifest(cloudflareVideoId: string | null | undefined
   } catch {
     // Ignore
   }
+}
+
+/**
+ * Eagerly prefetch a video — higher priority than prefetchHlsManifest.
+ * Used for the FIRST video in feed (must be instant) and the immediate next video.
+ */
+export function eagerPrefetchVideo(cloudflareVideoId: string | null | undefined): void {
+  if (!cloudflareVideoId) return;
+  // Skip dedup for eager — we want to ensure it's cached even if low-priority fetch happened
+  const url = getCloudflareStreamUrl(cloudflareVideoId);
+  prefetchedManifests.add(cloudflareVideoId);
+
+  fetch(url, { mode: 'cors' }) // default priority (high)
+    .then(res => {
+      if (!res.ok) return;
+      return res.text();
+    })
+    .then(manifest => {
+      if (!manifest) return;
+      const lines = manifest.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const variantUrl = trimmed.startsWith('http')
+            ? trimmed
+            : new URL(trimmed, url).href;
+
+          fetch(variantUrl, { mode: 'cors' })
+            .then(res => res.ok ? res.text() : null)
+            .then(variantManifest => {
+              if (!variantManifest) return;
+              const segLines = variantManifest.split('\n');
+              for (const segLine of segLines) {
+                const seg = segLine.trim();
+                if (seg && !seg.startsWith('#') && (seg.endsWith('.ts') || seg.includes('.ts?') || seg.includes('seg-'))) {
+                  const segUrl = seg.startsWith('http')
+                    ? seg
+                    : new URL(seg, variantUrl).href;
+                  fetch(segUrl, { mode: 'cors' }).catch(() => {});
+                  break;
+                }
+              }
+            })
+            .catch(() => {});
+          break;
+        }
+      }
+    })
+    .catch(() => {});
+}
+
+/**
+ * Reset prefetch tracking (e.g., when navigating to a new feed)
+ */
+export function resetPrefetchCache(): void {
+  prefetchedManifests.clear();
+  prefetchedSegments.clear();
 }

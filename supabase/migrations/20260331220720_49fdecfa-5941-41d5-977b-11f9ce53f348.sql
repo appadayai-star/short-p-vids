@@ -1,0 +1,1 @@
+ALTER TABLE public.video_views ADD COLUMN IF NOT EXISTS video_position integer DEFAULT null;
