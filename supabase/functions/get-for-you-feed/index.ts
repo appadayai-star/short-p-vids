@@ -549,21 +549,24 @@ serve(async (req) => {
         qualityBonus = -0.2;
       }
 
-      // Penalize assets with consistently poor startup behavior (tightened for HLS)
+      // Penalize assets with consistently poor startup behavior (tightened for session depth)
       let startupPenalty = 0;
       if (metrics && metrics.startup_samples >= 3) {
-        // Tighter thresholds now that we use HLS adaptive streaming
+        // Tighter thresholds — data shows <500ms TTFF = 2x session depth vs >800ms
         if (metrics.fast_start_rate >= 0 && metrics.fast_start_rate < 0.5) {
-          startupPenalty -= 0.15; // more than half of starts are slow
+          startupPenalty -= 0.18; // more than half of starts are slow
+        }
+        if (metrics.avg_ttff_ms >= 800) {
+          startupPenalty -= 0.10; // avg over 800ms = noticeable delay
         }
         if (metrics.avg_ttff_ms >= 1200) {
-          startupPenalty -= 0.12; // avg over 1.2s = noticeable delay
+          startupPenalty -= 0.18; // avg over 1.2s = significant friction
         }
         if (metrics.avg_ttff_ms >= 2500) {
-          startupPenalty -= 0.18; // avg over 2.5s = significant friction
+          startupPenalty -= 0.25; // avg over 2.5s = near-removal
         }
         if (metrics.avg_ttff_ms >= 5000) {
-          startupPenalty -= 0.25; // avg over 5s = near-removal
+          startupPenalty -= 0.30; // avg over 5s = removal territory
         }
         if (metrics.stall_rate > 0.15) {
           startupPenalty -= 0.25; // high stall rate = broken experience
