@@ -101,6 +101,7 @@ serve(async (req) => {
     }
 
     const { data: videos, error } = await query
+      .not("cloudflare_video_id", "is", null)
       .order("created_at", { ascending: false })
       .limit(50);
 
