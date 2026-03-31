@@ -35,7 +35,7 @@ export const SinglePlayer = memo(({
   
   const [status, setStatus] = useState<VideoStatus>("idle");
   const [attempt, setAttempt] = useState(0);
-  const [isMuted, setIsMuted] = useState(globalMuted);
+  const [isMuted, setIsMuted] = useState(getGlobalMuted());
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
 
