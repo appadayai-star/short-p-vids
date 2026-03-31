@@ -25,10 +25,12 @@ const queryClient = new QueryClient();
 const App = () => (
   <HelmetProvider>
     <AuthProvider>
+      <UploadProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />
           <Sonner />
+          <UploadProgressWidget />
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Feed />} />
