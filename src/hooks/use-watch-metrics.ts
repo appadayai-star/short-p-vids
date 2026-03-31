@@ -77,6 +77,7 @@ interface WatchMetrics {
   videoDurationSeconds: number | null;
   watchCompletionPercent: number | null;
   timeToFirstFrameMs: number | null;
+  feedSource: string | null;
 }
 
 interface UseWatchMetricsProps {
