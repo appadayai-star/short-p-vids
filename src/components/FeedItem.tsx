@@ -9,46 +9,14 @@ import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import { useHlsPlayer } from "@/hooks/use-hls-player";
+import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
+import { getGuestClientId, getGuestLikes, setGuestLikes } from "@/lib/guestLikes";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-// Global mute state - persisted across videos
-let globalMuted = true;
-const muteListeners = new Set<(muted: boolean) => void>();
-
-const setGlobalMuted = (muted: boolean) => {
-  globalMuted = muted;
-  muteListeners.forEach(listener => listener(muted));
-};
-
-// Guest client ID for anonymous likes
-const getGuestClientId = (): string => {
-  const key = 'guest_client_id';
-  let clientId = localStorage.getItem(key);
-  if (!clientId) {
-    clientId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-    localStorage.setItem(key, clientId);
-  }
-  return clientId;
-};
-
-// Guest likes storage
-const getGuestLikes = (): string[] => {
-  try {
-    const likes = localStorage.getItem('guest_likes_v1');
-    return likes ? JSON.parse(likes) : [];
-  } catch {
-    return [];
-  }
-};
-
-const setGuestLikes = (likes: string[]) => {
-  localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
-};
 
 interface Video {
   id: string;
