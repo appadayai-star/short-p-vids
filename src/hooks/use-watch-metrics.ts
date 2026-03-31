@@ -96,6 +96,7 @@ export const useWatchMetrics = ({
   isActive,
   videoRef,
   videoIndex = 0,
+  feedSource = null,
   onViewRecorded,
 }: UseWatchMetricsProps) => {
   // Timing refs
