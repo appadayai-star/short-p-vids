@@ -472,7 +472,7 @@ export const useWatchMetrics = ({
         }
       }
     };
-  }, [videoId, userId]);
+  }, [videoId, userId, feedSource]);
 
   return {
     markLoadStart,

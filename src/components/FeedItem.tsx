@@ -91,6 +91,7 @@ export const FeedItem = memo(({
   shouldPreloadMeta = false,
   hasEntered,
   currentUserId, 
+  feedSource = null,
   onViewTracked,
   onDelete,
 }: FeedItemProps) => {
