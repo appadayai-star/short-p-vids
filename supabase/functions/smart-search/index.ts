@@ -183,6 +183,16 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const searchTerm = query.trim().toLowerCase();
+
+    // Block prohibited search terms
+    if (BLOCKED_KEYWORDS.some(kw => searchTerm.includes(kw))) {
+      console.log(`Blocked search: "${searchTerm}"`);
+      return new Response(
+        JSON.stringify({ videos: [], users: [] }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const searchWords = searchTerm.split(/\s+/);
     console.log(`Searching for: "${searchTerm}"`);
 
