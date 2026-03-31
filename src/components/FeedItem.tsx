@@ -112,6 +112,7 @@ export const FeedItem = memo(({
     isActive,
     videoRef,
     videoIndex: index,
+    feedSource,
     onViewRecorded: () => {
       const metrics = getMetrics();
       onViewTracked(video.id, metrics.watchDurationSeconds);
