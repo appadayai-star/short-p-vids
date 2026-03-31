@@ -138,6 +138,10 @@ const Admin = () => {
             <AdminStats datePreset={datePreset} onDatePresetChange={setDatePreset} />
           </TabsContent>
 
+          <TabsContent value="sessions">
+            <AdminSessionAnalysis datePreset={datePreset} onDatePresetChange={setDatePreset} />
+          </TabsContent>
+
           <TabsContent value="users">
             <AdminUsers />
           </TabsContent>
