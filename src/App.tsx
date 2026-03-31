@@ -52,6 +52,7 @@ const App = () => (
           </BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>
+      </UploadProvider>
     </AuthProvider>
   </HelmetProvider>
 );
