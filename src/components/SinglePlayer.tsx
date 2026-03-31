@@ -92,16 +92,12 @@ export const SinglePlayer = memo(({
 
   // Sync with global mute state
   useEffect(() => {
-    const listener = (muted: boolean) => {
+    return onMuteChange((muted) => {
       setIsMuted(muted);
       if (videoRef.current) {
         videoRef.current.muted = muted;
       }
-    };
-    muteListeners.add(listener);
-    return () => {
-      muteListeners.delete(listener);
-    };
+    });
   }, []);
 
   // Reset when video changes
