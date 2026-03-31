@@ -1,17 +1,7 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Loader2, RefreshCw, Play, Volume2, VolumeX } from "lucide-react";
 import { getVideoSource, getThumbnailUrl } from "@/lib/cloudinary";
-
-// Global mute state - persisted across videos
-let globalMuted = true;
-const muteListeners = new Set<(muted: boolean) => void>();
-
-const setGlobalMuted = (muted: boolean) => {
-  globalMuted = muted;
-  muteListeners.forEach(listener => listener(muted));
-};
-
-export const getGlobalMuted = () => globalMuted;
+import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
 
 interface Video {
   id: string;
