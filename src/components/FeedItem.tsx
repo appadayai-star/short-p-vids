@@ -78,6 +78,7 @@ interface FeedItemProps {
   shouldPreloadMeta?: boolean;
   hasEntered: boolean;
   currentUserId: string | null;
+  feedSource?: string | null;
   onViewTracked: (videoId: string, watchDuration?: number) => void;
   onDelete?: (videoId: string) => void;
 }
@@ -90,6 +91,7 @@ export const FeedItem = memo(({
   shouldPreloadMeta = false,
   hasEntered,
   currentUserId, 
+  feedSource = null,
   onViewTracked,
   onDelete,
 }: FeedItemProps) => {
@@ -110,6 +112,7 @@ export const FeedItem = memo(({
     isActive,
     videoRef,
     videoIndex: index,
+    feedSource,
     onViewRecorded: () => {
       const metrics = getMetrics();
       onViewTracked(video.id, metrics.watchDurationSeconds);

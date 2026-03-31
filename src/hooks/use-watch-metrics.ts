@@ -77,6 +77,7 @@ interface WatchMetrics {
   videoDurationSeconds: number | null;
   watchCompletionPercent: number | null;
   timeToFirstFrameMs: number | null;
+  feedSource: string | null;
 }
 
 interface UseWatchMetricsProps {
@@ -85,6 +86,7 @@ interface UseWatchMetricsProps {
   isActive: boolean;
   videoRef: React.RefObject<HTMLVideoElement>;
   videoIndex?: number;
+  feedSource?: string | null;
   onViewRecorded?: () => void;
 }
 
@@ -94,6 +96,7 @@ export const useWatchMetrics = ({
   isActive,
   videoRef,
   videoIndex = 0,
+  feedSource = null,
   onViewRecorded,
 }: UseWatchMetricsProps) => {
   // Timing refs
@@ -257,8 +260,9 @@ export const useWatchMetrics = ({
       videoDurationSeconds: videoDuration ? Math.round(videoDuration) : null,
       watchCompletionPercent: completionPercent,
       timeToFirstFrameMs: ttffRef.current,
+      feedSource,
     };
-  }, [videoId, userId, videoRef]);
+  }, [videoId, userId, videoRef, feedSource]);
 
   // Send metrics to database
   const sendMetrics = useCallback(async () => {
@@ -277,13 +281,14 @@ export const useWatchMetrics = ({
 
     const insertData = {
       video_id: metrics.videoId,
-      user_id: metrics.authUserId, // null for anonymous (FK to profiles)
-      viewer_id: metrics.viewerId, // always filled (auth OR anonymous)
-      session_id: metrics.sessionId, // always filled
+      user_id: metrics.authUserId,
+      viewer_id: metrics.viewerId,
+      session_id: metrics.sessionId,
       watch_duration_seconds: metrics.watchDurationSeconds,
       video_duration_seconds: metrics.videoDurationSeconds,
       watch_completion_percent: metrics.watchCompletionPercent,
       time_to_first_frame_ms: metrics.timeToFirstFrameMs,
+      feed_source: metrics.feedSource,
     };
 
     // Track test mode logging
@@ -347,6 +352,7 @@ export const useWatchMetrics = ({
       video_duration_seconds: metrics.videoDurationSeconds,
       watch_completion_percent: metrics.watchCompletionPercent,
       time_to_first_frame_ms: metrics.timeToFirstFrameMs,
+      feed_source: metrics.feedSource,
     });
 
     if (isTrackTestMode()) {
@@ -443,6 +449,7 @@ export const useWatchMetrics = ({
             video_duration_seconds: videoDuration ? Math.round(videoDuration) : null,
             watch_completion_percent: completionPercent,
             time_to_first_frame_ms: ttffRef.current,
+            feed_source: feedSource,
           };
 
           if (isTrackTestMode()) {
@@ -465,7 +472,7 @@ export const useWatchMetrics = ({
         }
       }
     };
-  }, [videoId, userId]);
+  }, [videoId, userId, feedSource]);
 
   return {
     markLoadStart,

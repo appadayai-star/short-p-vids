@@ -1,0 +1,1 @@
+ALTER TABLE public.video_views ADD COLUMN IF NOT EXISTS feed_source text DEFAULT null;
