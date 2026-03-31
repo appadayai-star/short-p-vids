@@ -10,7 +10,7 @@ import { AdminSessionAnalysis } from "@/components/admin/AdminSessionAnalysis";
 
 import { SEO } from "@/components/SEO";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, Link2, Radio, AlertTriangle } from "lucide-react";
+import { Loader2, LayoutDashboard, Users, Video, ArrowLeft, Link2, Radio, AlertTriangle, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 
