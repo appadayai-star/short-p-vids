@@ -360,15 +360,18 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
 
   // Prefetch HLS manifests for upcoming videos when activeIndex changes
   useEffect(() => {
-    for (let offset = 1; offset <= 2; offset++) {
-      const nextIdx = activeIndex + offset;
-      if (nextIdx < feedEntries.length && feedEntries[nextIdx]?.type === 'video') {
-        const nextVideo = feedEntries[nextIdx].data as Video;
-        prefetchHlsManifest(nextVideo.cloudflare_video_id);
-        if (offset === 1) {
-          preloadImage(getThumbnailUrl(nextVideo.cloudflare_video_id, nextVideo.thumbnail_url));
-        }
-      }
+    // Eager prefetch next video (high priority — must be instant on swipe)
+    const next1 = activeIndex + 1;
+    if (next1 < feedEntries.length && feedEntries[next1]?.type === 'video') {
+      const nextVideo = feedEntries[next1].data as Video;
+      eagerPrefetchVideo(nextVideo.cloudflare_video_id);
+      preloadImage(getThumbnailUrl(nextVideo.cloudflare_video_id, nextVideo.thumbnail_url));
+    }
+    // Low-priority prefetch for +2
+    const next2 = activeIndex + 2;
+    if (next2 < feedEntries.length && feedEntries[next2]?.type === 'video') {
+      const nextVideo2 = feedEntries[next2].data as Video;
+      prefetchHlsManifest(nextVideo2.cloudflare_video_id);
     }
   }, [activeIndex, feedEntries]);
 
