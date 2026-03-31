@@ -500,6 +500,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
             shouldPreloadMeta={shouldPreloadMeta}
             hasEntered={hasEntered}
             currentUserId={userId}
+            feedSource={feedSource}
             onViewTracked={handleViewTracked}
           />
         );
