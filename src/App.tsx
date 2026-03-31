@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { UploadProvider } from "@/contexts/UploadContext";
+import { UploadProgressWidget } from "@/components/UploadProgressWidget";
 import Auth from "./pages/Auth";
 import Feed from "./pages/Feed";
 import Search from "./pages/Search";
@@ -23,10 +25,12 @@ const queryClient = new QueryClient();
 const App = () => (
   <HelmetProvider>
     <AuthProvider>
+      <UploadProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />
           <Sonner />
+          <UploadProgressWidget />
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Feed />} />
@@ -48,6 +52,7 @@ const App = () => (
           </BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>
+      </UploadProvider>
     </AuthProvider>
   </HelmetProvider>
 );
