@@ -201,6 +201,44 @@ serve(async (req) => {
       throw updateError;
     }
 
+    // Warm CDN edge cache: fetch manifest + first variant playlist + first segment
+    // This ensures users hitting this video see instant TTFF
+    try {
+      const manifestUrl = `https://customer-qb7mect5e41byr1i.cloudflarestream.com/${cloudflareVideoId}/manifest/video.m3u8`;
+      const manifestRes = await fetch(manifestUrl);
+      if (manifestRes.ok) {
+        const manifest = await manifestRes.text();
+        const lines = manifest.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#')) {
+            const variantUrl = trimmed.startsWith('http')
+              ? trimmed
+              : new URL(trimmed, manifestUrl).href;
+            const variantRes = await fetch(variantUrl);
+            if (variantRes.ok) {
+              const variantManifest = await variantRes.text();
+              const segLines = variantManifest.split('\n');
+              for (const segLine of segLines) {
+                const seg = segLine.trim();
+                if (seg && !seg.startsWith('#')) {
+                  const segUrl = seg.startsWith('http')
+                    ? seg
+                    : new URL(seg, variantUrl).href;
+                  await fetch(segUrl);
+                  break;
+                }
+              }
+            }
+            break;
+          }
+        }
+      }
+      console.log("CDN edge cache warmed for video:", cloudflareVideoId);
+    } catch (warmErr) {
+      console.warn("Edge cache warm-up failed (non-critical):", warmErr);
+    }
+
     console.log("Video processing completed successfully");
 
     return new Response(
