@@ -449,6 +449,7 @@ export const useWatchMetrics = ({
             video_duration_seconds: videoDuration ? Math.round(videoDuration) : null,
             watch_completion_percent: completionPercent,
             time_to_first_frame_ms: ttffRef.current,
+            feed_source: feedSource,
           };
 
           if (isTrackTestMode()) {
