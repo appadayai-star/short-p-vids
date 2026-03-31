@@ -1,53 +1,13 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { X, Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil, RefreshCw } from "lucide-react";
+import { X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { getThumbnailUrl } from "@/lib/cloudinary";
-import { getCloudflareStreamUrl, getCloudflareDownloadUrl, supportsHlsNatively } from "@/lib/cloudinary";
-import Hls from "hls.js";
-import { ShareDrawer } from "./ShareDrawer";
-import { cn } from "@/lib/utils";
-import { EditVideoDialog } from "./EditVideoDialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
-// Global mute state
-let globalMuted = true;
-const muteListeners = new Set<(muted: boolean) => void>();
-const setGlobalMuted = (muted: boolean) => {
-  globalMuted = muted;
-  muteListeners.forEach(listener => listener(muted));
-};
-
-// Guest client ID for anonymous likes
-const getGuestClientId = (): string => {
-  const key = 'guest_client_id';
-  let clientId = localStorage.getItem(key);
-  if (!clientId) {
-    clientId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-    localStorage.setItem(key, clientId);
-  }
-  return clientId;
-};
-
-// Guest likes storage
-const getGuestLikes = (): string[] => {
-  try {
-    const likes = localStorage.getItem('guest_likes_v1');
-    return likes ? JSON.parse(likes) : [];
-  } catch {
-    return [];
-  }
-};
-
-const setGuestLikes = (likes: string[]) => {
-  localStorage.setItem('guest_likes_v1', JSON.stringify(likes));
-};
+import { getGuestClientId, getGuestLikes, setGuestLikes } from "@/lib/guestLikes";
+import { eagerPrefetchVideo, prefetchHlsManifest } from "@/hooks/use-hls-player";
+import { preloadImage } from "@/lib/cloudinary";
+import { ModalVideoItem } from "./ModalVideoItem";
 
 interface Video {
   id: string;
@@ -79,63 +39,33 @@ interface VideoModalProps {
   onVideoLikeChange?: (videoId: string, newLikesCount: number) => void;
 }
 
+const SCROLL_SETTLE_MS = 140;
+
 export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: providedVideos, onVideoDeleted, onVideoLikeChange }: VideoModalProps) => {
   const navigate = useNavigate();
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isMuted, setIsMuted] = useState(globalMuted);
-  const [showMuteIcon, setShowMuteIcon] = useState(false);
-  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isScrollSettled, setIsScrollSettled] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActiveIndexRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
+
+  // Interaction state
   const [likedVideos, setLikedVideos] = useState<Set<string>>(new Set());
   const [savedVideos, setSavedVideos] = useState<Set<string>>(new Set());
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
   const [saveCounts, setSaveCounts] = useState<Record<string, number>>({});
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
-  
-  // Scroll-settle state (matching main feed)
-  const SCROLL_SETTLE_MS = 140;
-  const [isScrollSettled, setIsScrollSettled] = useState(true);
-  const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastActiveIndexRef = useRef(0);
-  const scrollRafRef = useRef<number | null>(null);
-  
-  // Per-video playback state
-  const [hasStartedPlaying, setHasStartedPlaying] = useState<Record<string, boolean>>({});
-  const [playbackFailed, setPlaybackFailed] = useState<Record<string, boolean>>({});
-  const startupTimeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const retryCountRefs = useRef<Map<string, number>>(new Map());
-  const hlsInstancesRef = useRef<Map<string, Hls>>(new Map());
-  const nativeHls = supportsHlsNatively();
-  
-  // Double-tap like state
-  const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
-  const lastTapTimeRef = useRef<number>(0);
-  const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  // Progress bar state
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isScrubbing, setIsScrubbing] = useState(false);
-  const progressBarRef = useRef<HTMLDivElement>(null);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-
-  // Sync with global mute
-  useEffect(() => {
-    const listener = (muted: boolean) => setIsMuted(muted);
-    muteListeners.add(listener);
-    return () => { muteListeners.delete(listener); };
-  }, []);
 
   // Check guest likes on mount
   useEffect(() => {
     if (!userId) {
-      const guestLikes = getGuestLikes();
-      setLikedVideos(new Set(guestLikes));
+      setLikedVideos(new Set(getGuestLikes()));
     }
   }, [userId]);
 
+  // Initialize when opened
   useEffect(() => {
     if (isOpen) {
       if (providedVideos && providedVideos.length > 0) {
@@ -143,16 +73,14 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         const counts: Record<string, number> = {};
         providedVideos.forEach(v => counts[v.id] = v.likes_count);
         setLikeCounts(counts);
-        
+
         const index = providedVideos.findIndex(v => v.id === initialVideoId);
         const targetIndex = index >= 0 ? index : 0;
         setActiveIndex(targetIndex);
         lastActiveIndexRef.current = targetIndex;
         setIsLoading(false);
-        
-        setTimeout(() => {
-          scrollToIndex(targetIndex);
-        }, 50);
+
+        setTimeout(() => scrollToIndex(targetIndex), 50);
       } else {
         fetchVideos();
       }
@@ -164,13 +92,10 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }
     return () => {
       document.body.style.overflow = 'unset';
-      // Cleanup all HLS instances on close
-      hlsInstancesRef.current.forEach(hls => hls.destroy());
-      hlsInstancesRef.current.clear();
     };
   }, [isOpen, initialVideoId, providedVideos]);
 
-  // === MAIN FEED SCROLL-SETTLE ACTIVE INDEX DETECTION ===
+  // === SCROLL-SETTLE ACTIVE INDEX DETECTION (identical to main feed) ===
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container || videos.length === 0 || isLoading) return;
@@ -181,7 +106,6 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       const itemHeight = getItemHeight();
       const rawIndex = Math.round(container.scrollTop / itemHeight);
       const nextIndex = Math.max(0, Math.min(rawIndex, videos.length - 1));
-
       if (nextIndex !== lastActiveIndexRef.current) {
         lastActiveIndexRef.current = nextIndex;
         setActiveIndex(nextIndex);
@@ -190,12 +114,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
 
     const handleScroll = () => {
       setIsScrollSettled(false);
-
-      if (scrollRafRef.current !== null) {
-        cancelAnimationFrame(scrollRafRef.current);
-      }
+      if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
       scrollRafRef.current = requestAnimationFrame(updateFromScrollPosition);
-
       if (scrollSettleTimerRef.current) clearTimeout(scrollSettleTimerRef.current);
       scrollSettleTimerRef.current = setTimeout(() => {
         updateFromScrollPosition();
@@ -209,140 +129,22 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     return () => {
       container.removeEventListener('scroll', handleScroll);
       if (scrollSettleTimerRef.current) clearTimeout(scrollSettleTimerRef.current);
-      if (scrollRafRef.current !== null) {
-        cancelAnimationFrame(scrollRafRef.current);
-        scrollRafRef.current = null;
-      }
+      if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
     };
   }, [videos, isLoading]);
 
-  // === TIERED PLAYBACK LOGIC (matching main feed) ===
+  // === PREFETCHING (matching main feed) ===
   useEffect(() => {
-    videos.forEach((video, index) => {
-      const videoEl = videoRefs.current.get(video.id);
-      if (!videoEl) return;
-
-      const distFromActive = index - activeIndex;
-      const isActive = index === activeIndex;
-      const shouldAttachSource = Math.abs(distFromActive) <= 2;
-      const shouldPreload = distFromActive === 1;
-      const shouldPreloadMeta = isScrollSettled && Math.abs(distFromActive) === 2;
-
-      // Detach source for far-away videos
-      if (!shouldAttachSource) {
-        videoEl.pause();
-        // Destroy HLS instance if exists
-        const existingHls = hlsInstancesRef.current.get(video.id);
-        if (existingHls) { existingHls.destroy(); hlsInstancesRef.current.delete(video.id); }
-        try {
-          videoEl.removeAttribute('src');
-          videoEl.load();
-        } catch {}
-        // Clear startup timeout
-        const timeout = startupTimeoutRefs.current.get(video.id);
-        if (timeout) { clearTimeout(timeout); startupTimeoutRefs.current.delete(video.id); }
-        setHasStartedPlaying(prev => ({ ...prev, [video.id]: false }));
-        setPlaybackFailed(prev => ({ ...prev, [video.id]: false }));
-        return;
-      }
-
-      // Attach HLS source if needed (only once per video)
-      if (!hlsInstancesRef.current.has(video.id) && !(nativeHls && videoEl.src && videoEl.src.includes('m3u8'))) {
-        if (video.cloudflare_video_id) {
-          const hlsUrl = getCloudflareStreamUrl(video.cloudflare_video_id);
-          if (nativeHls) {
-            videoEl.src = hlsUrl;
-          } else if (Hls.isSupported()) {
-            const hls = new Hls({
-              maxBufferLength: 8,
-              maxMaxBufferLength: 20,
-              maxBufferSize: 30 * 1000 * 1000,
-              startLevel: -1,
-              capLevelToPlayerSize: true,
-              lowLatencyMode: false,
-              backBufferLength: 5,
-              enableWorker: true,
-            });
-            hls.loadSource(hlsUrl);
-            hls.attachMedia(videoEl);
-            hlsInstancesRef.current.set(video.id, hls);
-          } else {
-            videoEl.src = getCloudflareDownloadUrl(video.cloudflare_video_id);
-          }
-        } else {
-          videoEl.src = video.video_url;
-        }
-      }
-
-      // Set preload level
-      if (isActive || shouldPreload) {
-        videoEl.preload = 'auto';
-      } else if (shouldPreloadMeta) {
-        videoEl.preload = 'metadata';
-      } else {
-        videoEl.preload = 'none';
-      }
-
-      if (isActive) {
-        // If already playing this video, don't restart
-        if (!videoEl.paused && videoEl.currentTime > 0) {
-          return;
-        }
-
-        // Play active video
-        videoEl.currentTime = 0;
-        setPlaybackFailed(prev => ({ ...prev, [video.id]: false }));
-        setHasStartedPlaying(prev => ({ ...prev, [video.id]: false }));
-        retryCountRefs.current.set(video.id, 0);
-
-        const handlePlaying = () => {
-          const t = startupTimeoutRefs.current.get(video.id);
-          if (t) { clearTimeout(t); startupTimeoutRefs.current.delete(video.id); }
-          setPlaybackFailed(prev => ({ ...prev, [video.id]: false }));
-          setHasStartedPlaying(prev => ({ ...prev, [video.id]: true }));
-          videoEl.removeEventListener('playing', handlePlaying);
-        };
-
-        videoEl.addEventListener('playing', handlePlaying);
-
-        const attemptPlay = () => {
-          videoEl.play().catch((err) => {
-            if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-            const retries = retryCountRefs.current.get(video.id) || 0;
-            if (retries <= 1) {
-              retryCountRefs.current.set(video.id, retries + 1);
-              setTimeout(() => { videoEl.load(); attemptPlay(); }, 250);
-              return;
-            }
-            setPlaybackFailed(prev => ({ ...prev, [video.id]: true }));
-          });
-        };
-
-        // Clear any existing startup timeout
-        const existingTimeout = startupTimeoutRefs.current.get(video.id);
-        if (existingTimeout) clearTimeout(existingTimeout);
-
-        // Set startup timeout (4.5s like main feed)
-        startupTimeoutRefs.current.set(video.id, setTimeout(() => {
-          if (index !== lastActiveIndexRef.current) return;
-          if (!videoEl.paused && videoEl.currentTime > 0) return;
-          setPlaybackFailed(prev => ({ ...prev, [video.id]: true }));
-        }, 4500));
-
-        attemptPlay();
-
-        return () => {
-          videoEl.removeEventListener('playing', handlePlaying);
-        };
-      } else {
-        // Pause non-active videos
-        if (!videoEl.paused) {
-          videoEl.pause();
-        }
-        setHasStartedPlaying(prev => ({ ...prev, [video.id]: false }));
-      }
-    });
-  }, [activeIndex, videos, isScrollSettled]);
+    const next1 = activeIndex + 1;
+    if (next1 < videos.length) {
+      eagerPrefetchVideo(videos[next1].cloudflare_video_id);
+      preloadImage(getThumbnailUrl(videos[next1].cloudflare_video_id, videos[next1].thumbnail_url));
+    }
+    const next2 = activeIndex + 2;
+    if (next2 < videos.length) {
+      prefetchHlsManifest(videos[next2].cloudflare_video_id);
+    }
+  }, [activeIndex, videos]);
 
   const scrollToIndex = (index: number) => {
     if (scrollContainerRef.current) {
@@ -359,13 +161,11 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         .select(`id, title, description, video_url, optimized_video_url, stream_url, cloudinary_public_id, cloudflare_video_id, thumbnail_url, views_count, likes_count, user_id, tags, profiles(username, avatar_url)`)
         .order("created_at", { ascending: false })
         .limit(50);
-
       if (error) throw error;
       setVideos(data || []);
       const counts: Record<string, number> = {};
       (data || []).forEach(v => counts[v.id] = v.likes_count);
       setLikeCounts(counts);
-      
       const index = (data || []).findIndex(v => v.id === initialVideoId);
       setActiveIndex(index >= 0 ? index : 0);
     } catch (error) {
@@ -383,7 +183,6 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         supabase.from("likes").select("video_id").eq("user_id", userId),
         supabase.from("saved_videos").select("video_id").eq("user_id", userId)
       ]);
-      
       if (likesRes.data) setLikedVideos(new Set(likesRes.data.map(l => l.video_id)));
       if (savesRes.data) setSavedVideos(new Set(savesRes.data.map(s => s.video_id)));
     } catch (error) {
@@ -394,7 +193,6 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
   const fetchSaveCounts = async () => {
     const videoIds = providedVideos?.map(v => v.id) || [];
     if (videoIds.length === 0) return;
-    
     try {
       const counts: Record<string, number> = {};
       for (const id of videoIds) {
@@ -410,156 +208,10 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }
   };
 
-  // handleScroll and handleWheel are now replaced by the scroll-settle listener above
-
-  // Unmute only (not toggle) - used for single tap
-  const unmute = useCallback(() => {
-    if (isMuted) {
-      setGlobalMuted(false);
-      setShowMuteIcon(true);
-      setTimeout(() => setShowMuteIcon(false), 500);
-    }
-  }, [isMuted]);
-
-  const toggleMute = useCallback(() => {
-    const newMuted = !isMuted;
-    setGlobalMuted(newMuted);
-    setShowMuteIcon(true);
-    setTimeout(() => setShowMuteIcon(false), 500);
-  }, [isMuted]);
-  
-  // Trigger heart animation at position
-  const triggerHeartAnimation = useCallback((x: number, y: number) => {
-    const heartId = Date.now();
-    setDoubleTapHearts(prev => [...prev, { id: heartId, x, y }]);
-    setTimeout(() => {
-      setDoubleTapHearts(prev => prev.filter(h => h.id !== heartId));
-    }, 1000);
-  }, []);
-
-  // Handle video tap - single tap unmutes, double tap likes
-  const handleVideoTap = useCallback((e: React.MouseEvent<HTMLVideoElement>, videoId: string) => {
-    e.preventDefault();
-    
-    const now = Date.now();
-    const timeSinceLastTap = now - lastTapTimeRef.current;
-    
-    // Get tap position for heart animation
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    // Clear any pending single tap
-    if (singleTapTimeoutRef.current) {
-      clearTimeout(singleTapTimeoutRef.current);
-      singleTapTimeoutRef.current = null;
-    }
-    
-    // Double tap detection (within 300ms)
-    if (timeSinceLastTap > 50 && timeSinceLastTap < 300) {
-      // Double tap - like the video
-      lastTapTimeRef.current = 0;
-      triggerHeartAnimation(x, y);
-      
-      // Only like if not already liked
-      if (!likedVideos.has(videoId)) {
-        toggleLike(videoId);
-      }
-    } else {
-      // Potential single tap - wait to see if it's a double tap
-      lastTapTimeRef.current = now;
-      
-      singleTapTimeoutRef.current = setTimeout(() => {
-        // Single tap confirmed - unmute only
-        unmute();
-        singleTapTimeoutRef.current = null;
-      }, 300);
-    }
-  }, [unmute, triggerHeartAnimation, likedVideos]);
-
-  // Progress bar handlers
-  const handleTimeUpdate = useCallback(() => {
-    const activeVideo = videos[activeIndex];
-    if (!activeVideo || isScrubbing) return;
-    
-    const videoEl = videoRefs.current.get(activeVideo.id);
-    if (videoEl) {
-      setProgress(videoEl.currentTime);
-      setDuration(videoEl.duration || 0);
-    }
-  }, [activeIndex, videos, isScrubbing]);
-
-  const handleLoadedMetadata = useCallback(() => {
-    const activeVideo = videos[activeIndex];
-    if (!activeVideo) return;
-    
-    const videoEl = videoRefs.current.get(activeVideo.id);
-    if (videoEl) {
-      setDuration(videoEl.duration || 0);
-    }
-  }, [activeIndex, videos]);
-
-  const seekToPosition = useCallback((clientX: number) => {
-    const bar = progressBarRef.current;
-    const activeVideo = videos[activeIndex];
-    if (!bar || !activeVideo || !duration) return;
-    
-    const videoEl = videoRefs.current.get(activeVideo.id);
-    if (!videoEl) return;
-    
-    const rect = bar.getBoundingClientRect();
-    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-    const percent = x / rect.width;
-    const newTime = percent * duration;
-    
-    videoEl.currentTime = newTime;
-    setProgress(newTime);
-  }, [activeIndex, videos, duration]);
-
-  const handleProgressMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsScrubbing(true);
-    seekToPosition(e.clientX);
-    
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      seekToPosition(moveEvent.clientX);
-    };
-    
-    const handleMouseUp = () => {
-      setIsScrubbing(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-  }, [seekToPosition]);
-
-  const handleProgressTouchStart = useCallback((e: React.TouchEvent) => {
-    e.stopPropagation();
-    setIsScrubbing(true);
-    seekToPosition(e.touches[0].clientX);
-    
-    const handleTouchMove = (moveEvent: TouchEvent) => {
-      seekToPosition(moveEvent.touches[0].clientX);
-    };
-    
-    const handleTouchEnd = () => {
-      setIsScrubbing(false);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
-    };
-    
-    document.addEventListener('touchmove', handleTouchMove);
-    document.addEventListener('touchend', handleTouchEnd);
-  }, [seekToPosition]);
-
   const toggleLike = useCallback(async (videoId: string) => {
     const clientId = getGuestClientId();
     const wasLiked = likedVideos.has(videoId);
-    
-    // Optimistic update
+
     setLikedVideos(prev => {
       const next = new Set(prev);
       wasLiked ? next.delete(videoId) : next.add(videoId);
@@ -572,36 +224,20 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
 
     try {
       const { data, error } = await supabase.functions.invoke('like-video', {
-        body: { 
-          videoId, 
-          clientId: userId || clientId, 
-          action: wasLiked ? 'unlike' : 'like' 
-        }
+        body: { videoId, clientId: userId || clientId, action: wasLiked ? 'unlike' : 'like' }
       });
-
       if (error) throw error;
-
-      // Update with server count if returned
       if (data?.likesCount !== undefined) {
-        setLikeCounts(prev => ({
-          ...prev,
-          [videoId]: data.likesCount
-        }));
-        // Notify parent about the like change so it can update its state
+        setLikeCounts(prev => ({ ...prev, [videoId]: data.likesCount }));
         onVideoLikeChange?.(videoId, data.likesCount);
       }
-
-      // Update guest likes storage
       if (!userId) {
         const guestLikes = getGuestLikes();
-        if (wasLiked) {
-          setGuestLikes(guestLikes.filter(id => id !== videoId));
-        } else {
-          setGuestLikes([...guestLikes, videoId]);
-        }
+        wasLiked
+          ? setGuestLikes(guestLikes.filter(id => id !== videoId))
+          : setGuestLikes([...guestLikes, videoId]);
       }
     } catch {
-      // Revert on error
       setLikedVideos(prev => {
         const next = new Set(prev);
         wasLiked ? next.add(videoId) : next.delete(videoId);
@@ -615,14 +251,12 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
     }
   }, [likedVideos, userId, onVideoLikeChange]);
 
-  const toggleSave = async (videoId: string) => {
+  const toggleSave = useCallback(async (videoId: string) => {
     if (!userId) {
       navigate("/auth");
       return;
     }
-    
     const wasSaved = savedVideos.has(videoId);
-    
     setSavedVideos(prev => {
       const next = new Set(prev);
       wasSaved ? next.delete(videoId) : next.add(videoId);
@@ -632,7 +266,6 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       ...prev,
       [videoId]: (prev[videoId] || 0) + (wasSaved ? -1 : 1)
     }));
-
     try {
       if (wasSaved) {
         await supabase.from("saved_videos").delete().eq("video_id", videoId).eq("user_id", userId);
@@ -653,33 +286,22 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
       }));
       toast.error("Failed to save video");
     }
-  };
+  }, [savedVideos, userId, navigate]);
 
-  const handleDelete = async (videoId: string) => {
+  const handleDelete = useCallback(async (videoId: string) => {
     if (!userId) return;
-    
     try {
       await supabase.from("videos").delete().eq("id", videoId);
       toast.success("Video deleted");
       setVideos(prev => prev.filter(v => v.id !== videoId));
       onVideoDeleted?.(videoId);
-      
-      if (videos.length <= 1) {
-        onClose();
-      }
+      if (videos.length <= 1) onClose();
     } catch {
       toast.error("Failed to delete video");
     }
-  };
-
-  const handleOpenEdit = () => {
-    setIsEditOpen(true);
-  };
+  }, [userId, videos.length, onClose, onVideoDeleted]);
 
   if (!isOpen) return null;
-
-  const activeVideo = videos[activeIndex];
-  const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
 
   return (
     <div className="fixed inset-0 z-50 bg-black">
@@ -690,8 +312,8 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         <X className="h-6 w-6 text-white" />
       </button>
 
-      <div 
-        ref={scrollContainerRef} 
+      <div
+        ref={scrollContainerRef}
         className="h-screen overflow-y-scroll snap-y snap-mandatory scrollbar-hide"
         style={{ overscrollBehavior: 'none', scrollSnapType: 'y mandatory' }}
       >
@@ -702,266 +324,40 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
         ) : (
           videos.map((video, index) => {
             const isInRange = Math.abs(index - activeIndex) <= 2;
-            
-            // Empty placeholder for out-of-range items (matching main feed)
             if (!isInRange) {
-              return (
-                <div key={video.id} className="w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always" />
-              );
+              return <div key={video.id} className="w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always" />;
             }
 
-            // HLS source is managed by the tiered playback effect, not via src attribute
-            const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
-            const isActive = index === activeIndex;
             const distFromActive = index - activeIndex;
-            const shouldAttachSource = Math.abs(distFromActive) <= 2;
+            const isActive = index === activeIndex;
             const shouldPreload = distFromActive === 1;
             const shouldPreloadMeta = isScrollSettled && Math.abs(distFromActive) === 2;
-            const isOwnVideo = userId === video.user_id;
-            const videoStarted = hasStartedPlaying[video.id] || false;
-            const videoFailed = playbackFailed[video.id] || false;
 
             return (
-              <div key={video.id} className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center">
-                {/* Poster/Thumbnail layer (always visible, video fades in over it) */}
-                {posterSrc && (
-                  <img 
-                    src={posterSrc} 
-                    alt="" 
-                    className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none"
-                    style={{ paddingBottom: navOffset }}
-                  />
-                )}
-
-                {/* Video player - tiered preloading matching main feed */}
-                <video
-                  ref={(el) => {
-                    if (el) videoRefs.current.set(video.id, el);
-                  }}
-                  
-                  className="absolute inset-0 w-full h-full object-contain bg-black"
-                  style={{ 
-                    paddingBottom: navOffset,
-                    opacity: isActive && videoStarted ? 1 : 0,
-                    transition: 'opacity 150ms ease',
-                  }}
-                  loop
-                  muted={isMuted}
-                  playsInline
-                  // @ts-ignore - WebView-specific attributes to prevent auto-fullscreen in in-app browsers
-                  webkit-playsinline="true"
-                  x5-playsinline="true"
-                  x5-video-player-type="h5"
-                  x5-video-player-fullscreen="false"
-                  preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
-                  onClick={(e) => handleVideoTap(e, video.id)}
-                  onTimeUpdate={isActive ? handleTimeUpdate : undefined}
-                  onLoadedMetadata={isActive ? handleLoadedMetadata : undefined}
-                />
-
-                {/* Playback failed - retry UI */}
-                {videoFailed && isActive && (
-                  <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30 pointer-events-none">
-                    <button 
-                      onClick={() => {
-                        const videoEl = videoRefs.current.get(video.id);
-                        if (!videoEl) return;
-                        retryCountRefs.current.set(video.id, 0);
-                        setPlaybackFailed(prev => ({ ...prev, [video.id]: false }));
-                        videoEl.load();
-                        videoEl.play().catch(() => {
-                          setPlaybackFailed(prev => ({ ...prev, [video.id]: true }));
-                        });
-                      }}
-                      className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm pointer-events-auto"
-                    >
-                      <RefreshCw className="h-8 w-8 text-white" />
-                      <span className="text-white text-sm">Tap to retry</span>
-                    </button>
-                  </div>
-                )}
-
-                {/* Double-tap heart animation */}
-                {isActive && doubleTapHearts.map(heart => (
-                  <div
-                    key={heart.id}
-                    className="absolute pointer-events-none z-30"
-                    style={{
-                      left: heart.x - 40,
-                      top: heart.y - 40,
-                    }}
-                  >
-                    <Heart 
-                      className="h-20 w-20 fill-primary text-primary animate-double-tap-heart"
-                      style={{
-                        filter: 'drop-shadow(0 0 10px rgba(255, 200, 0, 0.5))',
-                      }}
-                    />
-                  </div>
-                ))}
-
-                {/* Mute indicator flash */}
-                {showMuteIcon && isActive && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                    <div className="bg-black/50 rounded-full p-4 animate-scale-in">
-                      {isMuted ? <VolumeX className="h-12 w-12 text-white" /> : <Volume2 className="h-12 w-12 text-white" />}
-                    </div>
-                  </div>
-                )}
-
-                {/* Right side actions - matching FeedItem layout */}
-                <div 
-                  className="absolute right-4 flex flex-col items-center gap-5 z-40"
-                  style={{ bottom: navOffset, paddingBottom: '140px' }}
-                >
-                  <button onClick={() => toggleLike(video.id)} className="flex flex-col items-center gap-1">
-                    <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
-                      <Heart className={cn("h-6 w-6", likedVideos.has(video.id) ? "fill-primary text-primary" : "text-white")} />
-                    </div>
-                    <span className="text-white text-xs font-semibold drop-shadow">{likeCounts[video.id] || 0}</span>
-                  </button>
-
-                  <button onClick={() => toggleSave(video.id)} className="flex flex-col items-center gap-1">
-                    <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
-                      <Bookmark className={cn("h-6 w-6", savedVideos.has(video.id) ? "fill-yellow-500 text-yellow-500" : "text-white")} />
-                    </div>
-                    <span className="text-white text-xs font-semibold drop-shadow">{saveCounts[video.id] || 0}</span>
-                  </button>
-
-                  <button onClick={() => setIsShareOpen(true)} className="flex flex-col items-center">
-                    <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
-                      <Share2 className="h-6 w-6 text-white" />
-                    </div>
-                  </button>
-
-                  <button onClick={toggleMute} className="flex flex-col items-center">
-                    <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
-                      {isMuted ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
-                    </div>
-                  </button>
-
-                  {isOwnVideo && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="flex flex-col items-center">
-                          <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
-                            <MoreVertical className="h-6 w-6 text-white" />
-                          </div>
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-background border-border z-50">
-                        <DropdownMenuItem onClick={() => handleOpenEdit()} className="cursor-pointer">
-                          <Pencil className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDelete(video.id)} className="text-destructive focus:text-destructive cursor-pointer">
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </div>
-
-                {/* Bottom info - matching FeedItem layout */}
-                <div 
-                  className="absolute left-0 right-0 p-4 z-40 bg-gradient-to-t from-black via-black/60 to-transparent pr-[80px]"
-                  style={{ bottom: navOffset }}
-                >
-                  <div className="space-y-2">
-                    <div 
-                      className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit"
-                      onClick={() => { onClose(); navigate(`/profile/${video.user_id}`); }}
-                    >
-                      <div className="w-10 h-10 rounded-full bg-muted overflow-hidden border-2 border-primary">
-                        {video.profiles?.avatar_url ? (
-                          <img src={video.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold">
-                            {video.profiles?.username?.[0]?.toUpperCase() || '?'}
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-white font-semibold">@{video.profiles?.username}</span>
-                    </div>
-                    
-                    {video.description && <p className="text-white/90 text-sm">{video.description}</p>}
-                    
-                    {video.tags && video.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {video.tags.map((tag, i) => (
-                          <button
-                            key={i}
-                            onClick={() => { onClose(); window.location.href = `/?category=${encodeURIComponent(tag)}`; }}
-                            className="text-primary text-sm font-semibold hover:underline cursor-pointer"
-                          >
-                            #{tag}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <ModalVideoItem
+                key={video.id}
+                video={video}
+                index={index}
+                isActive={isActive}
+                shouldPreload={shouldPreload}
+                shouldPreloadMeta={shouldPreloadMeta}
+                currentUserId={userId}
+                isLiked={likedVideos.has(video.id)}
+                isSaved={savedVideos.has(video.id)}
+                likesCount={likeCounts[video.id] || 0}
+                savesCount={saveCounts[video.id] || 0}
+                onToggleLike={toggleLike}
+                onToggleSave={toggleSave}
+                onDelete={handleDelete}
+                onClose={onClose}
+                onVideoUpdated={(id, desc, tags) => {
+                  setVideos(prev => prev.map(v => v.id === id ? { ...v, description: desc, tags } : v));
+                }}
+              />
             );
           })
         )}
       </div>
-
-      {/* Progress bar - fixed to viewport, above nav bar */}
-      {activeVideo && (
-        <div 
-          ref={progressBarRef}
-          className="fixed bottom-[64px] left-0 right-0 h-8 z-[60] cursor-pointer group"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-          onMouseDown={handleProgressMouseDown}
-          onTouchStart={handleProgressTouchStart}
-        >
-          {/* Track background */}
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/30 transition-all group-hover:h-1.5 group-active:h-1.5">
-            {/* Progress fill */}
-            <div 
-              className="absolute inset-y-0 left-0 bg-primary rounded-r-full"
-              style={{ width: duration > 0 ? `${(progress / duration) * 100}%` : '0%' }}
-            />
-            {/* Scrubber dot */}
-            {duration > 0 && (
-              <div 
-                className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg transition-transform opacity-0 group-hover:opacity-100 group-active:opacity-100 group-active:scale-125"
-                style={{ left: `calc(${(progress / duration) * 100}% - 8px)` }}
-              />
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeVideo && (
-        <ShareDrawer 
-          isOpen={isShareOpen} 
-          onClose={() => setIsShareOpen(false)} 
-          videoId={activeVideo.id}
-          videoTitle={activeVideo.title}
-          username={activeVideo.profiles?.username || 'unknown'}
-        />
-      )}
-
-      {/* Edit Video Dialog */}
-      {activeVideo && (
-        <EditVideoDialog
-          open={isEditOpen}
-          onOpenChange={setIsEditOpen}
-          videoId={activeVideo.id}
-          initialDescription={activeVideo.description}
-          initialTags={activeVideo.tags}
-          onSaved={(desc, tags) => {
-            setVideos(prev =>
-              prev.map(v =>
-                v.id === activeVideo.id ? { ...v, description: desc, tags } : v
-              )
-            );
-          }}
-        />
-      )}
     </div>
   );
 };

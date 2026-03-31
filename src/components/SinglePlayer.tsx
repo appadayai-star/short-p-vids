@@ -1,17 +1,7 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Loader2, RefreshCw, Play, Volume2, VolumeX } from "lucide-react";
 import { getVideoSource, getThumbnailUrl } from "@/lib/cloudinary";
-
-// Global mute state - persisted across videos
-let globalMuted = true;
-const muteListeners = new Set<(muted: boolean) => void>();
-
-const setGlobalMuted = (muted: boolean) => {
-  globalMuted = muted;
-  muteListeners.forEach(listener => listener(muted));
-};
-
-export const getGlobalMuted = () => globalMuted;
+import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
 
 interface Video {
   id: string;
@@ -45,7 +35,7 @@ export const SinglePlayer = memo(({
   
   const [status, setStatus] = useState<VideoStatus>("idle");
   const [attempt, setAttempt] = useState(0);
-  const [isMuted, setIsMuted] = useState(globalMuted);
+  const [isMuted, setIsMuted] = useState(getGlobalMuted());
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
 
@@ -102,16 +92,12 @@ export const SinglePlayer = memo(({
 
   // Sync with global mute state
   useEffect(() => {
-    const listener = (muted: boolean) => {
+    return onMuteChange((muted) => {
       setIsMuted(muted);
       if (videoRef.current) {
         videoRef.current.muted = muted;
       }
-    };
-    muteListeners.add(listener);
-    return () => {
-      muteListeners.delete(listener);
-    };
+    });
   }, []);
 
   // Reset when video changes
