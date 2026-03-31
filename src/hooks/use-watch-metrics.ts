@@ -354,6 +354,7 @@ export const useWatchMetrics = ({
       watch_completion_percent: metrics.watchCompletionPercent,
       time_to_first_frame_ms: metrics.timeToFirstFrameMs,
       feed_source: metrics.feedSource,
+      video_position: parseInt(localStorage.getItem('session_video_count') || '0', 10),
     });
 
     if (isTrackTestMode()) {
