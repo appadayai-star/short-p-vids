@@ -78,6 +78,7 @@ interface FeedItemProps {
   shouldPreloadMeta?: boolean;
   hasEntered: boolean;
   currentUserId: string | null;
+  feedSource?: string | null;
   onViewTracked: (videoId: string, watchDuration?: number) => void;
   onDelete?: (videoId: string) => void;
 }
