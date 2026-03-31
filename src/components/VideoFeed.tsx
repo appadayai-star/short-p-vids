@@ -233,9 +233,14 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(resultVideos);
           setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
+          // Eagerly prefetch first video (instant start) + next 2
+          if (resultVideos.length > 0) {
+            eagerPrefetchVideo(resultVideos[0].cloudflare_video_id);
+            preloadImage(getThumbnailUrl(resultVideos[0].cloudflare_video_id, resultVideos[0].thumbnail_url));
+          }
           if (resultVideos.length > 1) {
+            eagerPrefetchVideo(resultVideos[1].cloudflare_video_id);
             preloadImage(getThumbnailUrl(resultVideos[1].cloudflare_video_id, resultVideos[1].thumbnail_url));
-            prefetchHlsManifest(resultVideos[1].cloudflare_video_id);
           }
           if (resultVideos.length > 2) {
             prefetchHlsManifest(resultVideos[2].cloudflare_video_id);
