@@ -440,7 +440,7 @@ export const useWatchMetrics = ({
         }
         
         if (Math.round(watchedSeconds) > 0 || ttffRef.current !== null) {
-          incrementSessionVideoCount();
+          const vp = incrementSessionVideoCount();
           
           const insertData = {
             video_id: videoId,
@@ -452,6 +452,7 @@ export const useWatchMetrics = ({
             watch_completion_percent: completionPercent,
             time_to_first_frame_ms: ttffRef.current,
             feed_source: feedSource,
+            video_position: vp,
           };
 
           if (isTrackTestMode()) {
