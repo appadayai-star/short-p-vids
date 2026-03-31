@@ -431,13 +431,14 @@ serve(async (req) => {
       let startupReliabilityScore = 0.5;
       if (metrics && metrics.startup_samples >= 3) {
         const fastRate = Math.max(metrics.fast_start_rate, 0);
-        const slowPenalty = metrics.slow_start_rate * 0.55;
-        const stallPenalty = metrics.stall_rate * 1.1;
-        const retryPenalty = metrics.retry_rate * 0.35;
+        const slowPenalty = metrics.slow_start_rate * 0.65; // increased from 0.55
+        const stallPenalty = metrics.stall_rate * 1.2; // increased from 1.1
+        const retryPenalty = metrics.retry_rate * 0.40; // increased from 0.35
         startupReliabilityScore = Math.max(0, Math.min(1.25, fastRate + 0.25 - slowPenalty - stallPenalty - retryPenalty));
 
-        if (metrics.avg_ttff_ms > 0 && metrics.avg_ttff_ms < 900) {
-          startupReliabilityScore = Math.min(startupReliabilityScore + 0.12, 1.25);
+        // Bonus for very fast videos (tightened from 900ms to 500ms)
+        if (metrics.avg_ttff_ms > 0 && metrics.avg_ttff_ms < 500) {
+          startupReliabilityScore = Math.min(startupReliabilityScore + 0.15, 1.25);
         }
       }
 
