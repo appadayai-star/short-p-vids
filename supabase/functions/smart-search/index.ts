@@ -82,6 +82,13 @@ const SYNONYM_MAP: Record<string, string[]> = {
   gg: ["lesbian"],
 };
 
+// Blocked search terms — return empty results immediately
+const BLOCKED_KEYWORDS = [
+  "rape", "child", "kids", "minor", "underage", "teen",
+  "preteen", "infant", "toddler", "pedo", "pedophile",
+  "cp", "kidnap", "forced", "nonconsent", "non-consent",
+];
+
 // Build a reverse lookup: category → all synonyms that map to it
 const CATEGORY_SYNONYMS: Record<string, string[]> = {};
 for (const [synonym, categories] of Object.entries(SYNONYM_MAP)) {
