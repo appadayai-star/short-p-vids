@@ -57,17 +57,22 @@ function pollReady(el: HTMLVideoElement, ms: number): Promise<boolean> {
   });
 }
 
-/** Verify playback actually started — returns true if playing, false if silent failure */
+/** Verify playback actually started — checks currentTime ADVANCES from its initial value */
 function verifyPlayback(el: HTMLVideoElement, ms: number): Promise<boolean> {
   return new Promise(resolve => {
-    const start = Date.now();
+    const startTime = Date.now();
+    const initialCT = el.currentTime;
+    log("verify:start", "verify", { initialCT, paused: el.paused, readyState: el.readyState });
     const interval = setInterval(() => {
-      const playing = !el.paused && el.currentTime > 0;
-      if (playing || Date.now() - start > ms) {
+      const elapsed = Date.now() - startTime;
+      const advanced = el.currentTime > initialCT + 0.01;
+      const playing = !el.paused && advanced;
+      if (playing || elapsed > ms) {
         clearInterval(interval);
+        log("verify:result", "verify", { playing, ct: el.currentTime, initialCT, paused: el.paused, elapsed });
         resolve(playing);
       }
-    }, 80);
+    }, 60);
   });
 }
 
@@ -163,10 +168,9 @@ export function activate(
     const attemptPlay = async (attempt: number): Promise<boolean> => {
       if (stale()) return false;
       el.muted = true; // ALWAYS muted for autoplay compliance on all attempts
-      log(`play:attempt${attempt}`, id, { readyState: el.readyState, paused: el.paused, muted: el.muted });
+      log(`play:attempt${attempt}`, id, { readyState: el.readyState, paused: el.paused, muted: el.muted, currentTime: el.currentTime });
       
       try {
-        el.currentTime = 0;
         await el.play();
       } catch (err: any) {
         log("play:threw", id, { name: err.name, attempt });
@@ -175,8 +179,8 @@ export function activate(
       
       if (stale()) return false;
       
-      // VERIFY playback actually started (catches silent iOS failures)
-      const verified = await verifyPlayback(el, 400);
+      // VERIFY playback actually started — require currentTime to ADVANCE
+      const verified = await verifyPlayback(el, 800);
       log(`play:verify${attempt}`, id, { verified, paused: el.paused, currentTime: el.currentTime });
       return verified;
     };
