@@ -120,9 +120,12 @@ export const ModalVideoItem = memo(({
       if (isStale()) return;
       attachSource(videoEl);
       videoEl.currentTime = 0;
+      videoEl.play().catch(err => {
+        if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
+      });
     };
 
-    const handleCanPlay = () => {
+    const tryPlay = () => {
       if (isStale()) return;
       videoEl.play().catch(err => {
         if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
@@ -149,7 +152,8 @@ export const ModalVideoItem = memo(({
       }
     };
 
-    videoEl.addEventListener('canplay', handleCanPlay);
+    videoEl.addEventListener('canplay', tryPlay);
+    videoEl.addEventListener('loadeddata', tryPlay);
     videoEl.addEventListener('playing', handlePlaying);
     videoEl.addEventListener('error', handlePlaybackError);
 
@@ -158,7 +162,8 @@ export const ModalVideoItem = memo(({
     return () => {
       activationIdRef.current++;
       if (retryTimer) clearTimeout(retryTimer);
-      videoEl.removeEventListener('canplay', handleCanPlay);
+      videoEl.removeEventListener('canplay', tryPlay);
+      videoEl.removeEventListener('loadeddata', tryPlay);
       videoEl.removeEventListener('playing', handlePlaying);
       videoEl.removeEventListener('error', handlePlaybackError);
       stopWatching();

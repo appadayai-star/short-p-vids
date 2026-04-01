@@ -145,13 +145,16 @@ export const FeedItem = memo(({
       if (isStale()) return;
       attachSource(videoEl);
       videoEl.currentTime = 0;
+      // Try playing immediately — browser will queue if not ready
+      videoEl.play().catch(err => {
+        if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
+      });
     };
 
-    const handleCanPlay = () => {
+    const tryPlay = () => {
       if (isStale()) return;
       videoEl.play().catch(err => {
-        if (isStale()) return;
-        if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
+        if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
         handlePlaybackError();
       });
     };
@@ -164,12 +167,9 @@ export const FeedItem = memo(({
 
     const handlePlaybackError = () => {
       if (isStale()) return;
-      // If already playing fine, ignore
       if (!videoEl.paused && videoEl.currentTime > 0) return;
-
       retryCount++;
       if (retryCount <= MAX_RETRIES) {
-        // Full teardown and re-attach
         detachSource(videoEl);
         retryTimer = setTimeout(() => {
           if (isStale()) return;
@@ -183,17 +183,19 @@ export const FeedItem = memo(({
 
     const handleError = () => handlePlaybackError();
 
-    videoEl.addEventListener('canplay', handleCanPlay);
+    // CRITICAL: Add listeners BEFORE attaching source
+    videoEl.addEventListener('canplay', tryPlay);
+    videoEl.addEventListener('loadeddata', tryPlay);
     videoEl.addEventListener('playing', handlePlaying);
     videoEl.addEventListener('error', handleError);
 
-    // Start
     startPlayback();
 
     return () => {
-      activationIdRef.current++; // invalidate any in-flight ops
+      activationIdRef.current++;
       if (retryTimer) clearTimeout(retryTimer);
-      videoEl.removeEventListener('canplay', handleCanPlay);
+      videoEl.removeEventListener('canplay', tryPlay);
+      videoEl.removeEventListener('loadeddata', tryPlay);
       videoEl.removeEventListener('playing', handlePlaying);
       videoEl.removeEventListener('error', handleError);
       stopWatching();
