@@ -329,10 +329,7 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
               return <div key={video.id} className="w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always" />;
             }
 
-            const distFromActive = index - activeIndex;
             const isActive = index === activeIndex;
-            const shouldPreload = distFromActive === 1;
-            const shouldPreloadMeta = isScrollSettled && Math.abs(distFromActive) === 2;
 
             return (
               <ModalVideoItem
@@ -340,8 +337,6 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
                 video={video}
                 index={index}
                 isActive={isActive}
-                shouldPreload={shouldPreload}
-                shouldPreloadMeta={shouldPreloadMeta}
                 currentUserId={userId}
                 isLiked={likedVideos.has(video.id)}
                 isSaved={savedVideos.has(video.id)}
