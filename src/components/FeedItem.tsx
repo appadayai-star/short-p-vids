@@ -92,7 +92,7 @@ export const FeedItem = memo(({
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { attachSource, detachSource } = useHlsPlayer({
+  const { activate, deactivate } = useHlsPlayer({
     cloudflareVideoId: video.cloudflare_video_id,
     fallbackUrl: video.video_url,
   });
