@@ -182,17 +182,27 @@ export const FeedItem = memo(({
     fetchStates();
   }, [video.id, currentUserId]);
 
-  // Mute handlers
+  // Mute handlers — iOS: per-video only, other: global
   const unmute = useCallback(() => {
-    if (isMuted) {
+    if (!isMuted) return;
+    if (IS_IOS_WEB) {
+      if (videoRef.current) videoRef.current.muted = false;
+      setIsMuted(false);
+    } else {
       setGlobalMuted(false);
-      setShowMuteIcon(true);
-      setTimeout(() => setShowMuteIcon(false), 500);
     }
+    setShowMuteIcon(true);
+    setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
   const toggleMute = useCallback(() => {
-    setGlobalMuted(!isMuted);
+    const newMuted = !isMuted;
+    if (IS_IOS_WEB) {
+      if (videoRef.current) videoRef.current.muted = newMuted;
+      setIsMuted(newMuted);
+    } else {
+      setGlobalMuted(newMuted);
+    }
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
