@@ -358,13 +358,16 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [feedEntries]);
 
-  // Prefetch HLS manifests for upcoming videos when activeIndex changes
+  // Prefetch HLS manifests for upcoming videos when scroll settles
+  // Only prefetch when settled to avoid firing during rapid scrolling
   useEffect(() => {
-    // Eager prefetch next video (high priority — must be instant on swipe)
+    if (!isScrollSettled) return;
+    
+    // Prefetch next video with low priority (not eager — avoid competing with active playback)
     const next1 = activeIndex + 1;
     if (next1 < feedEntries.length && feedEntries[next1]?.type === 'video') {
       const nextVideo = feedEntries[next1].data as Video;
-      eagerPrefetchVideo(nextVideo.cloudflare_video_id);
+      prefetchHlsManifest(nextVideo.cloudflare_video_id);
       preloadImage(getThumbnailUrl(nextVideo.cloudflare_video_id, nextVideo.thumbnail_url));
     }
     // Low-priority prefetch for +2
@@ -373,7 +376,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       const nextVideo2 = feedEntries[next2].data as Video;
       prefetchHlsManifest(nextVideo2.cloudflare_video_id);
     }
-  }, [activeIndex, feedEntries]);
+  }, [activeIndex, feedEntries, isScrollSettled]);
 
   // Load more
   useEffect(() => {
