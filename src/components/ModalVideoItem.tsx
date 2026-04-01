@@ -3,7 +3,7 @@ import { Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
-import { useHlsPlayer } from "@/hooks/use-hls-player";
+import { activate as activateVideo, deactivateVideo } from "@/lib/playbackController";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
 import { ShareDrawer } from "./ShareDrawer";
