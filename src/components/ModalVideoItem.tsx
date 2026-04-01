@@ -215,12 +215,10 @@ export const ModalVideoItem = memo(({
     if (!videoEl) return;
     retryCountRef.current = 0;
     setPlaybackFailed(false);
-    videoEl.load();
-    videoEl.play().catch(() => {
-      markStartupFailure(10000);
-      setPlaybackFailed(true);
-    });
-  }, [markStartupFailure]);
+    detachSource(videoEl);
+    attachSource(videoEl);
+    videoEl.play().catch(() => {});
+  }, [attachSource, detachSource]);
 
   // Tap handlers
   const unmute = useCallback(() => {
