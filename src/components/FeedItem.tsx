@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import { useHlsPlayer } from "@/hooks/use-hls-player";
