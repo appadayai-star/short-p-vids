@@ -10,7 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 
 const Feed = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const searchQuery = searchParams.get('search') || '';
   const categoryFilter = searchParams.get('category') || '';
