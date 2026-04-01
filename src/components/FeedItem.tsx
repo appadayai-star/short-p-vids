@@ -56,7 +56,7 @@ export const FeedItem = memo(({
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
-  const activationIdRef = useRef(0); // increments each activation to cancel stale ops
+  
 
   const {
     markLoadStart, markStartupFailure, stopWatching, getMetrics,
