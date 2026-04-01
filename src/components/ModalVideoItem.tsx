@@ -80,10 +80,6 @@ export const ModalVideoItem = memo(({
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { activate, deactivate } = useHlsPlayer({
-    cloudflareVideoId: video.cloudflare_video_id,
-    fallbackUrl: video.video_url,
-  });
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   useEffect(() => {
