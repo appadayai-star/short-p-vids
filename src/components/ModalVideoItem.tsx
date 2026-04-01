@@ -148,6 +148,7 @@ export const ModalVideoItem = memo(({
   const unmute = useCallback(() => {
     if (!isMuted) return;
     if (IS_IOS_WEB) {
+      setIosUserWantsSound(true);
       if (videoRef.current) videoRef.current.muted = false;
       setIsMuted(false);
     } else {
@@ -159,6 +160,7 @@ export const ModalVideoItem = memo(({
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
     if (IS_IOS_WEB) {
+      setIosUserWantsSound(!newMuted);
       if (videoRef.current) videoRef.current.muted = newMuted;
       setIsMuted(newMuted);
     } else {
