@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Radio, Users, ChevronRight } from "lucide-react";
 import { getThumbnailUrl } from "@/lib/cloudinary";
-import { useHlsPlayer } from "@/hooks/use-hls-player";
+import { activate as activateVideo, deactivateVideo } from "@/lib/playbackController";
 
 interface Ad {
   id: string;
