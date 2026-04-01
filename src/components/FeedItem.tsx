@@ -67,8 +67,9 @@ export const FeedItem = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const retryCountRef = useRef(0);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const seqRef = useRef(0); // monotonic counter to prevent stale async ops
 
-  // Watch metrics tracking - hook handles TTFF and watch time via event listeners
+  // Watch metrics tracking
   const {
     markLoadStart,
     markStartupFailure,
@@ -116,11 +117,6 @@ export const FeedItem = memo(({
   });
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
-  useEffect(() => {
-    retryCountRef.current = 0;
-    setPlaybackFailed(false);
-  }, [video.id]);
-
   // Sync with global mute state
   useEffect(() => {
     return onMuteChange((muted) => {
@@ -131,93 +127,125 @@ export const FeedItem = memo(({
     });
   }, []);
 
-  // Hard-cancel non-priority video requests (anything not active/nearby)
-  const shouldAttachSource = isActive || shouldPreload || shouldPreloadMeta;
+  /**
+   * UNIFIED source + playback lifecycle.
+   * Uses a monotonic sequence counter (seqRef) to ensure stale async
+   * operations from previous activations are completely ignored.
+   * 
+   * This single effect replaces the previous split attach/play effects
+   * that had race conditions between them.
+   */
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    if (shouldAttachSource) {
-      attachSource(videoEl);
-    } else {
-      setPlaybackFailed(false);
+    const id = ++seqRef.current;
+    const isStale = () => id !== seqRef.current;
+
+    // Hard-reset helper — fully releases video element
+    const hardReset = () => {
       stopWatching();
-      videoEl.pause();
       detachSource(videoEl);
-    }
-  }, [shouldAttachSource, stopWatching, attachSource, detachSource]);
-
-  // Event-driven playback logic — NO timeouts, only real error events trigger failure
-  useEffect(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
-    let cancelled = false;
-
-    if (!(isActive && hasEntered)) {
-      setPlaybackFailed(false);
       setHasStartedPlaying(false);
-      stopWatching();
-      videoEl.pause();
+      setPlaybackFailed(false);
+    };
+
+    // Not in range at all — fully detach
+    const shouldAttachSource = isActive || shouldPreload || shouldPreloadMeta;
+    if (!shouldAttachSource) {
+      hardReset();
       return;
     }
 
+    // In range but not active — attach source for preloading only, don't play
+    if (!(isActive && hasEntered)) {
+      setHasStartedPlaying(false);
+      setPlaybackFailed(false);
+      videoEl.pause();
+      attachSource(videoEl);
+      return;
+    }
+
+    // === ACTIVE VIDEO — attach source and play ===
     setPlaybackFailed(false);
     setHasStartedPlaying(false);
-    markLoadStart();
     retryCountRef.current = 0;
+    markLoadStart();
+
+    // Attach fresh HLS source
+    attachSource(videoEl);
+    videoEl.currentTime = 0;
 
     const clearFail = () => {
-      if (!cancelled) {
-        setPlaybackFailed(false);
-        setHasStartedPlaying(true);
-      }
+      if (isStale()) return;
+      setPlaybackFailed(false);
+      setHasStartedPlaying(true);
+    };
+
+    const attemptPlay = () => {
+      if (isStale()) return;
+      videoEl.play().catch((err) => {
+        if (isStale()) return;
+        if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
+
+        retryCountRef.current += 1;
+        if (retryCountRef.current <= 3) {
+          setTimeout(() => {
+            if (isStale()) return;
+            // Re-attach from scratch to avoid poisoned state
+            attachSource(videoEl);
+            attemptPlay();
+          }, 300 * retryCountRef.current);
+          return;
+        }
+        markStartupFailure(10000);
+        setPlaybackFailed(true);
+      });
     };
 
     const handleError = () => {
-      if (cancelled || !isActive) return;
-      // If already playing successfully, ignore stale errors
+      if (isStale()) return;
+      // If already playing, ignore stale errors
       if (!videoEl.paused && videoEl.currentTime > 0) return;
-      
+
       retryCountRef.current += 1;
       if (retryCountRef.current <= 3) {
         setTimeout(() => {
-          if (cancelled || !isActive) return;
-          videoEl.load();
-          videoEl.play().catch(() => {});
+          if (isStale()) return;
+          attachSource(videoEl);
+          attemptPlay();
         }, 300 * retryCountRef.current);
         return;
       }
-      // Only show failure after 3+ real error events
       markStartupFailure(10000);
       setPlaybackFailed(true);
     };
 
-    videoEl.currentTime = 0;
     videoEl.addEventListener('loadeddata', clearFail);
     videoEl.addEventListener('canplay', clearFail);
     videoEl.addEventListener('playing', clearFail);
     videoEl.addEventListener('error', handleError);
 
-    videoEl.play().catch((err) => {
-      if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-      handleError();
-    });
+    attemptPlay();
 
     return () => {
-      cancelled = true;
+      // Increment seq so any in-flight async ops become stale
+      seqRef.current++;
       videoEl.removeEventListener('loadeddata', clearFail);
       videoEl.removeEventListener('canplay', clearFail);
       videoEl.removeEventListener('playing', clearFail);
       videoEl.removeEventListener('error', handleError);
+      // Pause but don't detach — the next effect run will decide
+      videoEl.pause();
     };
-  }, [isActive, hasEntered, markLoadStart, markStartupFailure, stopWatching, video.cloudflare_video_id]);
+  }, [isActive, hasEntered, shouldPreload, shouldPreloadMeta, markLoadStart, markStartupFailure, stopWatching, attachSource, detachSource, video.cloudflare_video_id]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
     retryCountRef.current = 0;
     setPlaybackFailed(false);
-    // Re-attach HLS source from scratch (handles poisoned MediaSource)
+    // Re-attach from scratch
     detachSource(videoEl);
     attachSource(videoEl);
     videoEl.play().catch(() => {});

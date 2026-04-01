@@ -18,8 +18,6 @@ interface UseHlsPlayerOptions {
 
 export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOptions) {
   const hlsRef = useRef<Hls | null>(null);
-  const videoElRef = useRef<HTMLVideoElement | null>(null);
-  const attachedIdRef = useRef<string | null>(null);
 
   // Destroy any existing HLS instance
   const destroyHls = useCallback(() => {
@@ -27,32 +25,24 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
-    attachedIdRef.current = null;
   }, []);
 
-  // Attach HLS source to a video element
+  /**
+   * Attach HLS source to a video element.
+   * Always destroys previous instance first — no dedup cache.
+   * This prevents stale/poisoned HLS instances from blocking playback.
+   */
   const attachSource = useCallback((videoEl: HTMLVideoElement) => {
-    videoElRef.current = videoEl;
+    destroyHls();
 
-    // If no cloudflare ID, fall back to direct URL
     if (!cloudflareVideoId) {
-      destroyHls();
       videoEl.src = fallbackUrl;
       return;
     }
 
-    // Skip if already attached to same video
-    if (attachedIdRef.current === cloudflareVideoId && hlsRef.current) {
-      return;
-    }
-
-    destroyHls();
-    attachedIdRef.current = cloudflareVideoId;
-
     const hlsUrl = getCloudflareStreamUrl(cloudflareVideoId);
 
     if (supportsHlsNatively()) {
-      // Safari/iOS: native HLS
       videoEl.src = hlsUrl;
     } else if (Hls.isSupported()) {
       const hls = new Hls({
@@ -69,23 +59,16 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
         startFragPrefetch: true,
       });
 
-      // CRITICAL: Handle HLS.js fatal errors to prevent poisoned MediaSource
+      // Handle HLS.js fatal errors to prevent poisoned MediaSource
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
-        
         console.warn('[HLS] Fatal error:', data.type, data.details);
-        
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          // Try to recover from media errors (decoder issues, etc.)
-          console.log('[HLS] Attempting media error recovery');
           hls.recoverMediaError();
         } else {
-          // Network errors or other fatal errors — destroy and release MediaSource
-          console.log('[HLS] Destroying poisoned HLS instance');
+          // Destroy and dispatch error so component retry logic kicks in
           hls.destroy();
           hlsRef.current = null;
-          attachedIdRef.current = null;
-          // Dispatch error on video element so FeedItem/ModalVideoItem retry logic kicks in
           videoEl.dispatchEvent(new Event('error'));
         }
       });
@@ -94,22 +77,25 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
       hls.attachMedia(videoEl);
       hlsRef.current = hls;
     } else {
-      // Fallback: direct MP4 (very rare)
       videoEl.src = fallbackUrl;
     }
   }, [cloudflareVideoId, fallbackUrl, destroyHls]);
 
-  // Detach and free resources
+  /**
+   * Hard-reset a video element: destroy HLS, remove src, abort loads.
+   * This fully releases the MediaSource so other elements can use it.
+   */
   const detachSource = useCallback((videoEl: HTMLVideoElement) => {
     destroyHls();
     try {
+      videoEl.pause();
       videoEl.removeAttribute('src');
-      videoEl.load(); // abort any pending network requests
+      videoEl.load();
     } catch {
       // best-effort
     }
-    videoElRef.current = null;
   }, [destroyHls]);
+
 
   // Cleanup on unmount or when cloudflareVideoId changes
   useEffect(() => {
