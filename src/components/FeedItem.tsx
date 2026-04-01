@@ -132,13 +132,21 @@ export const FeedItem = memo(({
       return;
     }
 
-    // NEXT UP (but not active): just pre-attach HLS source so it buffers
+    // NEXT UP (but not active): only pre-attach on desktop browsers.
+    // On iOS/Safari, native HLS uses hardware decoders that get exhausted
+    // if multiple videos have sources simultaneously.
     if (isNextUp && !isActive) {
-      attachSource(videoEl);
-      return () => {
-        activationIdRef.current++;
-        detachSource(videoEl);
-      };
+      const isNativeHls = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome'));
+      if (!isNativeHls) {
+        attachSource(videoEl);
+        return () => {
+          activationIdRef.current++;
+          detachSource(videoEl);
+        };
+      }
+      // On iOS: don't attach, just let manifest prefetch handle warming
+      return;
     }
 
     // NOT ENTERED yet: don't play
