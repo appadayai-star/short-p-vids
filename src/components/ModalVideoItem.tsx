@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo, useCallback } from "react";
 import { Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { useHlsPlayer } from "@/hooks/use-hls-player";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
@@ -84,7 +84,7 @@ export const ModalVideoItem = memo(({
     cloudflareVideoId: video.cloudflare_video_id,
     fallbackUrl: video.video_url,
   });
-  
+  const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   useEffect(() => {
     return onMuteChange((muted) => {
@@ -262,9 +262,12 @@ export const ModalVideoItem = memo(({
 
   return (
     <div className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center">
+      {/* Poster — matches video framing */}
+      <img src={posterSrc} alt="" className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black" style={{ paddingBottom: navOffset }} />
+
       <video ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain bg-black"
-        style={{ paddingBottom: navOffset }}
+        style={{ paddingBottom: navOffset, opacity: isActive && isPlaying ? 1 : 0, transition: 'opacity 150ms ease' }}
         loop muted={isMuted} playsInline
         // @ts-ignore
         webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"

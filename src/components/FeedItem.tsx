@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import { useHlsPlayer } from "@/hooks/use-hls-player";
@@ -97,7 +97,7 @@ export const FeedItem = memo(({
     cloudflareVideoId: video.cloudflare_video_id,
     fallbackUrl: video.video_url,
   });
-  
+  const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   // Sync global mute
   useEffect(() => {
@@ -416,7 +416,10 @@ export const FeedItem = memo(({
     <div className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always" data-video-index={index}>
       <div className="absolute inset-0 flex items-center justify-center bg-black" style={{ paddingBottom: navOffset }}>
         <div className="relative overflow-hidden bg-black" style={{ width: `min(100%, calc((100dvh - ${navOffset}) * 9 / 16))`, aspectRatio: "9 / 16" }}>
-          {/* Video — shows immediately, no poster overlay */}
+          {/* Poster — same object-contain as video so framing matches */}
+          <img src={posterSrc} alt="" className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black" />
+
+          {/* Video — fades in over poster when playing */}
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-contain bg-black"
@@ -425,6 +428,7 @@ export const FeedItem = memo(({
             webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"
             muted={isMuted}
             preload="none"
+            style={{ opacity: isPlaying ? 1 : 0, transition: 'opacity 150ms ease' }}
             onClick={handleVideoTap}
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}

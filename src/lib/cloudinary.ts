@@ -19,7 +19,7 @@ export function getCloudflareDownloadUrl(cloudflareVideoId: string): string {
 }
 
 export function getCloudflareThumbnailUrl(cloudflareVideoId: string): string {
-  return `https://${CLOUDFLARE_CUSTOMER_SUBDOMAIN}.cloudflarestream.com/${cloudflareVideoId}/thumbnails/thumbnail.jpg?time=0s&height=852&width=480`;
+  return `https://${CLOUDFLARE_CUSTOMER_SUBDOMAIN}.cloudflarestream.com/${cloudflareVideoId}/thumbnails/thumbnail.jpg?time=0s&fit=contain`;
 }
 
 // Check if browser supports HLS natively (Safari, iOS)
