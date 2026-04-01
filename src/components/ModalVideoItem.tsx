@@ -262,9 +262,12 @@ export const ModalVideoItem = memo(({
 
   return (
     <div className="relative w-full h-[100dvh] snap-start snap-always bg-black flex items-center justify-center">
+      {/* Poster — matches video framing */}
+      <img src={posterSrc} alt="" className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black" style={{ paddingBottom: navOffset }} />
+
       <video ref={videoRef}
         className="absolute inset-0 w-full h-full object-contain bg-black"
-        style={{ paddingBottom: navOffset }}
+        style={{ paddingBottom: navOffset, opacity: isActive && isPlaying ? 1 : 0, transition: 'opacity 150ms ease' }}
         loop muted={isMuted} playsInline
         // @ts-ignore
         webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"
