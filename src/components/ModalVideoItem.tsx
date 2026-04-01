@@ -84,7 +84,7 @@ export const ModalVideoItem = memo(({
     cloudflareVideoId: video.cloudflare_video_id,
     fallbackUrl: video.video_url,
   });
-  
+  const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   useEffect(() => {
     return onMuteChange((muted) => {
