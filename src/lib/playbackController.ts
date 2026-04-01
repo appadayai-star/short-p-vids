@@ -227,7 +227,7 @@ export function activate(
     if (success) {
       // iOS: always stay muted on autoplay transitions — user must tap unmute per video
       // Other platforms: restore global mute preference
-      if (IS_IOS) {
+      if (IS_IOS_WEB) {
         el.muted = true;
         log("play:confirmed:ios-muted", id);
       } else {
