@@ -7,6 +7,7 @@
 
 import Hls from "hls.js";
 import { getCloudflareStreamUrl, supportsHlsNatively } from "@/lib/cloudinary";
+import { getGlobalMuted } from "@/lib/globalMute";
 
 const IS_MOBILE = /iPhone|iPad|iPod|Android|Mobile/i.test(
   typeof navigator !== "undefined" ? navigator.userAgent : ""
@@ -151,6 +152,9 @@ export function activate(
       await el.play();
       if (stale()) return;
       log("play:ok", id);
+      // Restore global mute state — activation starts muted for autoplay compliance,
+      // but user may have unmuted previously
+      el.muted = getGlobalMuted();
       callbacks.onPlaying();
     } catch (err: any) {
       if (stale()) return;
@@ -183,7 +187,7 @@ export function activate(
 
       try {
         await el.play();
-        if (!stale()) { log("retry:ok", id); callbacks.onPlaying(); }
+        if (!stale()) { log("retry:ok", id); el.muted = getGlobalMuted(); callbacks.onPlaying(); }
       } catch {
         if (!stale()) { log("retry:failed", id); callbacks.onFailed(); }
       }
