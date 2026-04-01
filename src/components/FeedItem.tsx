@@ -42,7 +42,6 @@ interface FeedItemProps {
   video: Video;
   index: number;
   isActive: boolean;
-  isNextUp?: boolean; // pre-attach HLS so transition is instant
   hasEntered: boolean;
   currentUserId: string | null;
   feedSource?: string | null;
@@ -51,7 +50,7 @@ interface FeedItemProps {
 }
 
 export const FeedItem = memo(({ 
-  video, index, isActive, isNextUp = false, hasEntered, currentUserId, 
+  video, index, isActive, hasEntered, currentUserId, 
   feedSource = null, onViewTracked, onDelete,
 }: FeedItemProps) => {
   const navigate = useNavigate();
@@ -123,35 +122,13 @@ export const FeedItem = memo(({
     const myId = ++activationIdRef.current;
     const isStale = () => myId !== activationIdRef.current;
 
-    // NOT ACTIVE and NOT NEXT: release everything
-    if (!(isActive && hasEntered) && !isNextUp) {
-      detachSource(videoEl);
-      stopWatching();
-      setIsPlaying(false);
-      setPlaybackFailed(false);
-      return;
-    }
-
-    // NEXT UP (but not active): only pre-attach on desktop.
-    // On ALL mobile devices (iOS + Android), media decoders and MediaSource
-    // instances are limited. Pre-attaching causes resource exhaustion after
-    // scrolling through several videos, breaking all subsequent playback.
-    if (isNextUp && !isActive) {
-      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-      if (!isMobile) {
-        attachSource(videoEl);
-        return () => {
-          activationIdRef.current++;
-          detachSource(videoEl);
-        };
-      }
-      // On mobile: don't attach, manifest prefetch handles cache warming
-      return;
-    }
-
-    // NOT ENTERED yet: don't play
-    if (!hasEntered) {
-      detachSource(videoEl);
+    // ONLY the active video gets a source. Everything else is fully released.
+    // No pre-attach, no isNextUp buffering — one source at a time, always.
+    if (!isActive || !hasEntered) {
+      videoEl.pause();
+      videoEl.srcObject = null;
+      videoEl.removeAttribute('src');
+      videoEl.load();
       stopWatching();
       setIsPlaying(false);
       setPlaybackFailed(false);
@@ -171,7 +148,6 @@ export const FeedItem = memo(({
       if (isStale()) return;
       attachSource(videoEl);
       videoEl.currentTime = 0;
-      // Try playing immediately — browser will queue if not ready
       videoEl.play().catch(err => {
         if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
       });
@@ -196,7 +172,11 @@ export const FeedItem = memo(({
       if (!videoEl.paused && videoEl.currentTime > 0) return;
       retryCount++;
       if (retryCount <= MAX_RETRIES) {
-        detachSource(videoEl);
+        // Full teardown before retry
+        videoEl.pause();
+        videoEl.srcObject = null;
+        videoEl.removeAttribute('src');
+        videoEl.load();
         retryTimer = setTimeout(() => {
           if (isStale()) return;
           startPlayback();
@@ -209,7 +189,6 @@ export const FeedItem = memo(({
 
     const handleError = () => handlePlaybackError();
 
-    // CRITICAL: Add listeners BEFORE attaching source
     videoEl.addEventListener('canplay', tryPlay);
     videoEl.addEventListener('loadeddata', tryPlay);
     videoEl.addEventListener('playing', handlePlaying);
@@ -225,9 +204,13 @@ export const FeedItem = memo(({
       videoEl.removeEventListener('playing', handlePlaying);
       videoEl.removeEventListener('error', handleError);
       stopWatching();
-      detachSource(videoEl);
+      // Full hard teardown
+      videoEl.pause();
+      videoEl.srcObject = null;
+      videoEl.removeAttribute('src');
+      videoEl.load();
     };
-  }, [isActive, isNextUp, hasEntered, video.id]);
+  }, [isActive, hasEntered, video.id]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
