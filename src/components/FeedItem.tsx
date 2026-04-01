@@ -56,7 +56,7 @@ export const FeedItem = memo(({
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
-  const activationIdRef = useRef(0); // increments each activation to cancel stale ops
+  
 
   const {
     markLoadStart, markStartupFailure, stopWatching, getMetrics,
@@ -92,7 +92,7 @@ export const FeedItem = memo(({
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { attachSource, detachSource } = useHlsPlayer({
+  const { activate, deactivate } = useHlsPlayer({
     cloudflareVideoId: video.cloudflare_video_id,
     fallbackUrl: video.video_url,
   });
@@ -119,96 +119,34 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    const myId = ++activationIdRef.current;
-    const isStale = () => myId !== activationIdRef.current;
-
-    // ONLY the active video gets a source. Everything else is fully released.
-    // No pre-attach, no isNextUp buffering — one source at a time, always.
+    // Not active: full release
     if (!isActive || !hasEntered) {
-      videoEl.pause();
-      videoEl.srcObject = null;
-      videoEl.removeAttribute('src');
-      videoEl.load();
+      deactivate(videoEl);
       stopWatching();
       setIsPlaying(false);
       setPlaybackFailed(false);
       return;
     }
 
-    // ACTIVE: attach and play
+    // ACTIVE: use the race-safe activate flow
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
 
-    let retryCount = 0;
-    const MAX_RETRIES = 2;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const startPlayback = () => {
-      if (isStale()) return;
-      attachSource(videoEl);
-      videoEl.currentTime = 0;
-      videoEl.play().catch(err => {
-        if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-      });
-    };
-
-    const tryPlay = () => {
-      if (isStale()) return;
-      videoEl.play().catch(err => {
-        if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-        handlePlaybackError();
-      });
-    };
-
-    const handlePlaying = () => {
-      if (isStale()) return;
-      setIsPlaying(true);
-      setPlaybackFailed(false);
-    };
-
-    const handlePlaybackError = () => {
-      if (isStale()) return;
-      if (!videoEl.paused && videoEl.currentTime > 0) return;
-      retryCount++;
-      if (retryCount <= MAX_RETRIES) {
-        // Full teardown before retry
-        videoEl.pause();
-        videoEl.srcObject = null;
-        videoEl.removeAttribute('src');
-        videoEl.load();
-        retryTimer = setTimeout(() => {
-          if (isStale()) return;
-          startPlayback();
-        }, 500);
-      } else {
+    const cleanup = activate(videoEl, {
+      onPlaying: () => {
+        setIsPlaying(true);
+        setPlaybackFailed(false);
+      },
+      onFailed: () => {
         markStartupFailure(10000);
         setPlaybackFailed(true);
-      }
-    };
-
-    const handleError = () => handlePlaybackError();
-
-    videoEl.addEventListener('canplay', tryPlay);
-    videoEl.addEventListener('loadeddata', tryPlay);
-    videoEl.addEventListener('playing', handlePlaying);
-    videoEl.addEventListener('error', handleError);
-
-    startPlayback();
+      },
+    });
 
     return () => {
-      activationIdRef.current++;
-      if (retryTimer) clearTimeout(retryTimer);
-      videoEl.removeEventListener('canplay', tryPlay);
-      videoEl.removeEventListener('loadeddata', tryPlay);
-      videoEl.removeEventListener('playing', handlePlaying);
-      videoEl.removeEventListener('error', handleError);
+      cleanup();
       stopWatching();
-      // Full hard teardown
-      videoEl.pause();
-      videoEl.srcObject = null;
-      videoEl.removeAttribute('src');
-      videoEl.load();
     };
   }, [isActive, hasEntered, video.id]);
 
@@ -217,17 +155,17 @@ export const FeedItem = memo(({
     if (!videoEl) return;
     setPlaybackFailed(false);
     setIsPlaying(false);
-    // Trigger re-activation by bumping the activation ID and re-running
-    activationIdRef.current++;
-    detachSource(videoEl);
-    attachSource(videoEl);
-    videoEl.currentTime = 0;
-    const onCanPlay = () => {
-      videoEl.removeEventListener('canplay', onCanPlay);
-      videoEl.play().catch(() => setPlaybackFailed(true));
-    };
-    videoEl.addEventListener('canplay', onCanPlay);
-  }, [attachSource, detachSource]);
+    // Full re-activate
+    const cleanup = activate(videoEl, {
+      onPlaying: () => {
+        setIsPlaying(true);
+        setPlaybackFailed(false);
+      },
+      onFailed: () => setPlaybackFailed(true),
+    });
+    // Store cleanup ref if needed (cleanup runs on next effect cycle anyway)
+    return cleanup;
+  }, [activate]);
 
   // Guest likes check
   useEffect(() => {
