@@ -135,16 +135,17 @@ export const VideoModal = ({ isOpen, onClose, initialVideoId, userId, videos: pr
 
   // === PREFETCHING (matching main feed) ===
   useEffect(() => {
+    if (!isScrollSettled) return;
     const next1 = activeIndex + 1;
     if (next1 < videos.length) {
-      eagerPrefetchVideo(videos[next1].cloudflare_video_id);
+      prefetchHlsManifest(videos[next1].cloudflare_video_id);
       preloadImage(getThumbnailUrl(videos[next1].cloudflare_video_id, videos[next1].thumbnail_url));
     }
     const next2 = activeIndex + 2;
     if (next2 < videos.length) {
       prefetchHlsManifest(videos[next2].cloudflare_video_id);
     }
-  }, [activeIndex, videos]);
+  }, [activeIndex, videos, isScrollSettled]);
 
   const scrollToIndex = (index: number) => {
     if (scrollContainerRef.current) {
