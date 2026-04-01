@@ -1,13 +1,13 @@
 /**
- * Simplified Global Playback Controller v4
+ * Global Playback Controller v5
  * 
  * Design: boring, deterministic, reliable.
  * 
  * - ONE active video at a time
  * - Serialized chain: teardown → attach → poll ready → play (muted) → verify
+ * - Stale check at EVERY async boundary (including inside polls)
  * - ONE retry on failure, then call onFailed
  * - Audio is NOT managed here — components handle mute/unmute after onPlaying
- * - No speculative behavior, no overlapping recovery paths
  */
 
 import Hls from "hls.js";
@@ -18,7 +18,7 @@ const IS_MOBILE = /iPhone|iPad|iPod|Android|Mobile/i.test(UA);
 export const IS_IOS_WEB = /iPhone|iPad|iPod/i.test(UA) || 
   (typeof navigator !== "undefined" && /Macintosh/i.test(UA) && navigator.maxTouchPoints > 1);
 
-const RELEASE_GAP_MS = IS_MOBILE ? 100 : 20;
+const RELEASE_GAP_MS = IS_MOBILE ? 80 : 20;
 
 // ---- Singleton state ----
 let hls: Hls | null = null;
@@ -53,12 +53,18 @@ function teardown(id: string) {
 
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
-/** Poll until readyState >= 2 or timeout. Never rejects. */
-function pollReady(el: HTMLVideoElement, ms: number): Promise<boolean> {
+/** Poll until readyState >= 2, stale, or timeout. Returns false if stale or timed out. */
+function pollReady(el: HTMLVideoElement, ms: number, stale: () => boolean): Promise<boolean> {
   return new Promise(resolve => {
+    if (stale()) { resolve(false); return; }
     if (el.readyState >= 2) { resolve(true); return; }
     const start = Date.now();
     const interval = setInterval(() => {
+      if (stale()) {
+        clearInterval(interval);
+        resolve(false);
+        return;
+      }
       if (el.readyState >= 2 || Date.now() - start > ms) {
         clearInterval(interval);
         resolve(el.readyState >= 2);
@@ -67,12 +73,18 @@ function pollReady(el: HTMLVideoElement, ms: number): Promise<boolean> {
   });
 }
 
-/** Verify playback: currentTime must advance from initial value */
-function verifyPlayback(el: HTMLVideoElement, ms: number): Promise<boolean> {
+/** Verify playback: currentTime must advance. Exits early if stale. */
+function verifyPlayback(el: HTMLVideoElement, ms: number, stale: () => boolean): Promise<boolean> {
   return new Promise(resolve => {
+    if (stale()) { resolve(false); return; }
     const start = Date.now();
     const initialCT = el.currentTime;
     const interval = setInterval(() => {
+      if (stale()) {
+        clearInterval(interval);
+        resolve(false);
+        return;
+      }
       const elapsed = Date.now() - start;
       const playing = !el.paused && el.currentTime > initialCT + 0.01;
       if (playing || elapsed > ms) {
@@ -89,7 +101,6 @@ function attachSource(
   cloudflareVideoId: string | null | undefined,
   fallbackUrl: string
 ): boolean {
-  // Set autoplay-required attributes
   el.muted = true;
   el.defaultMuted = true;
   el.playsInline = true;
@@ -143,18 +154,20 @@ function attachSource(
 async function attemptPlay(el: HTMLVideoElement, id: string, attempt: number, stale: () => boolean): Promise<boolean> {
   if (stale()) return false;
   
-  el.muted = true; // Always muted for autoplay compliance
+  el.muted = true;
   log(`play:attempt${attempt}`, id, { readyState: el.readyState, paused: el.paused, ct: el.currentTime });
   
   try {
     await el.play();
   } catch (err: any) {
+    if (stale()) return false;
     log("play:error", id, { name: err.name, attempt });
+    if (err.name === 'NotAllowedError') return false;
     return false;
   }
   
   if (stale()) return false;
-  return verifyPlayback(el, 1000);
+  return verifyPlayback(el, 800, stale);
 }
 
 // ---- Public API ----
@@ -166,16 +179,6 @@ export interface ActivateCallbacks {
 
 /**
  * Activate a video for playback.
- * 
- * Flow:
- * 1. Teardown previous video (inside serialized chain)
- * 2. Attach source (muted)
- * 3. Poll for readiness
- * 4. Play attempt 1
- * 5. If failed: full teardown → re-attach → play attempt 2
- * 6. If still failed: call onFailed
- * 7. If success: call onPlaying (video stays muted — component handles audio)
- * 
  * Returns cancel function.
  */
 export function activate(
@@ -204,14 +207,14 @@ export function activate(
     attachSource(el, cloudflareVideoId, fallbackUrl);
     if (stale()) return;
 
-    // 3. Wait for readiness
-    await pollReady(el, 2000);
+    // 3. Wait for readiness (exits early if stale)
+    const ready = await pollReady(el, 2000, stale);
     if (stale()) return;
 
-    // 4. First play attempt
-    let success = await attemptPlay(el, id, 1, stale);
+    // 4. First play attempt (exits early if stale)
+    let success = ready && await attemptPlay(el, id, 1, stale);
 
-    // 5. If failed, one full retry: teardown → re-attach → play
+    // 5. If failed, one full retry
     if (!success && !stale()) {
       log("retry:full", id);
       destroyHls();
@@ -222,21 +225,21 @@ export function activate(
       attachSource(el, cloudflareVideoId, fallbackUrl);
       if (stale()) return;
       
-      await pollReady(el, 2500);
+      const retryReady = await pollReady(el, 2500, stale);
       if (stale()) return;
       
-      success = await attemptPlay(el, id, 2, stale);
+      success = retryReady && await attemptPlay(el, id, 2, stale);
     }
 
     if (stale()) return;
 
-    // 6. Report result
+    // 6. Report result (with final stale guard)
     if (success) {
       log("success", id, { ct: el.currentTime });
-      callbacks.onPlaying();
+      if (!stale()) callbacks.onPlaying();
     } else {
       log("failed", id);
-      callbacks.onFailed();
+      if (!stale()) callbacks.onFailed();
     }
   }).catch((err) => {
     log("chain:error", id, { error: String(err) });
@@ -246,10 +249,21 @@ export function activate(
   return () => { cancelled = true; };
 }
 
+/**
+ * Deactivate a video element.
+ * If it's the active element, queue teardown on the chain.
+ * If not, release it immediately (no chain needed).
+ */
 export function deactivateVideo(el: HTMLVideoElement) {
-  chain = chain.then(() => {
-    if (activeEl === el) { teardown("deactivate"); } else { hardRelease(el); }
-  }).catch(() => {});
+  if (activeEl === el) {
+    // Active element — must teardown through chain to avoid race with pending activation
+    chain = chain.then(() => {
+      if (activeEl === el) { teardown("deactivate"); }
+    }).catch(() => {});
+  } else {
+    // Non-active element — safe to release immediately, no chain congestion
+    hardRelease(el);
+  }
 }
 
 export function releaseAll() {
