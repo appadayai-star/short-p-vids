@@ -215,16 +215,14 @@ export const FeedItem = memo(({
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
-    
     retryCountRef.current = 0;
-    clearStartupTimeout();
     setPlaybackFailed(false);
     videoEl.load();
     videoEl.play().catch(() => {
       markStartupFailure(10000);
       setPlaybackFailed(true);
     });
-  }, [clearStartupTimeout, markStartupFailure]);
+  }, [markStartupFailure]);
 
   // Check if guest has liked this video
   useEffect(() => {

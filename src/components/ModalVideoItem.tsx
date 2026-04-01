@@ -78,6 +78,39 @@ export const ModalVideoItem = memo(({
   const retryCountRef = useRef(0);
   const progressBarRef = useRef<HTMLDivElement>(null);
 
+  // Watch metrics (identical to FeedItem)
+  const {
+    markLoadStart,
+    markStartupFailure,
+    stopWatching,
+  } = useWatchMetrics({
+    videoId: video.id,
+    userId: currentUserId,
+    isActive,
+    videoRef,
+    videoIndex: index,
+    feedSource: 'modal',
+  });
+
+  // UI state
+  const [isMuted, setIsMuted] = useState(getGlobalMuted());
+  const [showMuteIcon, setShowMuteIcon] = useState(false);
+  const [playbackFailed, setPlaybackFailed] = useState(false);
+  const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [localVideo, setLocalVideo] = useState(video);
+
+  // Progress bar state
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+
+  // Double-tap like state
+  const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const lastTapTimeRef = useRef<number>(0);
+  const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // HLS player hook
   const { attachSource, detachSource } = useHlsPlayer({
     cloudflareVideoId: video.cloudflare_video_id,
