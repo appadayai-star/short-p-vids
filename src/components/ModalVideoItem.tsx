@@ -3,7 +3,7 @@ import { Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
-import { useHlsPlayer } from "@/hooks/use-hls-player";
+import { activate as activateVideo, deactivateVideo } from "@/lib/playbackController";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
 import { ShareDrawer } from "./ShareDrawer";
@@ -80,10 +80,6 @@ export const ModalVideoItem = memo(({
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { activate, deactivate } = useHlsPlayer({
-    cloudflareVideoId: video.cloudflare_video_id,
-    fallbackUrl: video.video_url,
-  });
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   useEffect(() => {
@@ -93,13 +89,12 @@ export const ModalVideoItem = memo(({
     });
   }, []);
 
-  // Core playback lifecycle — uses race-safe activate
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (!isActive) {
-      deactivate(videoEl);
+      deactivateVideo(videoEl);
       stopWatching();
       setIsPlaying(false);
       setPlaybackFailed(false);
@@ -110,7 +105,7 @@ export const ModalVideoItem = memo(({
     setIsPlaying(false);
     markLoadStart();
 
-    const cleanup = activate(videoEl, {
+    const cancel = activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
@@ -122,7 +117,7 @@ export const ModalVideoItem = memo(({
     });
 
     return () => {
-      cleanup();
+      cancel();
       stopWatching();
     };
   }, [isActive, video.id]);
@@ -132,14 +127,14 @@ export const ModalVideoItem = memo(({
     if (!videoEl) return;
     setPlaybackFailed(false);
     setIsPlaying(false);
-    activate(videoEl, {
+    activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
       },
       onFailed: () => setPlaybackFailed(true),
     });
-  }, [activate]);
+  }, [video.cloudflare_video_id, video.video_url]);
 
   const unmute = useCallback(() => {
     if (isMuted) { setGlobalMuted(false); setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500); }

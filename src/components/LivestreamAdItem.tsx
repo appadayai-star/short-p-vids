@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Radio, Users, ChevronRight } from "lucide-react";
 import { getThumbnailUrl } from "@/lib/cloudinary";
-import { useHlsPlayer } from "@/hooks/use-hls-player";
+import { activate as activateVideo, deactivateVideo } from "@/lib/playbackController";
 
 interface Ad {
   id: string;
@@ -26,11 +26,6 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
   const viewTrackedRef = useRef(false);
   const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
 
-  // Use HLS player for adaptive streaming
-  const { activate, deactivate } = useHlsPlayer({
-    cloudflareVideoId: ad.cloudflare_video_id,
-    fallbackUrl: ad.video_url,
-  });
   const posterSrc = getThumbnailUrl(ad.cloudflare_video_id, ad.thumbnail_url);
 
   // Random viewer count - stable per ad per session
@@ -51,23 +46,22 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
     return () => clearInterval(interval);
   }, [isActive]);
 
-  // Activate/deactivate using race-safe lifecycle
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (!isActive) {
-      deactivate(videoEl);
+      deactivateVideo(videoEl);
       return;
     }
 
-    const cleanup = activate(videoEl, {
+    const cancel = activateVideo(videoEl, ad.cloudflare_video_id, ad.video_url, {
       onPlaying: () => {},
       onFailed: () => {},
     });
 
-    return cleanup;
-  }, [isActive, ad.id, activate, deactivate]);
+    return cancel;
+  }, [isActive, ad.id]);
 
   // Track ad view
   useEffect(() => {

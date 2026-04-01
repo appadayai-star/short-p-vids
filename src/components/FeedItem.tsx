@@ -8,7 +8,7 @@ import { ShareDrawer } from "./ShareDrawer";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
-import { useHlsPlayer } from "@/hooks/use-hls-player";
+import { activate as activateVideo, deactivateVideo } from "@/lib/playbackController";
 import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
 import { getGuestClientId, getGuestLikes, setGuestLikes } from "@/lib/guestLikes";
 import {
@@ -92,10 +92,6 @@ export const FeedItem = memo(({
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { activate, deactivate } = useHlsPlayer({
-    cloudflareVideoId: video.cloudflare_video_id,
-    fallbackUrl: video.video_url,
-  });
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   // Sync global mute
@@ -119,21 +115,19 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    // Not active: full release
     if (!isActive || !hasEntered) {
-      deactivate(videoEl);
+      deactivateVideo(videoEl);
       stopWatching();
       setIsPlaying(false);
       setPlaybackFailed(false);
       return;
     }
 
-    // ACTIVE: use the race-safe activate flow
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
 
-    const cleanup = activate(videoEl, {
+    const cancel = activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
@@ -145,7 +139,7 @@ export const FeedItem = memo(({
     });
 
     return () => {
-      cleanup();
+      cancel();
       stopWatching();
     };
   }, [isActive, hasEntered, video.id]);
@@ -155,17 +149,14 @@ export const FeedItem = memo(({
     if (!videoEl) return;
     setPlaybackFailed(false);
     setIsPlaying(false);
-    // Full re-activate
-    const cleanup = activate(videoEl, {
+    activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
       },
       onFailed: () => setPlaybackFailed(true),
     });
-    // Store cleanup ref if needed (cleanup runs on next effect cycle anyway)
-    return cleanup;
-  }, [activate]);
+  }, [video.cloudflare_video_id, video.video_url]);
 
   // Guest likes check
   useEffect(() => {
