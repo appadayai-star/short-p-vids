@@ -59,7 +59,7 @@ export const ModalVideoItem = memo(({
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
-  const activationIdRef = useRef(0);
+  
 
   const { markLoadStart, markStartupFailure, stopWatching } = useWatchMetrics({
     videoId: video.id, userId: currentUserId, isActive, videoRef,
