@@ -102,8 +102,10 @@ export const ModalVideoItem = memo(({
       return;
     }
 
-    // iOS: reset mute state per video
-    if (IS_IOS_WEB) setIsMuted(true);
+    // iOS: reflect session-based sound state
+    if (IS_IOS_WEB) {
+      setIsMuted(!getIosUserWantsSound());
+    }
 
     setPlaybackFailed(false);
     setIsPlaying(false);
@@ -113,6 +115,9 @@ export const ModalVideoItem = memo(({
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
+        if (IS_IOS_WEB && videoEl) {
+          setIsMuted(videoEl.muted);
+        }
       },
       onFailed: () => {
         markStartupFailure(10000);
