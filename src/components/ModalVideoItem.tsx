@@ -3,9 +3,9 @@ import { Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
-import { activate as activateVideo, deactivateVideo, IS_IOS_WEB, getIosUserWantsSound, setIosUserWantsSound } from "@/lib/playbackController";
+import { activate as activateVideo, deactivateVideo, IS_IOS_WEB } from "@/lib/playbackController";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
-import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
+import { getEffectiveMuted, setEffectiveMuted, onMuteChange } from "@/lib/globalMute";
 import { ShareDrawer } from "./ShareDrawer";
 import { EditVideoDialog } from "./EditVideoDialog";
 import {
