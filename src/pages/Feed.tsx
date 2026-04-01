@@ -40,7 +40,7 @@ const Feed = () => {
         />
         {categoryFilter && (
           <button
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/feed", { replace: true })}
             className="fixed top-4 left-4 z-50 px-4 py-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors flex items-center gap-2"
           >
             <span className="text-white font-medium capitalize">{categoryFilter}</span>
