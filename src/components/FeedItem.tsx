@@ -132,20 +132,20 @@ export const FeedItem = memo(({
       return;
     }
 
-    // NEXT UP (but not active): only pre-attach on desktop browsers.
-    // On iOS/Safari, native HLS uses hardware decoders that get exhausted
-    // if multiple videos have sources simultaneously.
+    // NEXT UP (but not active): only pre-attach on desktop.
+    // On ALL mobile devices (iOS + Android), media decoders and MediaSource
+    // instances are limited. Pre-attaching causes resource exhaustion after
+    // scrolling through several videos, breaking all subsequent playback.
     if (isNextUp && !isActive) {
-      const isNativeHls = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome'));
-      if (!isNativeHls) {
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+      if (!isMobile) {
         attachSource(videoEl);
         return () => {
           activationIdRef.current++;
           detachSource(videoEl);
         };
       }
-      // On iOS: don't attach, just let manifest prefetch handle warming
+      // On mobile: don't attach, manifest prefetch handles cache warming
       return;
     }
 
