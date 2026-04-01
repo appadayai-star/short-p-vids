@@ -149,17 +149,14 @@ export const FeedItem = memo(({
     if (!videoEl) return;
     setPlaybackFailed(false);
     setIsPlaying(false);
-    // Full re-activate
-    const cleanup = activate(videoEl, {
+    activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
       },
       onFailed: () => setPlaybackFailed(true),
     });
-    // Store cleanup ref if needed (cleanup runs on next effect cycle anyway)
-    return cleanup;
-  }, [activate]);
+  }, [video.cloudflare_video_id, video.video_url]);
 
   // Guest likes check
   useEffect(() => {

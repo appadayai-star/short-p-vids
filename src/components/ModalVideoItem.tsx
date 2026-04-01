@@ -127,14 +127,14 @@ export const ModalVideoItem = memo(({
     if (!videoEl) return;
     setPlaybackFailed(false);
     setIsPlaying(false);
-    activate(videoEl, {
+    activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
       },
       onFailed: () => setPlaybackFailed(true),
     });
-  }, [activate]);
+  }, [video.cloudflare_video_id, video.video_url]);
 
   const unmute = useCallback(() => {
     if (isMuted) { setGlobalMuted(false); setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500); }

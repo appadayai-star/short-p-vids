@@ -46,23 +46,22 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
     return () => clearInterval(interval);
   }, [isActive]);
 
-  // Activate/deactivate using race-safe lifecycle
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (!isActive) {
-      deactivate(videoEl);
+      deactivateVideo(videoEl);
       return;
     }
 
-    const cleanup = activate(videoEl, {
+    const cancel = activateVideo(videoEl, ad.cloudflare_video_id, ad.video_url, {
       onPlaying: () => {},
       onFailed: () => {},
     });
 
-    return cleanup;
-  }, [isActive, ad.id, activate, deactivate]);
+    return cancel;
+  }, [isActive, ad.id]);
 
   // Track ad view
   useEffect(() => {
