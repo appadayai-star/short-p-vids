@@ -85,11 +85,16 @@ export function activate(
     await delay(RELEASE_GAP_MS);
     if (stale()) return;
 
-    // 2. Attach
+    // 2. Attach — set ALL autoplay-required attributes BEFORE src
     activeEl = el;
+    el.muted = true;
+    el.defaultMuted = true;
     el.playsInline = true;
     el.autoplay = true;
     el.preload = "auto";
+    el.setAttribute("muted", "");
+    el.setAttribute("playsinline", "");
+    el.setAttribute("autoplay", "");
 
     let hlsReady = false;
 
