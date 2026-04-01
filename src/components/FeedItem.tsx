@@ -115,21 +115,19 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    // Not active: full release
     if (!isActive || !hasEntered) {
-      deactivate(videoEl);
+      deactivateVideo(videoEl);
       stopWatching();
       setIsPlaying(false);
       setPlaybackFailed(false);
       return;
     }
 
-    // ACTIVE: use the race-safe activate flow
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
 
-    const cleanup = activate(videoEl, {
+    const cancel = activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
@@ -141,7 +139,7 @@ export const FeedItem = memo(({
     });
 
     return () => {
-      cleanup();
+      cancel();
       stopWatching();
     };
   }, [isActive, hasEntered, video.id]);
