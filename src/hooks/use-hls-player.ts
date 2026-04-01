@@ -78,8 +78,9 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
     destroyHls();
     try {
       videoEl.pause();
+      videoEl.srcObject = null;     // Clear any MSE object URL
       videoEl.removeAttribute('src');
-      videoEl.load(); // Abort any pending loads
+      videoEl.load(); // Forces iOS to release the hardware decoder
     } catch {
       // best-effort
     }
