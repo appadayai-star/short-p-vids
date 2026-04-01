@@ -555,7 +555,7 @@ export const FeedItem = memo(({
             x5-video-player-type="h5"
             x5-video-player-fullscreen="false"
             muted={isMuted}
-            preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
+            preload={isActive ? "auto" : "none"}
             aria-hidden={!isActive}
             style={{
               opacity: isActive && hasStartedPlaying ? 1 : 0,
