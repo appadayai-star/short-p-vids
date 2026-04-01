@@ -51,7 +51,7 @@ interface FeedItemProps {
 }
 
 export const FeedItem = memo(({ 
-  video, index, isActive, hasEntered, currentUserId, 
+  video, index, isActive, isNextUp = false, hasEntered, currentUserId, 
   feedSource = null, onViewTracked, onDelete,
 }: FeedItemProps) => {
   const navigate = useNavigate();
