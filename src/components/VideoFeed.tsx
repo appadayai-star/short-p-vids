@@ -4,7 +4,7 @@ import { FeedItem } from "./FeedItem";
 import { LivestreamAdItem } from "./LivestreamAdItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
-import { getThumbnailUrl, preloadImage } from "@/lib/cloudinary";
+import { getThumbnailUrl } from "@/lib/cloudinary";
 import { createAdPicker, type Ad } from "@/lib/adRotation";
 import { prefetchHlsManifest } from "@/hooks/use-hls-player";
 
