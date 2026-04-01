@@ -188,18 +188,8 @@ export const FeedItem = memo(({
   }, [isActive, hasEntered, video.id, doActivate]);
 
   const handleRetry = useCallback(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
-    setPlaybackFailed(false);
-    setIsPlaying(false);
-    activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
-      onPlaying: () => {
-        setIsPlaying(true);
-        setPlaybackFailed(false);
-      },
-      onFailed: () => setPlaybackFailed(true),
-    });
-  }, [video.cloudflare_video_id, video.video_url]);
+    doActivate();
+  }, [doActivate]);
 
   // Guest likes check
   useEffect(() => {
