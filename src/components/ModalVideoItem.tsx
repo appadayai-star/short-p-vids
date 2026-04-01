@@ -77,42 +77,8 @@ export const ModalVideoItem = memo(({
   const videoRef = useRef<HTMLVideoElement>(null);
   const retryCountRef = useRef(0);
   const progressBarRef = useRef<HTMLDivElement>(null);
-  const startupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Watch metrics (identical to FeedItem)
-  const {
-    markLoadStart,
-    markStartupFailure,
-    stopWatching,
-  } = useWatchMetrics({
-    videoId: video.id,
-    userId: currentUserId,
-    isActive,
-    videoRef,
-    videoIndex: index,
-    feedSource: 'modal',
-  });
-
-  // UI state
-  const [isMuted, setIsMuted] = useState(getGlobalMuted());
-  const [showMuteIcon, setShowMuteIcon] = useState(false);
-  const [playbackFailed, setPlaybackFailed] = useState(false);
-  const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
-  const [isShareOpen, setIsShareOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [localVideo, setLocalVideo] = useState(video);
-
-  // Progress bar state
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isScrubbing, setIsScrubbing] = useState(false);
-
-  // Double-tap like state
-  const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
-  const lastTapTimeRef = useRef<number>(0);
-  const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // HLS player hook (identical config to FeedItem)
+  // HLS player hook
   const { attachSource, detachSource } = useHlsPlayer({
     cloudflareVideoId: video.cloudflare_video_id,
     fallbackUrl: video.video_url,
@@ -120,19 +86,11 @@ export const ModalVideoItem = memo(({
 
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
-  const clearStartupTimeout = useCallback(() => {
-    if (startupTimeoutRef.current) {
-      clearTimeout(startupTimeoutRef.current);
-      startupTimeoutRef.current = null;
-    }
-  }, []);
-
   // Reset on video change
   useEffect(() => {
     retryCountRef.current = 0;
-    clearStartupTimeout();
     setPlaybackFailed(false);
-  }, [video.id, clearStartupTimeout]);
+  }, [video.id]);
 
   // Sync global mute
   useEffect(() => {
@@ -142,7 +100,7 @@ export const ModalVideoItem = memo(({
     });
   }, []);
 
-  // Attach/detach HLS source (identical to FeedItem)
+  // Attach/detach HLS source
   const shouldAttachSource = isActive || shouldPreload || shouldPreloadMeta;
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -150,21 +108,20 @@ export const ModalVideoItem = memo(({
     if (shouldAttachSource) {
       attachSource(videoEl);
     } else {
-      clearStartupTimeout();
       setPlaybackFailed(false);
       stopWatching();
       videoEl.pause();
       detachSource(videoEl);
     }
-  }, [shouldAttachSource, stopWatching, clearStartupTimeout, attachSource, detachSource]);
+  }, [shouldAttachSource, stopWatching, attachSource, detachSource]);
 
-  // Playback logic (identical to FeedItem)
+  // Event-driven playback logic — NO timeouts
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
+    let cancelled = false;
 
     if (!isActive) {
-      clearStartupTimeout();
       setPlaybackFailed(false);
       setHasStartedPlaying(false);
       stopWatching();
@@ -177,21 +134,22 @@ export const ModalVideoItem = memo(({
     markLoadStart();
     retryCountRef.current = 0;
 
-    const handlePlaying = () => {
-      clearStartupTimeout();
-      setPlaybackFailed(false);
-      setHasStartedPlaying(true);
+    const clearFail = () => {
+      if (!cancelled) {
+        setPlaybackFailed(false);
+        setHasStartedPlaying(true);
+      }
     };
 
     const handleError = () => {
-      if (!isActive) return;
+      if (cancelled || !isActive) return;
       if (!videoEl.paused && videoEl.currentTime > 0) return;
       retryCountRef.current += 1;
       if (retryCountRef.current <= 3) {
         setTimeout(() => {
-          if (!isActive) return;
+          if (cancelled || !isActive) return;
           videoEl.load();
-          attemptPlay();
+          videoEl.play().catch(() => {});
         }, 300 * retryCountRef.current);
         return;
       }
@@ -199,77 +157,37 @@ export const ModalVideoItem = memo(({
       setPlaybackFailed(true);
     };
 
-    const attemptPlay = () => {
-      videoEl.play().catch((err) => {
-        if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-        retryCountRef.current += 1;
-        if (retryCountRef.current <= 3) {
-          setTimeout(() => {
-            if (!isActive) return;
-            videoEl.load();
-            attemptPlay();
-          }, 300 * retryCountRef.current);
-          return;
-        }
-        markStartupFailure(10000);
-        setPlaybackFailed(true);
-      });
-    };
-
     videoEl.currentTime = 0;
-    videoEl.addEventListener('playing', handlePlaying);
+    videoEl.addEventListener('loadeddata', clearFail);
+    videoEl.addEventListener('canplay', clearFail);
+    videoEl.addEventListener('playing', clearFail);
     videoEl.addEventListener('error', handleError);
 
-    clearStartupTimeout();
-    startupTimeoutRef.current = setTimeout(() => {
-      if (!isActive) return;
-      if (!videoEl.paused && videoEl.currentTime > 0) return;
-      if (videoEl.readyState > 0 && videoEl.readyState < 4) {
-        startupTimeoutRef.current = setTimeout(() => {
-          if (!isActive) return;
-          if (!videoEl.paused && videoEl.currentTime > 0) return;
-          markStartupFailure(10000);
-          setPlaybackFailed(true);
-        }, 6000);
-        return;
-      }
-      if (retryCountRef.current <= 3) {
-        retryCountRef.current += 1;
-        videoEl.load();
-        attemptPlay();
-        startupTimeoutRef.current = setTimeout(() => {
-          if (!isActive) return;
-          if (!videoEl.paused && videoEl.currentTime > 0) return;
-          markStartupFailure(10000);
-          setPlaybackFailed(true);
-        }, 5000);
-        return;
-      }
-      markStartupFailure(10000);
-      setPlaybackFailed(true);
-    }, 8000);
-
-    attemptPlay();
+    videoEl.play().catch((err) => {
+      if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
+      handleError();
+    });
 
     return () => {
-      clearStartupTimeout();
-      videoEl.removeEventListener('playing', handlePlaying);
+      cancelled = true;
+      videoEl.removeEventListener('loadeddata', clearFail);
+      videoEl.removeEventListener('canplay', clearFail);
+      videoEl.removeEventListener('playing', clearFail);
       videoEl.removeEventListener('error', handleError);
     };
-  }, [isActive, markLoadStart, markStartupFailure, stopWatching, clearStartupTimeout, video.cloudflare_video_id]);
+  }, [isActive, markLoadStart, markStartupFailure, stopWatching, video.cloudflare_video_id]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
     retryCountRef.current = 0;
-    clearStartupTimeout();
     setPlaybackFailed(false);
     videoEl.load();
     videoEl.play().catch(() => {
       markStartupFailure(10000);
       setPlaybackFailed(true);
     });
-  }, [clearStartupTimeout, markStartupFailure]);
+  }, [markStartupFailure]);
 
   // Tap handlers
   const unmute = useCallback(() => {
