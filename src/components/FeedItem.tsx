@@ -120,12 +120,29 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    // Increment activation ID — any async ops from previous activation become stale
     const myId = ++activationIdRef.current;
     const isStale = () => myId !== activationIdRef.current;
 
-    // NOT ACTIVE: release everything
-    if (!(isActive && hasEntered)) {
+    // NOT ACTIVE and NOT NEXT: release everything
+    if (!(isActive && hasEntered) && !isNextUp) {
+      detachSource(videoEl);
+      stopWatching();
+      setIsPlaying(false);
+      setPlaybackFailed(false);
+      return;
+    }
+
+    // NEXT UP (but not active): just pre-attach HLS source so it buffers
+    if (isNextUp && !isActive) {
+      attachSource(videoEl);
+      return () => {
+        activationIdRef.current++;
+        detachSource(videoEl);
+      };
+    }
+
+    // NOT ENTERED yet: don't play
+    if (!hasEntered) {
       detachSource(videoEl);
       stopWatching();
       setIsPlaying(false);
