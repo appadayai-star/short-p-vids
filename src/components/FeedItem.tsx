@@ -94,8 +94,9 @@ export const FeedItem = memo(({
 
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
-  // Sync global mute
+  // Sync global mute (non-iOS only; iOS uses per-video mute)
   useEffect(() => {
+    if (IS_IOS_WEB) return;
     return onMuteChange((muted) => {
       setIsMuted(muted);
       if (videoRef.current) videoRef.current.muted = muted;
