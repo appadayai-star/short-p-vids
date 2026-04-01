@@ -225,6 +225,7 @@ export const FeedItem = memo(({
   const unmute = useCallback(() => {
     if (!isMuted) return;
     if (IS_IOS_WEB) {
+      setIosUserWantsSound(true);
       if (videoRef.current) videoRef.current.muted = false;
       setIsMuted(false);
     } else {
