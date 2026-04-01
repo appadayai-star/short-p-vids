@@ -152,6 +152,9 @@ export function activate(
       await el.play();
       if (stale()) return;
       log("play:ok", id);
+      // Restore global mute state — activation starts muted for autoplay compliance,
+      // but user may have unmuted previously
+      el.muted = getGlobalMuted();
       callbacks.onPlaying();
     } catch (err: any) {
       if (stale()) return;
