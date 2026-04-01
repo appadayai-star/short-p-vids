@@ -55,8 +55,10 @@ export const BottomNav = ({ isAuthenticated, onHomeRefresh, unreadCount = 0, isA
         <NavLink
           to="/feed"
           onClick={handleHomeClick}
-          className="flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]"
-          activeClassName="text-primary"
+          className={cn(
+            "flex flex-col items-center justify-center gap-1 text-white/70 hover:text-white transition-colors min-w-[60px]",
+            (location.pathname === "/" || location.pathname === "/feed") && "text-primary"
+          )}
         >
           <Home className="h-6 w-6" />
           <span className="text-xs">Home</span>
