@@ -382,10 +382,9 @@ export const FeedItem = memo(({
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-contain bg-black"
-            loop playsInline
+            loop playsInline muted
             // @ts-ignore
             webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"
-            // muted is managed imperatively by playbackController — do NOT set via React prop
             preload="none"
             style={{ opacity: isPlaying ? 1 : 0, transition: 'opacity 150ms ease' }}
             onClick={handleVideoTap}
