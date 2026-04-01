@@ -140,7 +140,7 @@ export const FeedItem = memo(({
     });
   }, [video.cloudflare_video_id, video.video_url, video.id, markLoadStart, markStartupFailure]);
 
-  // Core activation lifecycle
+  // Core activation lifecycle with watchdog
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -153,10 +153,28 @@ export const FeedItem = memo(({
       return;
     }
 
-    const cancel = doActivate();
+    let cancel = doActivate();
+    let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    let watchdogFired = false;
+
+    // Watchdog: if video has no progress after 4s, do a full re-activate
+    // (same path that works reliably on Safari foreground return)
+    watchdogTimer = setTimeout(() => {
+      if (!videoEl || watchdogFired) return;
+      const stuck = videoEl.paused || videoEl.currentTime < 0.01;
+      if (stuck) {
+        watchdogFired = true;
+        console.log('[FeedItem] watchdog:reactivate', video.id.slice(0, 8), {
+          paused: videoEl.paused, ct: videoEl.currentTime, readyState: videoEl.readyState
+        });
+        cancel();
+        cancel = doActivate();
+      }
+    }, 4000);
 
     return () => {
       cancel();
+      if (watchdogTimer) clearTimeout(watchdogTimer);
       stopWatching();
     };
   }, [isActive, hasEntered, video.id]);
