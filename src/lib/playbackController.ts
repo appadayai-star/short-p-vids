@@ -192,9 +192,9 @@ export function activate(
 }
 
 export function deactivateVideo(el: HTMLVideoElement) {
-  const myToken = ++token;
+  // Do NOT increment token — only activate() owns the token.
+  // This just queues a teardown if this element is still active.
   chain = chain.then(() => {
-    if (myToken !== token) return;
     if (activeEl === el) { teardown("deactivate"); } else { hardRelease(el); }
   }).catch(() => {});
 }
