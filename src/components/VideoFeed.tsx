@@ -4,7 +4,7 @@ import { FeedItem } from "./FeedItem";
 import { LivestreamAdItem } from "./LivestreamAdItem";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
-import { getThumbnailUrl, preloadImage } from "@/lib/cloudinary";
+
 import { createAdPicker, type Ad } from "@/lib/adRotation";
 import { prefetchHlsManifest } from "@/hooks/use-hls-player";
 
@@ -233,17 +233,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(resultVideos);
           setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
-          // Only preload thumbnails on initial load — do NOT prefetch HLS for video[0]
-          // because HLS.js will fetch the same manifest+segments when it attaches,
-          // causing duplicate requests and network contention that slows TTFF.
-          if (resultVideos.length > 0) {
-            preloadImage(getThumbnailUrl(resultVideos[0].cloudflare_video_id, resultVideos[0].thumbnail_url));
-          }
-          // Low-priority prefetch for video[1] (next video) — uses 'low' priority
-          // so it doesn't compete with HLS.js playing video[0]
+          // Pre-warm HLS manifest for video[1] so transition is fast
           if (resultVideos.length > 1) {
             prefetchHlsManifest(resultVideos[1].cloudflare_video_id);
-            preloadImage(getThumbnailUrl(resultVideos[1].cloudflare_video_id, resultVideos[1].thumbnail_url));
           }
         }
       } catch (err) {
@@ -359,22 +351,15 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
   }, [feedEntries]);
 
   // Prefetch HLS manifests for upcoming videos when scroll settles
-  // Only prefetch when settled to avoid firing during rapid scrolling
   useEffect(() => {
     if (!isScrollSettled) return;
-    
-    // Prefetch next video with low priority (not eager — avoid competing with active playback)
     const next1 = activeIndex + 1;
     if (next1 < feedEntries.length && feedEntries[next1]?.type === 'video') {
-      const nextVideo = feedEntries[next1].data as Video;
-      prefetchHlsManifest(nextVideo.cloudflare_video_id);
-      preloadImage(getThumbnailUrl(nextVideo.cloudflare_video_id, nextVideo.thumbnail_url));
+      prefetchHlsManifest((feedEntries[next1].data as Video).cloudflare_video_id);
     }
-    // Low-priority prefetch for +2
     const next2 = activeIndex + 2;
     if (next2 < feedEntries.length && feedEntries[next2]?.type === 'video') {
-      const nextVideo2 = feedEntries[next2].data as Video;
-      prefetchHlsManifest(nextVideo2.cloudflare_video_id);
+      prefetchHlsManifest((feedEntries[next2].data as Video).cloudflare_video_id);
     }
   }, [activeIndex, feedEntries, isScrollSettled]);
 
@@ -496,12 +481,16 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
         //   active+1 = preload="auto" (aggressive preload)  
         //   active+2 = preload="metadata" (light, headers only)
         //   everything else = no src
+        const isItemActive = index === activeIndex;
+        const isNextUp = index === activeIndex + 1;
+
         return (
           <FeedItem
             key={key}
             video={entry.data}
             index={index}
-            isActive={index === activeIndex}
+            isActive={isItemActive}
+            isNextUp={isNextUp}
             hasEntered={hasEntered}
             currentUserId={userId}
             feedSource={feedSource}

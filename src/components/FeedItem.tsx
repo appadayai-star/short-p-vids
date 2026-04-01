@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ShareDrawer } from "./ShareDrawer";
-import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import { useHlsPlayer } from "@/hooks/use-hls-player";
@@ -42,6 +42,7 @@ interface FeedItemProps {
   video: Video;
   index: number;
   isActive: boolean;
+  isNextUp?: boolean; // pre-attach HLS so transition is instant
   hasEntered: boolean;
   currentUserId: string | null;
   feedSource?: string | null;
@@ -50,7 +51,7 @@ interface FeedItemProps {
 }
 
 export const FeedItem = memo(({ 
-  video, index, isActive, hasEntered, currentUserId, 
+  video, index, isActive, isNextUp = false, hasEntered, currentUserId, 
   feedSource = null, onViewTracked, onDelete,
 }: FeedItemProps) => {
   const navigate = useNavigate();
@@ -96,7 +97,7 @@ export const FeedItem = memo(({
     cloudflareVideoId: video.cloudflare_video_id,
     fallbackUrl: video.video_url,
   });
-  const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
+  
 
   // Sync global mute
   useEffect(() => {
@@ -119,12 +120,29 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    // Increment activation ID — any async ops from previous activation become stale
     const myId = ++activationIdRef.current;
     const isStale = () => myId !== activationIdRef.current;
 
-    // NOT ACTIVE: release everything
-    if (!(isActive && hasEntered)) {
+    // NOT ACTIVE and NOT NEXT: release everything
+    if (!(isActive && hasEntered) && !isNextUp) {
+      detachSource(videoEl);
+      stopWatching();
+      setIsPlaying(false);
+      setPlaybackFailed(false);
+      return;
+    }
+
+    // NEXT UP (but not active): just pre-attach HLS source so it buffers
+    if (isNextUp && !isActive) {
+      attachSource(videoEl);
+      return () => {
+        activationIdRef.current++;
+        detachSource(videoEl);
+      };
+    }
+
+    // NOT ENTERED yet: don't play
+    if (!hasEntered) {
       detachSource(videoEl);
       stopWatching();
       setIsPlaying(false);
@@ -201,7 +219,7 @@ export const FeedItem = memo(({
       stopWatching();
       detachSource(videoEl);
     };
-  }, [isActive, hasEntered, video.id]);
+  }, [isActive, isNextUp, hasEntered, video.id]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
@@ -398,10 +416,7 @@ export const FeedItem = memo(({
     <div className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always" data-video-index={index}>
       <div className="absolute inset-0 flex items-center justify-center bg-black" style={{ paddingBottom: navOffset }}>
         <div className="relative overflow-hidden bg-black" style={{ width: `min(100%, calc((100dvh - ${navOffset}) * 9 / 16))`, aspectRatio: "9 / 16" }}>
-          {/* Poster — always visible underneath */}
-          <img src={posterSrc} alt="" className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black" />
-
-          {/* Video — fades in when playing */}
+          {/* Video — shows immediately, no poster overlay */}
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-contain bg-black"
@@ -410,7 +425,6 @@ export const FeedItem = memo(({
             webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"
             muted={isMuted}
             preload="none"
-            style={{ opacity: isPlaying ? 1 : 0, transition: 'opacity 150ms ease' }}
             onClick={handleVideoTap}
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
