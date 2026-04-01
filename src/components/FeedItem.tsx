@@ -558,7 +558,7 @@ export const FeedItem = memo(({
             preload={isActive ? "auto" : "none"}
             aria-hidden={!isActive}
             style={{
-              opacity: isActive && hasStartedPlaying ? 1 : 0,
+              opacity: hasStartedPlaying ? 1 : 0,
               transition: 'opacity 150ms ease',
             }}
             onClick={handleVideoTap}
