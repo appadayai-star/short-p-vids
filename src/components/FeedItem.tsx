@@ -127,15 +127,23 @@ export const FeedItem = memo(({
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
-        // Restore audio AFTER verified playback, deferred to next frame
-        // to ensure the browser has fully committed the playing state
+        // Restore audio only after video has truly stabilized:
+        // currentTime >= 0.35s and readyState >= 3 (HAVE_FUTURE_DATA).
+        // This prevents iOS from killing the next activation due to
+        // an audible play attempt on a not-yet-stable media element.
         const wantsMuted = getEffectiveMuted();
-        requestAnimationFrame(() => {
-          if (videoEl && !videoEl.paused) {
-            videoEl.muted = wantsMuted;
-            setIsMuted(wantsMuted);
+        if (wantsMuted) return; // Already muted, nothing to do
+        const unlock = () => {
+          const v = videoRef.current;
+          if (!v || v !== videoEl || v.paused) return; // stale or paused
+          if (v.currentTime < 0.35 || v.readyState < 3) {
+            requestAnimationFrame(unlock);
+            return;
           }
-        });
+          v.muted = false;
+          setIsMuted(false);
+        };
+        requestAnimationFrame(unlock);
       },
       onFailed: () => {
         markStartupFailure(10000);
