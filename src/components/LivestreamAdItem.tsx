@@ -55,7 +55,7 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
       return;
     }
 
-    const cancel = activateVideo(videoEl, ad.cloudflare_video_id, ad.video_url, {
+    const cancel = activateVideo(videoEl, ad.cloudflare_video_id, ad.video_url, true, {
       onPlaying: () => {},
       onFailed: () => {},
     });

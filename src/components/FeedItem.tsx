@@ -116,22 +116,18 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return () => {};
 
-    // CRITICAL: Always start muted in UI state — the controller plays muted first.
-    // Only restore audio preference AFTER verified playback in onPlaying.
-    setIsMuted(true);
+    const wantsMuted = getEffectiveMuted();
+    setIsMuted(wantsMuted);
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
 
-    return activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
-      onPlaying: () => {
+    return activateVideo(videoEl, video.cloudflare_video_id, video.video_url, wantsMuted, {
+      onPlaying: (actuallyMuted: boolean) => {
         setIsPlaying(true);
         setPlaybackFailed(false);
-        // NEVER auto-unmute. iOS Safari treats muted=false as a new autoplay
-        // attempt; outside a user gesture it kills playback entirely.
-        // Audio is ONLY restored via direct user tap (toggleMute/unmute handlers).
-        videoEl.muted = true;
-        setIsMuted(true);
+        // Controller reports the real mute state — no post-play toggling needed
+        setIsMuted(actuallyMuted);
       },
       onFailed: () => {
         markStartupFailure(10000);

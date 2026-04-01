@@ -102,17 +102,17 @@ export const ModalVideoItem = memo(({
       return;
     }
 
-    setIsMuted(getEffectiveMuted());
+    const wantsMuted = getEffectiveMuted();
+    setIsMuted(wantsMuted);
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
 
-    const cancel = activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
-      onPlaying: () => {
+    const cancel = activateVideo(videoEl, video.cloudflare_video_id, video.video_url, wantsMuted, {
+      onPlaying: (actuallyMuted: boolean) => {
         setIsPlaying(true);
         setPlaybackFailed(false);
-        const wantsMuted = getEffectiveMuted();
-        if (videoEl) { videoEl.muted = wantsMuted; setIsMuted(wantsMuted); }
+        setIsMuted(actuallyMuted);
       },
       onFailed: () => {
         markStartupFailure(10000);
@@ -131,10 +131,11 @@ export const ModalVideoItem = memo(({
     if (!videoEl) return;
     setPlaybackFailed(false);
     setIsPlaying(false);
-    activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
-      onPlaying: () => {
+    activateVideo(videoEl, video.cloudflare_video_id, video.video_url, getEffectiveMuted(), {
+      onPlaying: (actuallyMuted: boolean) => {
         setIsPlaying(true);
         setPlaybackFailed(false);
+        setIsMuted(actuallyMuted);
       },
       onFailed: () => setPlaybackFailed(true),
     });
