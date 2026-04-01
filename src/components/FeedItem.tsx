@@ -211,24 +211,51 @@ export const FeedItem = memo(({
     fetchStates();
   }, [video.id, currentUserId]);
 
+  // Detect if the video element has an audio track
+  const videoHasAudio = useCallback((): boolean => {
+    const v = videoRef.current;
+    if (!v) return true; // assume yes if we can't check
+    // Safari/WebKit
+    if (typeof (v as any).webkitAudioDecodedByteCount !== "undefined") {
+      return (v as any).webkitAudioDecodedByteCount > 0;
+    }
+    // Firefox
+    if (typeof (v as any).mozHasAudio !== "undefined") {
+      return (v as any).mozHasAudio;
+    }
+    // Standard (Chrome/Edge)
+    if ((v as any).audioTracks?.length) {
+      return (v as any).audioTracks.length > 0;
+    }
+    return true; // can't detect, assume has audio
+  }, []);
+
   // Mute handlers — iOS: per-video only, other: global
   const unmute = useCallback(() => {
     if (!isMuted) return;
+    if (!videoHasAudio()) {
+      toast("This video has no sound", { duration: 1500 });
+      return;
+    }
     setEffectiveMuted(false);
     if (videoRef.current) videoRef.current.muted = false;
     setIsMuted(false);
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
-  }, [isMuted]);
+  }, [isMuted, videoHasAudio]);
 
   const toggleMute = useCallback(() => {
+    if (isMuted && !videoHasAudio()) {
+      toast("This video has no sound", { duration: 1500 });
+      return;
+    }
     const newMuted = !isMuted;
     setEffectiveMuted(newMuted);
     if (videoRef.current) videoRef.current.muted = newMuted;
     setIsMuted(newMuted);
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
-  }, [isMuted]);
+  }, [isMuted, videoHasAudio]);
   
   const triggerHeartAnimation = useCallback((x: number, y: number) => {
     const heartId = Date.now();
