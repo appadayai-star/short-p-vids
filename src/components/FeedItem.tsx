@@ -116,7 +116,9 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return () => {};
 
-    setIsMuted(getEffectiveMuted());
+    // CRITICAL: Always start muted in UI state — the controller plays muted first.
+    // Only restore audio preference AFTER verified playback in onPlaying.
+    setIsMuted(true);
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
