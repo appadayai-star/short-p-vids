@@ -224,8 +224,8 @@ export const FeedItem = memo(({
       return (v as any).mozHasAudio;
     }
     // Standard (Chrome/Edge)
-    if (v.audioTracks && v.audioTracks.length) {
-      return v.audioTracks.length > 0;
+    if ((v as any).audioTracks?.length) {
+      return (v as any).audioTracks.length > 0;
     }
     return true; // can't detect, assume has audio
   }, []);
