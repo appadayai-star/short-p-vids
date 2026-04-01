@@ -219,7 +219,7 @@ export const FeedItem = memo(({
       stopWatching();
       detachSource(videoEl);
     };
-  }, [isActive, hasEntered, video.id]);
+  }, [isActive, isNextUp, hasEntered, video.id]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
