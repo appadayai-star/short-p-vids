@@ -115,15 +115,19 @@ export function activate(
 
   log("activate:queued", id);
 
-  // HARD AUDIO HANDOVER: immediately silence previous video BEFORE queuing
-  // This prevents any overlap window while the chain processes
-  silencePrevious(id);
+  // AUDIO HANDOVER: only mute (not pause) previous video synchronously
+  // This prevents audio overlap but keeps the previous video "alive" as fallback
+  // in case this new activation fails. Full teardown happens inside the chain.
+  if (activeEl) {
+    try { activeEl.muted = true; } catch { /* */ }
+    log("silence:mute-only", id);
+  }
 
   chain = chain.then(async () => {
     if (stale()) { log("activate:stale-skip", id); return; }
     log("activate:start", id);
 
-    // 1. Teardown
+    // 1. Teardown (now includes pause of previous)
     teardown(id);
     await delay(RELEASE_GAP_MS);
     if (stale()) return;
