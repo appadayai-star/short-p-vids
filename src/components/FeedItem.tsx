@@ -42,7 +42,6 @@ interface FeedItemProps {
   video: Video;
   index: number;
   isActive: boolean;
-  isNextUp?: boolean; // pre-attach HLS so transition is instant
   hasEntered: boolean;
   currentUserId: string | null;
   feedSource?: string | null;
@@ -51,7 +50,7 @@ interface FeedItemProps {
 }
 
 export const FeedItem = memo(({ 
-  video, index, isActive, isNextUp = false, hasEntered, currentUserId, 
+  video, index, isActive, hasEntered, currentUserId, 
   feedSource = null, onViewTracked, onDelete,
 }: FeedItemProps) => {
   const navigate = useNavigate();
