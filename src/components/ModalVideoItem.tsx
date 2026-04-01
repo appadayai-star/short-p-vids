@@ -89,13 +89,12 @@ export const ModalVideoItem = memo(({
     });
   }, []);
 
-  // Core playback lifecycle — uses race-safe activate
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
     if (!isActive) {
-      deactivate(videoEl);
+      deactivateVideo(videoEl);
       stopWatching();
       setIsPlaying(false);
       setPlaybackFailed(false);
@@ -106,7 +105,7 @@ export const ModalVideoItem = memo(({
     setIsPlaying(false);
     markLoadStart();
 
-    const cleanup = activate(videoEl, {
+    const cancel = activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
@@ -118,7 +117,7 @@ export const ModalVideoItem = memo(({
     });
 
     return () => {
-      cleanup();
+      cancel();
       stopWatching();
     };
   }, [isActive, video.id]);
