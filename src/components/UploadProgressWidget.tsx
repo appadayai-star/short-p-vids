@@ -9,6 +9,7 @@ export const UploadProgressWidget = () => {
   const isComplete = uploadState.status === 'complete';
   const isError = uploadState.status === 'error';
   const isActive = uploadState.status === 'uploading' || uploadState.status === 'processing';
+  const showBatchInfo = uploadState.totalInBatch > 1;
 
   return (
     <div className="fixed top-3 left-3 z-[100] flex items-center gap-2 bg-card border border-border rounded-full px-3 py-2 shadow-lg animate-in slide-in-from-left-2 fade-in duration-300">
@@ -30,7 +31,12 @@ export const UploadProgressWidget = () => {
             <Loader2 className="absolute inset-0 m-auto h-3 w-3 animate-spin text-primary" />
           </div>
           <span className="text-xs font-medium text-foreground whitespace-nowrap">
-            {uploadState.status === 'uploading' ? 'Uploading...' : 'Processing...'}
+            {uploadState.status === 'uploading' ? 'Uploading' : 'Processing'}
+            {showBatchInfo && ` ${uploadState.currentIndex}/${uploadState.totalInBatch}`}
+            {!showBatchInfo && '...'}
+            {uploadState.queueCount > 0 && (
+              <span className="text-muted-foreground ml-1">+{uploadState.queueCount}</span>
+            )}
           </span>
         </>
       )}
@@ -39,7 +45,9 @@ export const UploadProgressWidget = () => {
           <div className="h-6 w-6 rounded-full bg-green-500 flex items-center justify-center">
             <Check className="h-3.5 w-3.5 text-white" />
           </div>
-          <span className="text-xs font-medium text-foreground">Posted!</span>
+          <span className="text-xs font-medium text-foreground">
+            {showBatchInfo ? `${uploadState.totalInBatch} videos posted!` : 'Posted!'}
+          </span>
         </>
       )}
       {isError && (
