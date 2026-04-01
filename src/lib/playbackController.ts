@@ -1,16 +1,12 @@
 /**
- * Global Serialized Playback Controller
+ * Global Serialized Playback Controller v2
  * 
- * ARCHITECTURE:
- * - ONE global HLS instance, ONE active video element at any time
- * - All activate/deactivate calls are serialized through a promise chain
- * - No overlapping teardown/attach operations — impossible by design
- * - Mobile gets a controlled gap between teardown and re-attach
- * 
- * LIFECYCLE:
- * 1. activate(el, src) queues: teardown previous → gap → attach new → wait ready → play
- * 2. deactivate() queues: teardown current
- * 3. Each step checks a monotonic token to abort if superseded
+ * RULES:
+ * - ONE HLS instance, ONE active video at any time
+ * - All operations serialized via promise chain — no overlap possible
+ * - Every await is bounded — chain NEVER deadlocks
+ * - On timeout, we STILL attempt play() — never block playback
+ * - finally{} ensures chain always proceeds even on errors
  */
 
 import Hls from "hls.js";
@@ -19,8 +15,8 @@ import { getCloudflareStreamUrl, supportsHlsNatively } from "@/lib/cloudinary";
 const IS_MOBILE = /iPhone|iPad|iPod|Android|Mobile/i.test(
   typeof navigator !== "undefined" ? navigator.userAgent : ""
 );
-const RELEASE_GAP_MS = IS_MOBILE ? 120 : 20;
-const READY_TIMEOUT_MS = 5000;
+const RELEASE_GAP_MS = IS_MOBILE ? 100 : 10;
+const READY_TIMEOUT_MS = 1500; // Short — we'll try play() regardless
 
 // ---- Singleton state ----
 let hls: Hls | null = null;
@@ -29,113 +25,36 @@ let token = 0;
 let chain: Promise<void> = Promise.resolve();
 
 const log = (tag: string, id: string, extra: Record<string, unknown> = {}) => {
-  console.log(`[PC:${tag}]`, id.slice(0, 8), { ...extra, t: Date.now() % 100000 });
+  console.debug(`[PC:${tag}]`, id.slice(0, 8), { ...extra, t: Date.now() % 100000 });
 };
 
 // ---- Internal helpers ----
 
 function hardRelease(el: HTMLVideoElement) {
-  try {
-    el.pause();
-  } catch { /* best effort */ }
-  try {
-    el.srcObject = null;
-    el.removeAttribute("src");
-    el.load();
-  } catch { /* best effort */ }
+  try { el.pause(); } catch { /* */ }
+  try { el.srcObject = null; el.removeAttribute("src"); el.load(); } catch { /* */ }
 }
 
 function destroyHls() {
-  if (hls) {
-    try { hls.destroy(); } catch { /* best effort */ }
-    hls = null;
-  }
+  if (hls) { try { hls.destroy(); } catch { /* */ } hls = null; }
 }
 
 function teardown(id: string) {
   log("teardown", id);
   destroyHls();
-  if (activeEl) {
-    hardRelease(activeEl);
-    activeEl = null;
-  }
+  if (activeEl) { hardRelease(activeEl); activeEl = null; }
 }
 
-function wait(ms: number): Promise<void> {
+function delay(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
-/**
- * Wait for a video element to reach a ready-to-play state.
- * Resolves when ready, rejects on timeout.
- */
-function waitForReady(
-  el: HTMLVideoElement,
-  myToken: number,
-  id: string
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error("ready-timeout"));
-    }, READY_TIMEOUT_MS);
-
-    const onReady = () => {
-      if (myToken !== token) { cleanup(); reject(new Error("stale")); return; }
-      log("ready", id, { readyState: el.readyState });
-      cleanup();
-      resolve();
-    };
-
-    const onError = () => {
-      cleanup();
-      reject(new Error("media-error"));
-    };
-
-    const cleanup = () => {
-      clearTimeout(timer);
-      el.removeEventListener("canplay", onReady);
-      el.removeEventListener("loadeddata", onReady);
-      el.removeEventListener("error", onError);
-    };
-
-    // Already ready?
-    if (el.readyState >= 3) {
-      cleanup();
-      resolve();
-      return;
-    }
-
-    el.addEventListener("canplay", onReady, { once: true });
-    el.addEventListener("loadeddata", onReady, { once: true });
-    el.addEventListener("error", onError, { once: true });
-  });
-}
-
-function waitForHlsReady(
-  hlsInstance: Hls,
-  myToken: number,
-  id: string
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error("hls-ready-timeout"));
-    }, READY_TIMEOUT_MS);
-
-    hlsInstance.once(Hls.Events.MANIFEST_PARSED, () => {
-      clearTimeout(timer);
-      if (myToken !== token) { reject(new Error("stale")); return; }
-      log("manifest-parsed", id);
-      resolve();
-    });
-
-    hlsInstance.once(Hls.Events.ERROR, (_e, data) => {
-      if (data.fatal) {
-        clearTimeout(timer);
-        reject(new Error(`hls-fatal:${data.details}`));
-      }
-    });
-  });
+/** Race a promise against a timeout. Resolves to 'timeout' if it expires, otherwise the promise result. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'> {
+  return Promise.race([
+    promise,
+    new Promise<'timeout'>(r => setTimeout(() => r('timeout'), ms)),
+  ]);
 }
 
 // ---- Public API ----
@@ -145,11 +64,6 @@ export interface ActivateCallbacks {
   onFailed: () => void;
 }
 
-/**
- * Activate a video element with the given source.
- * Automatically serialized — safe to call rapidly.
- * Returns a cancel function.
- */
 export function activate(
   el: HTMLVideoElement,
   cloudflareVideoId: string | null | undefined,
@@ -159,170 +73,133 @@ export function activate(
   const myToken = ++token;
   const id = cloudflareVideoId || "fallback";
   let cancelled = false;
+  const stale = () => myToken !== token || cancelled;
 
   log("activate:queue", id);
 
   chain = chain.then(async () => {
-    if (myToken !== token || cancelled) return;
+    if (stale()) return;
 
-    // Step 1: Teardown previous
+    // 1. Teardown previous
     teardown(id);
 
-    // Step 2: Release gap
-    await wait(RELEASE_GAP_MS);
-    if (myToken !== token || cancelled) return;
+    // 2. Release gap
+    await delay(RELEASE_GAP_MS);
+    if (stale()) return;
 
-    // Step 3: Attach new source
+    // 3. Attach source
     activeEl = el;
-    el.muted = el.muted; // preserve current mute state
     el.playsInline = true;
     el.preload = "auto";
+    log("attach:start", id);
 
-    log("attach", id);
+    try {
+      if (!cloudflareVideoId) {
+        // Direct src fallback
+        el.src = fallbackUrl;
+        log("attach:fallback", id);
+      } else if (supportsHlsNatively()) {
+        // Safari/iOS native HLS
+        el.src = getCloudflareStreamUrl(cloudflareVideoId);
+        log("attach:native", id);
+      } else if (Hls.isSupported()) {
+        // hls.js for Chrome/Firefox
+        const hlsUrl = getCloudflareStreamUrl(cloudflareVideoId);
+        const hlsInstance = new Hls({
+          maxBufferLength: 4,
+          maxMaxBufferLength: 15,
+          maxBufferSize: 20 * 1000 * 1000,
+          startLevel: 0,
+          capLevelToPlayerSize: true,
+          lowLatencyMode: false,
+          backBufferLength: 3,
+          enableWorker: true,
+        });
+        hls = hlsInstance;
 
-    let retries = 0;
-    const MAX_RETRIES = 1;
+        hlsInstance.attachMedia(el);
 
-    const tryAttach = async (): Promise<boolean> => {
-      if (myToken !== token || cancelled) return false;
+        // Wait for MEDIA_ATTACHED — bounded
+        const attachResult = await withTimeout(
+          new Promise<'attached'>(res => hlsInstance.once(Hls.Events.MEDIA_ATTACHED, () => res('attached'))),
+          1000
+        );
+        log("media-attached", id, { result: attachResult });
+        if (stale()) return;
 
-      try {
-        if (!cloudflareVideoId) {
-          // Simple fallback: direct src
-          el.src = fallbackUrl;
-          await waitForReady(el, myToken, id);
-        } else if (supportsHlsNatively()) {
-          // Safari/iOS: native HLS
-          const hlsUrl = getCloudflareStreamUrl(cloudflareVideoId);
-          el.src = hlsUrl;
-          log("attach:native", id);
-          await waitForReady(el, myToken, id);
-        } else if (Hls.isSupported()) {
-          // Chrome/Firefox: hls.js
-          const hlsUrl = getCloudflareStreamUrl(cloudflareVideoId);
-          const hlsInstance = new Hls({
-            maxBufferLength: 4,
-            maxMaxBufferLength: 15,
-            maxBufferSize: 20 * 1000 * 1000,
-            startLevel: 0,
-            capLevelToPlayerSize: true,
-            lowLatencyMode: false,
-            backBufferLength: 3,
-            enableWorker: true,
-          });
-          hls = hlsInstance;
+        hlsInstance.loadSource(hlsUrl);
+        log("attach:hls.js", id);
 
-          hlsInstance.attachMedia(el);
-          
-          // Wait for MEDIA_ATTACHED before loading source
-          await new Promise<void>((resolve) => {
-            hlsInstance.once(Hls.Events.MEDIA_ATTACHED, () => {
-              log("media-attached", id);
-              resolve();
-            });
-          });
-
-          if (myToken !== token || cancelled) return false;
-
-          hlsInstance.loadSource(hlsUrl);
-          log("attach:hls.js", id);
-
-          await waitForHlsReady(hlsInstance, myToken, id);
-        } else {
-          // Final fallback
-          el.src = fallbackUrl;
-          await waitForReady(el, myToken, id);
-        }
-
-        return true;
-      } catch (err: any) {
-        if (err.message === "stale" || myToken !== token || cancelled) return false;
-        log("attach:error", id, { error: err.message, retry: retries });
-        return false;
+        // Wait for MANIFEST_PARSED — bounded
+        const manifestResult = await withTimeout(
+          new Promise<'parsed'>(res => hlsInstance.once(Hls.Events.MANIFEST_PARSED, () => res('parsed'))),
+          READY_TIMEOUT_MS
+        );
+        log("manifest", id, { result: manifestResult });
+      } else {
+        el.src = fallbackUrl;
+        log("attach:fallback-nosupport", id);
       }
-    };
-
-    // Try attach (with one retry)
-    let ready = await tryAttach();
-    if (!ready && retries < MAX_RETRIES && myToken === token && !cancelled) {
-      retries++;
-      log("retry", id, { attempt: retries });
-      // Full cleanup before retry
-      destroyHls();
-      hardRelease(el);
-      await wait(RELEASE_GAP_MS * 2);
-      if (myToken !== token || cancelled) return;
-      activeEl = el;
-      ready = await tryAttach();
+    } catch (err: any) {
+      log("attach:error", id, { error: err.message });
+      // Don't return — still try to play
     }
 
-    if (!ready || myToken !== token || cancelled) {
-      if (myToken === token && !cancelled) {
-        log("failed", id);
-        callbacks.onFailed();
-      }
-      return;
+    if (stale()) return;
+
+    // 4. Wait briefly for readiness (but DON'T block on it)
+    if (el.readyState < 2) {
+      const readyResult = await withTimeout(
+        new Promise<'ready'>(res => {
+          const cb = () => { el.removeEventListener('canplay', cb); el.removeEventListener('loadeddata', cb); res('ready'); };
+          el.addEventListener('canplay', cb, { once: true });
+          el.addEventListener('loadeddata', cb, { once: true });
+        }),
+        READY_TIMEOUT_MS
+      );
+      log("readiness", id, { result: readyResult, readyState: el.readyState });
     }
 
-    // Step 4: Play
-    if (myToken !== token || cancelled) return;
-    log("play:call", id, { readyState: el.readyState, paused: el.paused });
+    if (stale()) return;
 
+    // 5. ALWAYS attempt play
+    log("play:call", id, { readyState: el.readyState, networkState: el.networkState, paused: el.paused });
     try {
       el.currentTime = 0;
       await el.play();
-      if (myToken !== token || cancelled) return;
-      log("playing", id);
+      if (stale()) return;
+      log("play:ok", id);
       callbacks.onPlaying();
     } catch (err: any) {
-      if (myToken !== token || cancelled) return;
+      if (stale()) return;
       if (err.name === "AbortError" || err.name === "NotAllowedError") {
         log("play:benign", id, { name: err.name });
-        // Still consider it "playing" for UI purposes — autoplay blocked is normal
-        callbacks.onPlaying();
+        callbacks.onPlaying(); // autoplay policy — still counts
         return;
       }
       log("play:failed", id, { name: err.name, message: err.message });
       callbacks.onFailed();
     }
   }).catch((err) => {
+    // CRITICAL: catch ensures chain NEVER stalls
     log("chain:error", id, { error: String(err) });
+    if (!stale()) callbacks.onFailed();
   });
 
-  // Return cancel function
-  return () => {
-    cancelled = true;
-  };
+  return () => { cancelled = true; };
 }
 
-/**
- * Deactivate a specific video element.
- * Serialized — won't interfere with pending activations.
- */
 export function deactivateVideo(el: HTMLVideoElement) {
   const myToken = ++token;
-  const id = "deactivate";
-
   chain = chain.then(() => {
     if (myToken !== token) return;
-    if (activeEl === el) {
-      teardown(id);
-    } else {
-      // Element isn't the active one — just hard-release it
-      hardRelease(el);
-    }
+    if (activeEl === el) { teardown("deactivate"); } else { hardRelease(el); }
   }).catch(() => {});
 }
 
-/**
- * Immediately release all resources (e.g., on page navigation).
- */
 export function releaseAll() {
   token++;
   destroyHls();
-  if (activeEl) {
-    hardRelease(activeEl);
-    activeEl = null;
-  }
+  if (activeEl) { hardRelease(activeEl); activeEl = null; }
   chain = Promise.resolve();
 }
