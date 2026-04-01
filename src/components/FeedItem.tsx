@@ -8,8 +8,8 @@ import { ShareDrawer } from "./ShareDrawer";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
-import { activate as activateVideo, deactivateVideo, IS_IOS_WEB, getIosUserWantsSound, setIosUserWantsSound } from "@/lib/playbackController";
-import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
+import { activate as activateVideo, deactivateVideo, IS_IOS_WEB } from "@/lib/playbackController";
+import { getEffectiveMuted, setEffectiveMuted, onMuteChange } from "@/lib/globalMute";
 import { getGuestClientId, getGuestLikes, setGuestLikes } from "@/lib/guestLikes";
 import {
   DropdownMenu,
