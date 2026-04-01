@@ -42,8 +42,6 @@ interface FeedItemProps {
   video: Video;
   index: number;
   isActive: boolean;
-  shouldPreload?: boolean;
-  shouldPreloadMeta?: boolean;
   hasEntered: boolean;
   currentUserId: string | null;
   feedSource?: string | null;
@@ -52,36 +50,19 @@ interface FeedItemProps {
 }
 
 export const FeedItem = memo(({ 
-  video, 
-  index,
-  isActive,
-  shouldPreload = false,
-  shouldPreloadMeta = false,
-  hasEntered,
-  currentUserId, 
-  feedSource = null,
-  onViewTracked,
-  onDelete,
+  video, index, isActive, hasEntered, currentUserId, 
+  feedSource = null, onViewTracked, onDelete,
 }: FeedItemProps) => {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const retryCountRef = useRef(0);
   const progressBarRef = useRef<HTMLDivElement>(null);
-  const seqRef = useRef(0); // monotonic counter to prevent stale async ops
+  const activationIdRef = useRef(0); // increments each activation to cancel stale ops
 
-  // Watch metrics tracking
   const {
-    markLoadStart,
-    markStartupFailure,
-    stopWatching,
-    getMetrics,
+    markLoadStart, markStartupFailure, stopWatching, getMetrics,
   } = useWatchMetrics({
-    videoId: video.id,
-    userId: currentUserId,
-    isActive,
-    videoRef,
-    videoIndex: index,
-    feedSource,
+    videoId: video.id, userId: currentUserId, isActive, videoRef,
+    videoIndex: index, feedSource,
     onViewRecorded: () => {
       const metrics = getMetrics();
       onViewTracked(video.id, metrics.watchDurationSeconds);
@@ -99,14 +80,14 @@ export const FeedItem = memo(({
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [localVideo, setLocalVideo] = useState(video);
-  const [hasStartedPlaying, setHasStartedPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   
-  // Progress bar state
+  // Progress bar
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
   
-  // Double-tap like state
+  // Double-tap
   const [doubleTapHearts, setDoubleTapHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -117,186 +98,150 @@ export const FeedItem = memo(({
   });
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
-  // Sync with global mute state
+  // Sync global mute
   useEffect(() => {
     return onMuteChange((muted) => {
       setIsMuted(muted);
-      if (videoRef.current) {
-        videoRef.current.muted = muted;
-      }
+      if (videoRef.current) videoRef.current.muted = muted;
     });
   }, []);
 
   /**
-   * UNIFIED source + playback lifecycle.
+   * CORE PLAYBACK LIFECYCLE
    * 
-   * CRITICAL: Only the ACTIVE video gets an HLS instance attached.
-   * Mobile browsers limit MediaSource/decoder instances (~2-4).
-   * If we attach HLS to preloaded videos too, we exhaust that limit
-   * after scrolling through enough videos, causing play() to resolve
-   * into a dead first-frame state where the video appears loaded but
-   * never actually plays.
-   * 
-   * Preloading is handled by the prefetch system (manifest + segment
-   * fetch via the network cache), NOT by attaching HLS instances.
+   * Simple rules:
+   * 1. Only active video gets an HLS source
+   * 2. Wait for canplay, then play()
+   * 3. On error, retry up to 2 times with full teardown
+   * 4. On deactivation, fully release everything
    */
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    const id = ++seqRef.current;
-    const isStale = () => id !== seqRef.current;
+    // Increment activation ID — any async ops from previous activation become stale
+    const myId = ++activationIdRef.current;
+    const isStale = () => myId !== activationIdRef.current;
 
-    // === NOT ACTIVE — fully release all resources ===
+    // NOT ACTIVE: release everything
     if (!(isActive && hasEntered)) {
-      stopWatching();
       detachSource(videoEl);
-      setHasStartedPlaying(false);
+      stopWatching();
+      setIsPlaying(false);
       setPlaybackFailed(false);
-      return () => {
-        seqRef.current++;
-      };
+      return;
     }
 
-    // === ACTIVE VIDEO — attach source and play ===
+    // ACTIVE: attach and play
     setPlaybackFailed(false);
-    setHasStartedPlaying(false);
-    retryCountRef.current = 0;
+    setIsPlaying(false);
     markLoadStart();
 
-    // Attach fresh HLS source (destroys any previous instance first)
-    attachSource(videoEl);
-    videoEl.currentTime = 0;
+    let retryCount = 0;
+    const MAX_RETRIES = 2;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const clearFail = () => {
+    const startPlayback = () => {
       if (isStale()) return;
-      setPlaybackFailed(false);
-      setHasStartedPlaying(true);
+      attachSource(videoEl);
+      videoEl.currentTime = 0;
     };
 
-    const attemptPlay = () => {
+    const handleCanPlay = () => {
       if (isStale()) return;
-      videoEl.play().catch((err) => {
+      videoEl.play().catch(err => {
         if (isStale()) return;
         if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-
-        retryCountRef.current += 1;
-        if (retryCountRef.current <= 3) {
-          setTimeout(() => {
-            if (isStale()) return;
-            // Full teardown + re-attach to get a clean MediaSource
-            detachSource(videoEl);
-            attachSource(videoEl);
-            attemptPlay();
-          }, 300 * retryCountRef.current);
-          return;
-        }
-        markStartupFailure(10000);
-        setPlaybackFailed(true);
+        handlePlaybackError();
       });
     };
 
-    const handleError = () => {
-      if (isStale()) return;
-      if (!videoEl.paused && videoEl.currentTime > 0) return;
-
-      retryCountRef.current += 1;
-      if (retryCountRef.current <= 3) {
-        setTimeout(() => {
-          if (isStale()) return;
-          detachSource(videoEl);
-          attachSource(videoEl);
-          attemptPlay();
-        }, 300 * retryCountRef.current);
-        return;
-      }
-      markStartupFailure(10000);
-      setPlaybackFailed(true);
-    };
-
-    // Detect dead first-frame: video thinks it's playing but stuck at 0
-    let stuckCheckTimer: ReturnType<typeof setTimeout> | null = null;
     const handlePlaying = () => {
       if (isStale()) return;
-      clearFail();
-      // After play event fires, check if actually making progress
-      stuckCheckTimer = setTimeout(() => {
-        if (isStale()) return;
-        if (videoEl && !videoEl.paused && videoEl.currentTime === 0) {
-          console.warn('[FeedItem] Dead first-frame detected, resetting');
-          retryCountRef.current += 1;
-          if (retryCountRef.current <= 3) {
-            detachSource(videoEl);
-            attachSource(videoEl);
-            attemptPlay();
-          } else {
-            setPlaybackFailed(true);
-          }
-        }
-      }, 1500);
+      setIsPlaying(true);
+      setPlaybackFailed(false);
     };
 
-    videoEl.addEventListener('loadeddata', clearFail);
-    videoEl.addEventListener('canplay', clearFail);
+    const handlePlaybackError = () => {
+      if (isStale()) return;
+      // If already playing fine, ignore
+      if (!videoEl.paused && videoEl.currentTime > 0) return;
+
+      retryCount++;
+      if (retryCount <= MAX_RETRIES) {
+        // Full teardown and re-attach
+        detachSource(videoEl);
+        retryTimer = setTimeout(() => {
+          if (isStale()) return;
+          startPlayback();
+        }, 500);
+      } else {
+        markStartupFailure(10000);
+        setPlaybackFailed(true);
+      }
+    };
+
+    const handleError = () => handlePlaybackError();
+
+    videoEl.addEventListener('canplay', handleCanPlay);
     videoEl.addEventListener('playing', handlePlaying);
     videoEl.addEventListener('error', handleError);
 
-    attemptPlay();
+    // Start
+    startPlayback();
 
     return () => {
-      // Increment seq so any in-flight async ops become stale
-      seqRef.current++;
-      if (stuckCheckTimer) clearTimeout(stuckCheckTimer);
-      videoEl.removeEventListener('loadeddata', clearFail);
-      videoEl.removeEventListener('canplay', clearFail);
+      activationIdRef.current++; // invalidate any in-flight ops
+      if (retryTimer) clearTimeout(retryTimer);
+      videoEl.removeEventListener('canplay', handleCanPlay);
       videoEl.removeEventListener('playing', handlePlaying);
       videoEl.removeEventListener('error', handleError);
-      // CRITICAL: fully release resources on deactivation
-      // so we don't leak MediaSource instances
       stopWatching();
       detachSource(videoEl);
     };
-  }, [isActive, hasEntered, markLoadStart, markStartupFailure, stopWatching, attachSource, detachSource]);
+  }, [isActive, hasEntered, video.id]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
-    retryCountRef.current = 0;
     setPlaybackFailed(false);
-    // Re-attach from scratch
+    setIsPlaying(false);
+    // Trigger re-activation by bumping the activation ID and re-running
+    activationIdRef.current++;
     detachSource(videoEl);
     attachSource(videoEl);
-    videoEl.play().catch(() => {});
+    videoEl.currentTime = 0;
+    const onCanPlay = () => {
+      videoEl.removeEventListener('canplay', onCanPlay);
+      videoEl.play().catch(() => setPlaybackFailed(true));
+    };
+    videoEl.addEventListener('canplay', onCanPlay);
   }, [attachSource, detachSource]);
 
-  // Check if guest has liked this video
+  // Guest likes check
   useEffect(() => {
     if (!currentUserId) {
-      const guestLikes = getGuestLikes();
-      setIsLiked(guestLikes.includes(video.id));
+      setIsLiked(getGuestLikes().includes(video.id));
     }
   }, [video.id, currentUserId]);
 
-  // Fetch interaction states for logged-in users
+  // Fetch user interaction states
   useEffect(() => {
     if (!currentUserId) return;
-
     const fetchStates = async () => {
       const [likeResult, saveResult, savesCountResult] = await Promise.all([
         supabase.from("likes").select("id").eq("video_id", video.id).eq("user_id", currentUserId).maybeSingle(),
         supabase.from("saved_videos").select("id").eq("video_id", video.id).eq("user_id", currentUserId).maybeSingle(),
         supabase.from("saved_videos").select("*", { count: "exact", head: true }).eq("video_id", video.id)
       ]);
-
       setIsLiked(!!likeResult.data);
       setIsSaved(!!saveResult.data);
       setSavesCount(savesCountResult.count || 0);
     };
-
     fetchStates();
   }, [video.id, currentUserId]);
 
-  // Unmute only (not toggle) - used for single tap
+  // Mute handlers
   const unmute = useCallback(() => {
     if (isMuted) {
       setGlobalMuted(false);
@@ -305,24 +250,19 @@ export const FeedItem = memo(({
     }
   }, [isMuted]);
 
-  // Toggle mute - used for the mute button
   const toggleMute = useCallback(() => {
-    const newMuted = !isMuted;
-    setGlobalMuted(newMuted);
+    setGlobalMuted(!isMuted);
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
   
-  // Trigger heart animation at position
   const triggerHeartAnimation = useCallback((x: number, y: number) => {
     const heartId = Date.now();
     setDoubleTapHearts(prev => [...prev, { id: heartId, x, y }]);
-    setTimeout(() => {
-      setDoubleTapHearts(prev => prev.filter(h => h.id !== heartId));
-    }, 1000);
+    setTimeout(() => setDoubleTapHearts(prev => prev.filter(h => h.id !== heartId)), 1000);
   }, []);
 
-  // Progress bar handlers
+  // Progress bar
   const handleTimeUpdate = useCallback(() => {
     const videoEl = videoRef.current;
     if (videoEl && !isScrubbing) {
@@ -333,21 +273,16 @@ export const FeedItem = memo(({
 
   const handleLoadedMetadata = useCallback(() => {
     const videoEl = videoRef.current;
-    if (videoEl) {
-      setDuration(videoEl.duration || 0);
-    }
+    if (videoEl) setDuration(videoEl.duration || 0);
   }, []);
 
   const seekToPosition = useCallback((clientX: number) => {
     const bar = progressBarRef.current;
     const videoEl = videoRef.current;
     if (!bar || !videoEl || !duration) return;
-    
     const rect = bar.getBoundingClientRect();
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-    const percent = x / rect.width;
-    const newTime = percent * duration;
-    
+    const newTime = (x / rect.width) * duration;
     videoEl.currentTime = newTime;
     setProgress(newTime);
   }, [duration]);
@@ -357,111 +292,64 @@ export const FeedItem = memo(({
     e.stopPropagation();
     setIsScrubbing(true);
     seekToPosition(e.clientX);
-    
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      seekToPosition(moveEvent.clientX);
-    };
-    
-    const handleMouseUp = () => {
-      setIsScrubbing(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-    
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    const move = (ev: MouseEvent) => seekToPosition(ev.clientX);
+    const up = () => { setIsScrubbing(false); document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
   }, [seekToPosition]);
 
   const handleProgressTouchStart = useCallback((e: React.TouchEvent) => {
     e.stopPropagation();
     setIsScrubbing(true);
     seekToPosition(e.touches[0].clientX);
-    
-    const handleTouchMove = (moveEvent: TouchEvent) => {
-      seekToPosition(moveEvent.touches[0].clientX);
-    };
-    
-    const handleTouchEnd = () => {
-      setIsScrubbing(false);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
-    };
-    
-    document.addEventListener('touchmove', handleTouchMove);
-    document.addEventListener('touchend', handleTouchEnd);
+    const move = (ev: TouchEvent) => seekToPosition(ev.touches[0].clientX);
+    const end = () => { setIsScrubbing(false); document.removeEventListener('touchmove', move); document.removeEventListener('touchend', end); };
+    document.addEventListener('touchmove', move);
+    document.addEventListener('touchend', end);
   }, [seekToPosition]);
 
   const toggleLike = useCallback(async () => {
     const clientId = getGuestClientId();
     const wasLiked = isLiked;
-    
     setIsLiked(!wasLiked);
     setLikesCount(prev => wasLiked ? prev - 1 : prev + 1);
-
     try {
       const { data, error } = await supabase.functions.invoke('like-video', {
-        body: {
-          videoId: video.id,
-          clientId: currentUserId || clientId,
-          action: wasLiked ? 'unlike' : 'like'
-        }
+        body: { videoId: video.id, clientId: currentUserId || clientId, action: wasLiked ? 'unlike' : 'like' }
       });
-
       if (error) throw error;
-
-      if (data?.likesCount !== undefined) {
-        setLikesCount(data.likesCount);
-      }
-
+      if (data?.likesCount !== undefined) setLikesCount(data.likesCount);
       if (!currentUserId) {
         const guestLikes = getGuestLikes();
-        if (wasLiked) {
-          setGuestLikes(guestLikes.filter(id => id !== video.id));
-        } else {
-          setGuestLikes([...guestLikes, video.id]);
-        }
+        wasLiked ? setGuestLikes(guestLikes.filter(id => id !== video.id)) : setGuestLikes([...guestLikes, video.id]);
       }
-    } catch (error) {
+    } catch {
       setIsLiked(wasLiked);
       setLikesCount(prev => wasLiked ? prev + 1 : prev - 1);
       toast.error("Failed to update like");
     }
   }, [isLiked, video.id, currentUserId]);
 
-  // Handle video tap - single tap unmutes, double tap likes
   const handleVideoTap = useCallback((e: React.MouseEvent<HTMLVideoElement>) => {
     e.preventDefault();
-    
     const now = Date.now();
     const timeSinceLastTap = now - lastTapTimeRef.current;
-    
-    // Get tap position for heart animation
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
-    // Clear any pending single tap
+
     if (singleTapTimeoutRef.current) {
       clearTimeout(singleTapTimeoutRef.current);
       singleTapTimeoutRef.current = null;
     }
-    
-    // Double tap detection (within 300ms)
+
     if (timeSinceLastTap > 50 && timeSinceLastTap < 300) {
-      // Double tap - like the video
       lastTapTimeRef.current = 0;
       triggerHeartAnimation(x, y);
-      
-      // Only like if not already liked
-      if (!isLiked) {
-        toggleLike();
-      }
+      if (!isLiked) toggleLike();
     } else {
-      // Potential single tap - wait to see if it's a double tap
       lastTapTimeRef.current = now;
-      
       singleTapTimeoutRef.current = setTimeout(() => {
-        // Single tap confirmed - unmute only
         unmute();
         singleTapTimeoutRef.current = null;
       }, 300);
@@ -469,11 +357,7 @@ export const FeedItem = memo(({
   }, [unmute, triggerHeartAnimation, isLiked, toggleLike]);
 
   const toggleSave = async () => {
-    if (!currentUserId) {
-      navigate("/auth");
-      return;
-    }
-
+    if (!currentUserId) { navigate("/auth"); return; }
     try {
       if (isSaved) {
         await supabase.from("saved_videos").delete().eq("video_id", video.id).eq("user_id", currentUserId);
@@ -486,81 +370,45 @@ export const FeedItem = memo(({
         setSavesCount(prev => prev + 1);
         toast.success("Saved");
       }
-    } catch (error) {
-      toast.error("Failed to save video");
-    }
+    } catch { toast.error("Failed to save video"); }
   };
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!currentUserId || video.user_id !== currentUserId) return;
-
     try {
       await supabase.from("videos").delete().eq("id", video.id);
       toast.success("Video deleted");
       onDelete?.(video.id);
-    } catch (error) {
-      toast.error("Failed to delete video");
-    }
-  };
-
-  const handleOpenEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsEditOpen(true);
+    } catch { toast.error("Failed to delete video"); }
   };
 
   const handleCategoryClick = (tag: string) => {
     window.location.href = `/?category=${encodeURIComponent(tag)}`;
   };
 
-  const handleProfileClick = () => {
-    navigate(`/profile/${video.user_id}`);
-  };
+  const handleProfileClick = () => navigate(`/profile/${video.user_id}`);
 
   const isOwnVideo = currentUserId === video.user_id;
   const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
 
   return (
-    <div 
-      className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always"
-      data-video-index={index}
-    >
-      {/* Fixed 9:16 media stage so thumbnail and video are always identical framing */}
-      <div
-        className="absolute inset-0 flex items-center justify-center bg-black"
-        style={{ paddingBottom: navOffset }}
-      >
-        <div
-          className="relative overflow-hidden bg-black"
-          style={{
-            width: `min(100%, calc((100dvh - ${navOffset}) * 9 / 16))`,
-            aspectRatio: "9 / 16",
-          }}
-        >
-          <img
-            src={posterSrc}
-            alt=""
-            className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black"
-          />
+    <div className="relative w-full h-[100dvh] flex-shrink-0 bg-black snap-start snap-always" data-video-index={index}>
+      <div className="absolute inset-0 flex items-center justify-center bg-black" style={{ paddingBottom: navOffset }}>
+        <div className="relative overflow-hidden bg-black" style={{ width: `min(100%, calc((100dvh - ${navOffset}) * 9 / 16))`, aspectRatio: "9 / 16" }}>
+          {/* Poster — always visible underneath */}
+          <img src={posterSrc} alt="" className="absolute inset-0 w-full h-full object-contain pointer-events-none bg-black" />
 
-          {/* Video player - HLS source managed by useHlsPlayer hook */}
+          {/* Video — fades in when playing */}
           <video
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-contain bg-black"
-            loop
-            playsInline
-            // @ts-ignore - WebView-specific attributes to prevent auto-fullscreen in in-app browsers (X, Instagram, etc.)
-            webkit-playsinline="true"
-            x5-playsinline="true"
-            x5-video-player-type="h5"
-            x5-video-player-fullscreen="false"
+            loop playsInline
+            // @ts-ignore
+            webkit-playsinline="true" x5-playsinline="true" x5-video-player-type="h5" x5-video-player-fullscreen="false"
             muted={isMuted}
-            preload={isActive ? "auto" : "none"}
-            aria-hidden={!isActive}
-            style={{
-              opacity: hasStartedPlaying ? 1 : 0,
-              transition: 'opacity 150ms ease',
-            }}
+            preload="none"
+            style={{ opacity: isPlaying ? 1 : 0, transition: 'opacity 150ms ease' }}
             onClick={handleVideoTap}
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
@@ -568,39 +416,24 @@ export const FeedItem = memo(({
         </div>
       </div>
 
-      {/* Double-tap heart animation */}
+      {/* Double-tap hearts */}
       {doubleTapHearts.map(heart => (
-        <div
-          key={heart.id}
-          className="absolute pointer-events-none z-30"
-          style={{
-            left: heart.x - 40,
-            top: heart.y - 40,
-          }}
-        >
-          <Heart 
-            className="h-20 w-20 fill-primary text-primary animate-double-tap-heart"
-            style={{
-              filter: 'drop-shadow(0 0 10px rgba(255, 200, 0, 0.5))',
-            }}
-          />
+        <div key={heart.id} className="absolute pointer-events-none z-30" style={{ left: heart.x - 40, top: heart.y - 40 }}>
+          <Heart className="h-20 w-20 fill-primary text-primary animate-double-tap-heart" style={{ filter: 'drop-shadow(0 0 10px rgba(255, 200, 0, 0.5))' }} />
         </div>
       ))}
 
-      {/* Playback failed - retry UI - pointer-events only on button */}
+      {/* Playback failed */}
       {playbackFailed && isActive && (
         <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/30 pointer-events-none">
-          <button 
-            onClick={handleRetry}
-            className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm pointer-events-auto"
-          >
+          <button onClick={handleRetry} className="flex flex-col items-center gap-2 p-4 bg-black/60 rounded-xl backdrop-blur-sm pointer-events-auto">
             <RefreshCw className="h-8 w-8 text-white" />
             <span className="text-white text-sm">Tap to retry</span>
           </button>
         </div>
       )}
 
-      {/* Mute indicator flash */}
+      {/* Mute indicator */}
       {showMuteIcon && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
           <div className="bg-black/50 rounded-full p-4 animate-scale-in">
@@ -610,10 +443,7 @@ export const FeedItem = memo(({
       )}
 
       {/* Right side actions */}
-      <div 
-        className="absolute right-4 flex flex-col items-center gap-5 z-40"
-        style={{ bottom: navOffset, paddingBottom: '140px' }}
-      >
+      <div className="absolute right-4 flex flex-col items-center gap-5 z-40" style={{ bottom: navOffset, paddingBottom: '140px' }}>
         <button onClick={toggleLike} className="flex flex-col items-center gap-1">
           <div className="w-11 h-11 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm hover:scale-110 transition-transform">
             <Heart className={cn("h-6 w-6", isLiked ? "fill-primary text-primary" : "text-white")} />
@@ -650,13 +480,11 @@ export const FeedItem = memo(({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-background border-border z-50">
-              <DropdownMenuItem onClick={handleOpenEdit} className="cursor-pointer">
-                <Pencil className="h-4 w-4 mr-2" />
-                Edit
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setIsEditOpen(true); }} className="cursor-pointer">
+                <Pencil className="h-4 w-4 mr-2" /> Edit
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive cursor-pointer">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
+                <Trash2 className="h-4 w-4 mr-2" /> Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -664,26 +492,13 @@ export const FeedItem = memo(({
       </div>
 
       {/* Bottom info */}
-      <div 
-        className="absolute left-0 right-0 p-4 z-40 bg-gradient-to-t from-black via-black/60 to-transparent pr-[80px]"
-        style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
-      >
+      <div className="absolute left-0 right-0 p-4 z-40 bg-gradient-to-t from-black via-black/60 to-transparent pr-[80px]" style={{ bottom: navOffset }}>
         <div className="space-y-2">
           <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity w-fit" onClick={handleProfileClick}>
             <div className="w-10 h-10 rounded-full bg-secondary overflow-hidden border-2 border-primary flex-shrink-0">
               {video.profiles.avatar_url ? (
-                <img 
-                  src={getOptimizedAvatarUrl(video.profiles.avatar_url, 80)} 
-                  alt={video.profiles.username} 
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                  decoding="async"
-                  onError={(e) => {
-                    // Hide broken image, show fallback letter
-                    (e.target as HTMLImageElement).style.display = 'none';
-                    (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                  }}
-                />
+                <img src={getOptimizedAvatarUrl(video.profiles.avatar_url, 80)} alt={video.profiles.username} className="w-full h-full object-cover" loading="lazy" decoding="async"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }} />
               ) : null}
               <div className={`w-full h-full flex items-center justify-center bg-secondary text-secondary-foreground font-bold ${video.profiles.avatar_url ? 'hidden' : ''}`}>
                 {video.profiles.username[0]?.toUpperCase() || '?'}
@@ -691,19 +506,11 @@ export const FeedItem = memo(({
             </div>
             <span className="text-white font-semibold">@{video.profiles.username}</span>
           </div>
-
           {localVideo.description && <p className="text-white/90 text-sm">{localVideo.description}</p>}
-
           {localVideo.tags && localVideo.tags.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {localVideo.tags.map((tag, idx) => (
-                <button
-                  key={idx}
-                  onClick={(e) => { e.stopPropagation(); handleCategoryClick(tag); }}
-                  className="text-primary text-sm font-semibold hover:underline cursor-pointer"
-                >
-                  #{tag}
-                </button>
+                <button key={idx} onClick={(e) => { e.stopPropagation(); handleCategoryClick(tag); }} className="text-primary text-sm font-semibold hover:underline cursor-pointer">#{tag}</button>
               ))}
             </div>
           )}
@@ -712,44 +519,23 @@ export const FeedItem = memo(({
 
       <ShareDrawer videoId={video.id} videoTitle={video.title} username={video.profiles.username} isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
 
-      {/* Progress bar - above nav bar */}
+      {/* Progress bar */}
       {isActive && (
-        <div 
-          ref={progressBarRef}
-          className="absolute left-0 right-0 h-6 z-[60] cursor-pointer group"
-          style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}
-          onMouseDown={handleProgressMouseDown}
-          onTouchStart={handleProgressTouchStart}
-        >
-          {/* Track background */}
+        <div ref={progressBarRef} className="absolute left-0 right-0 h-6 z-[60] cursor-pointer group" style={{ bottom: navOffset }}
+          onMouseDown={handleProgressMouseDown} onTouchStart={handleProgressTouchStart}>
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/30 transition-all group-hover:h-1.5 group-active:h-1.5">
-            {/* Progress fill */}
-            <div 
-              className="absolute inset-y-0 left-0 bg-primary rounded-r-full"
-              style={{ width: duration > 0 ? `${(progress / duration) * 100}%` : '0%' }}
-            />
-            {/* Scrubber dot */}
+            <div className="absolute inset-y-0 left-0 bg-primary rounded-r-full" style={{ width: duration > 0 ? `${(progress / duration) * 100}%` : '0%' }} />
             {duration > 0 && (
-              <div 
-                className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg transition-transform opacity-0 group-hover:opacity-100 group-active:opacity-100 group-active:scale-125"
-                style={{ left: `calc(${(progress / duration) * 100}% - 8px)` }}
-              />
+              <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg transition-transform opacity-0 group-hover:opacity-100 group-active:opacity-100 group-active:scale-125"
+                style={{ left: `calc(${(progress / duration) * 100}% - 8px)` }} />
             )}
           </div>
         </div>
       )}
 
-      {/* Edit Video Dialog */}
-      <EditVideoDialog
-        open={isEditOpen}
-        onOpenChange={setIsEditOpen}
-        videoId={video.id}
-        initialDescription={localVideo.description}
-        initialTags={localVideo.tags}
-        onSaved={(desc, tags) => {
-          setLocalVideo(prev => ({ ...prev, description: desc, tags }));
-        }}
-      />
+      <EditVideoDialog open={isEditOpen} onOpenChange={setIsEditOpen} videoId={video.id}
+        initialDescription={localVideo.description} initialTags={localVideo.tags}
+        onSaved={(desc, tags) => setLocalVideo(prev => ({ ...prev, description: desc, tags }))} />
     </div>
   );
 });
