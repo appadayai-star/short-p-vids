@@ -102,11 +102,7 @@ export const ModalVideoItem = memo(({
       return;
     }
 
-    // iOS: reflect session-based sound state
-    if (IS_IOS_WEB) {
-      setIsMuted(!getIosUserWantsSound());
-    }
-
+    setIsMuted(getEffectiveMuted());
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
@@ -115,9 +111,8 @@ export const ModalVideoItem = memo(({
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
-        if (IS_IOS_WEB && videoEl) {
-          setIsMuted(videoEl.muted);
-        }
+        const wantsMuted = getEffectiveMuted();
+        if (videoEl) { videoEl.muted = wantsMuted; setIsMuted(wantsMuted); }
       },
       onFailed: () => {
         markStartupFailure(10000);
