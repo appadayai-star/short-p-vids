@@ -8,7 +8,7 @@ import { ShareDrawer } from "./ShareDrawer";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
-import { activate as activateVideo, deactivateVideo, IS_IOS_WEB } from "@/lib/playbackController";
+import { activate as activateVideo, deactivateVideo, IS_IOS_WEB, getIosUserWantsSound, setIosUserWantsSound } from "@/lib/playbackController";
 import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
 import { getGuestClientId, getGuestLikes, setGuestLikes } from "@/lib/guestLikes";
 import {
@@ -75,7 +75,7 @@ export const FeedItem = memo(({
   const [isSaved, setIsSaved] = useState(false);
   const [savesCount, setSavesCount] = useState(0);
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [isMuted, setIsMuted] = useState(getGlobalMuted());
+  const [isMuted, setIsMuted] = useState(IS_IOS_WEB ? !getIosUserWantsSound() : getGlobalMuted());
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -116,7 +116,10 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return () => {};
 
-    if (IS_IOS_WEB) setIsMuted(true);
+    // iOS: reflect session-based sound state
+    if (IS_IOS_WEB) {
+      setIsMuted(!getIosUserWantsSound());
+    }
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
@@ -125,6 +128,10 @@ export const FeedItem = memo(({
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
+        // Sync UI mute state with what the controller decided
+        if (IS_IOS_WEB && videoEl) {
+          setIsMuted(videoEl.muted);
+        }
       },
       onFailed: () => {
         markStartupFailure(10000);
@@ -218,6 +225,7 @@ export const FeedItem = memo(({
   const unmute = useCallback(() => {
     if (!isMuted) return;
     if (IS_IOS_WEB) {
+      setIosUserWantsSound(true);
       if (videoRef.current) videoRef.current.muted = false;
       setIsMuted(false);
     } else {
@@ -230,6 +238,7 @@ export const FeedItem = memo(({
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
     if (IS_IOS_WEB) {
+      setIosUserWantsSound(!newMuted);
       if (videoRef.current) videoRef.current.muted = newMuted;
       setIsMuted(newMuted);
     } else {

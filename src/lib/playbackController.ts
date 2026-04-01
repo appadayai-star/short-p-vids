@@ -26,6 +26,15 @@ const log = (tag: string, id: string, extra: Record<string, unknown> = {}) => {
 
 // ---- Helpers ----
 
+// ---- iOS session-based sound state ----
+let iosUserWantsSound = false;
+
+export function getIosUserWantsSound() { return iosUserWantsSound; }
+export function setIosUserWantsSound(wants: boolean) {
+  iosUserWantsSound = wants;
+  log("iosUserWantsSound", "global", { wants });
+}
+
 function hardRelease(el: HTMLVideoElement) {
   try { el.pause(); } catch { /* */ }
   try { el.srcObject = null; el.removeAttribute("src"); el.load(); } catch { /* */ }
@@ -35,8 +44,18 @@ function destroyHls() {
   if (hls) { try { hls.destroy(); } catch { /* */ } hls = null; }
 }
 
+/** HARD AUDIO HANDOVER: mute + pause previous video immediately */
+function silencePrevious(id: string) {
+  if (activeEl) {
+    try { activeEl.muted = true; } catch { /* */ }
+    try { activeEl.pause(); } catch { /* */ }
+    log("silence:previous", id);
+  }
+}
+
 function teardown(id: string) {
   log("teardown", id);
+  silencePrevious(id);
   destroyHls();
   if (activeEl) { hardRelease(activeEl); activeEl = null; }
 }
@@ -95,6 +114,10 @@ export function activate(
   const stale = () => myToken !== token || cancelled;
 
   log("activate:queued", id);
+
+  // HARD AUDIO HANDOVER: immediately silence previous video BEFORE queuing
+  // This prevents any overlap window while the chain processes
+  silencePrevious(id);
 
   chain = chain.then(async () => {
     if (stale()) { log("activate:stale-skip", id); return; }
@@ -225,11 +248,15 @@ export function activate(
     if (stale()) return;
 
     if (success) {
-      // iOS: always stay muted on autoplay transitions — user must tap unmute per video
-      // Other platforms: restore global mute preference
+      // iOS: start muted, then unmute AFTER verified playback if user wants sound
       if (IS_IOS_WEB) {
-        el.muted = true;
-        log("play:confirmed:ios-muted", id);
+        if (iosUserWantsSound) {
+          el.muted = false;
+          log("play:confirmed:ios-unmuted-session", id);
+        } else {
+          el.muted = true;
+          log("play:confirmed:ios-muted", id);
+        }
       } else {
         el.muted = getGlobalMuted();
         log("play:confirmed", id, { muted: el.muted });
