@@ -102,6 +102,9 @@ export const ModalVideoItem = memo(({
       return;
     }
 
+    // iOS: reset mute state per video
+    if (IS_IOS_WEB) setIsMuted(true);
+
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
