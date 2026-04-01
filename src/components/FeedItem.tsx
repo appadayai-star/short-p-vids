@@ -127,23 +127,34 @@ export const FeedItem = memo(({
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
-        // Restore audio only after video has truly stabilized:
-        // currentTime >= 0.35s and readyState >= 3 (HAVE_FUTURE_DATA).
-        // This prevents iOS from killing the next activation due to
-        // an audible play attempt on a not-yet-stable media element.
         const wantsMuted = getEffectiveMuted();
-        if (wantsMuted) return; // Already muted, nothing to do
-        const unlock = () => {
+        if (wantsMuted) {
+          videoEl.muted = true;
+          setIsMuted(true);
+          return;
+        }
+        // iOS Safari treats unmuting as a NEW autoplay attempt.
+        // If we unmute before the decoder is deeply stable, Safari
+        // pauses the element. We must wait until:
+        //   1. currentTime >= 0.5s (decoder has output multiple frames)
+        //   2. readyState >= 4 (HAVE_ENOUGH_DATA — buffer is healthy)
+        //   3. 400ms wall-clock (let the audio pipeline settle)
+        // Only then is it safe to flip muted=false.
+        videoEl.muted = true;
+        setIsMuted(true);
+        const startedAt = performance.now();
+        const settle = () => {
           const v = videoRef.current;
-          if (!v || v !== videoEl || v.paused) return; // stale or paused
-          if (v.currentTime < 0.35 || v.readyState < 3) {
-            requestAnimationFrame(unlock);
+          if (!v || v !== videoEl || v.paused || v.ended) return;
+          if (v.currentTime >= 0.5 && v.readyState >= 4 && performance.now() - startedAt >= 400) {
+            v.muted = false;
+            v.volume = 1;
+            setIsMuted(false);
             return;
           }
-          v.muted = false;
-          setIsMuted(false);
+          requestAnimationFrame(settle);
         };
-        requestAnimationFrame(unlock);
+        requestAnimationFrame(settle);
       },
       onFailed: () => {
         markStartupFailure(10000);
