@@ -6,7 +6,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 import { getThumbnailUrl, preloadImage } from "@/lib/cloudinary";
 import { createAdPicker, type Ad } from "@/lib/adRotation";
-import { prefetchHlsManifest, eagerPrefetchVideo } from "@/hooks/use-hls-player";
+import { prefetchHlsManifest } from "@/hooks/use-hls-player";
 
 const PAGE_SIZE = 10;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -233,17 +233,17 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(resultVideos);
           setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
-          // Eagerly prefetch first video (instant start) + next 2
+          // Only preload thumbnails on initial load — do NOT prefetch HLS for video[0]
+          // because HLS.js will fetch the same manifest+segments when it attaches,
+          // causing duplicate requests and network contention that slows TTFF.
           if (resultVideos.length > 0) {
-            eagerPrefetchVideo(resultVideos[0].cloudflare_video_id);
             preloadImage(getThumbnailUrl(resultVideos[0].cloudflare_video_id, resultVideos[0].thumbnail_url));
           }
+          // Low-priority prefetch for video[1] (next video) — uses 'low' priority
+          // so it doesn't compete with HLS.js playing video[0]
           if (resultVideos.length > 1) {
-            eagerPrefetchVideo(resultVideos[1].cloudflare_video_id);
+            prefetchHlsManifest(resultVideos[1].cloudflare_video_id);
             preloadImage(getThumbnailUrl(resultVideos[1].cloudflare_video_id, resultVideos[1].thumbnail_url));
-          }
-          if (resultVideos.length > 2) {
-            prefetchHlsManifest(resultVideos[2].cloudflare_video_id);
           }
         }
       } catch (err) {
@@ -358,13 +358,16 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
     };
   }, [feedEntries]);
 
-  // Prefetch HLS manifests for upcoming videos when activeIndex changes
+  // Prefetch HLS manifests for upcoming videos when scroll settles
+  // Only prefetch when settled to avoid firing during rapid scrolling
   useEffect(() => {
-    // Eager prefetch next video (high priority — must be instant on swipe)
+    if (!isScrollSettled) return;
+    
+    // Prefetch next video with low priority (not eager — avoid competing with active playback)
     const next1 = activeIndex + 1;
     if (next1 < feedEntries.length && feedEntries[next1]?.type === 'video') {
       const nextVideo = feedEntries[next1].data as Video;
-      eagerPrefetchVideo(nextVideo.cloudflare_video_id);
+      prefetchHlsManifest(nextVideo.cloudflare_video_id);
       preloadImage(getThumbnailUrl(nextVideo.cloudflare_video_id, nextVideo.thumbnail_url));
     }
     // Low-priority prefetch for +2
@@ -373,7 +376,7 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
       const nextVideo2 = feedEntries[next2].data as Video;
       prefetchHlsManifest(nextVideo2.cloudflare_video_id);
     }
-  }, [activeIndex, feedEntries]);
+  }, [activeIndex, feedEntries, isScrollSettled]);
 
   // Load more
   useEffect(() => {
