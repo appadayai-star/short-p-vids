@@ -127,7 +127,7 @@ export const ModalVideoItem = memo(({
     });
   }, []);
 
-  // Unified source + playback lifecycle (same pattern as FeedItem)
+  // Unified source + playback lifecycle — only ACTIVE video gets HLS instance
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -135,25 +135,13 @@ export const ModalVideoItem = memo(({
     const id = ++seqRef.current;
     const isStale = () => id !== seqRef.current;
 
-    const hardReset = () => {
+    // === NOT ACTIVE — fully release all resources ===
+    if (!isActive) {
       stopWatching();
       detachSource(videoEl);
       setHasStartedPlaying(false);
       setPlaybackFailed(false);
-    };
-
-    const shouldAttachSource = isActive || shouldPreload || shouldPreloadMeta;
-    if (!shouldAttachSource) {
-      hardReset();
-      return;
-    }
-
-    if (!isActive) {
-      setHasStartedPlaying(false);
-      setPlaybackFailed(false);
-      videoEl.pause();
-      attachSource(videoEl);
-      return;
+      return () => { seqRef.current++; };
     }
 
     // === ACTIVE ===
@@ -180,6 +168,7 @@ export const ModalVideoItem = memo(({
         if (retryCountRef.current <= 3) {
           setTimeout(() => {
             if (isStale()) return;
+            detachSource(videoEl);
             attachSource(videoEl);
             attemptPlay();
           }, 300 * retryCountRef.current);
@@ -197,6 +186,7 @@ export const ModalVideoItem = memo(({
       if (retryCountRef.current <= 3) {
         setTimeout(() => {
           if (isStale()) return;
+          detachSource(videoEl);
           attachSource(videoEl);
           attemptPlay();
         }, 300 * retryCountRef.current);
@@ -206,22 +196,44 @@ export const ModalVideoItem = memo(({
       setPlaybackFailed(true);
     };
 
+    // Detect dead first-frame state
+    let stuckCheckTimer: ReturnType<typeof setTimeout> | null = null;
+    const handlePlaying = () => {
+      if (isStale()) return;
+      clearFail();
+      stuckCheckTimer = setTimeout(() => {
+        if (isStale()) return;
+        if (videoEl && !videoEl.paused && videoEl.currentTime === 0) {
+          retryCountRef.current += 1;
+          if (retryCountRef.current <= 3) {
+            detachSource(videoEl);
+            attachSource(videoEl);
+            attemptPlay();
+          } else {
+            setPlaybackFailed(true);
+          }
+        }
+      }, 1500);
+    };
+
     videoEl.addEventListener('loadeddata', clearFail);
     videoEl.addEventListener('canplay', clearFail);
-    videoEl.addEventListener('playing', clearFail);
+    videoEl.addEventListener('playing', handlePlaying);
     videoEl.addEventListener('error', handleError);
 
     attemptPlay();
 
     return () => {
       seqRef.current++;
+      if (stuckCheckTimer) clearTimeout(stuckCheckTimer);
       videoEl.removeEventListener('loadeddata', clearFail);
       videoEl.removeEventListener('canplay', clearFail);
-      videoEl.removeEventListener('playing', clearFail);
+      videoEl.removeEventListener('playing', handlePlaying);
       videoEl.removeEventListener('error', handleError);
-      videoEl.pause();
+      stopWatching();
+      detachSource(videoEl);
     };
-  }, [isActive, shouldPreload, shouldPreloadMeta, markLoadStart, markStartupFailure, stopWatching, attachSource, detachSource, video.cloudflare_video_id]);
+  }, [isActive, markLoadStart, markStartupFailure, stopWatching, attachSource, detachSource]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;

@@ -21,6 +21,10 @@ const Feed = () => {
   const { isAdmin } = useAdmin();
 
   const handleRefresh = () => {
+    // If on a category feed, clicking Home should navigate to clean feed
+    if (categoryFilter || searchQuery) {
+      navigate('/feed', { replace: true });
+    }
     setRefreshKey(prev => prev + 1);
   };
 

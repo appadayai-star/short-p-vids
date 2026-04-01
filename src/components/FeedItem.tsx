@@ -129,11 +129,16 @@ export const FeedItem = memo(({
 
   /**
    * UNIFIED source + playback lifecycle.
-   * Uses a monotonic sequence counter (seqRef) to ensure stale async
-   * operations from previous activations are completely ignored.
    * 
-   * This single effect replaces the previous split attach/play effects
-   * that had race conditions between them.
+   * CRITICAL: Only the ACTIVE video gets an HLS instance attached.
+   * Mobile browsers limit MediaSource/decoder instances (~2-4).
+   * If we attach HLS to preloaded videos too, we exhaust that limit
+   * after scrolling through enough videos, causing play() to resolve
+   * into a dead first-frame state where the video appears loaded but
+   * never actually plays.
+   * 
+   * Preloading is handled by the prefetch system (manifest + segment
+   * fetch via the network cache), NOT by attaching HLS instances.
    */
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -142,28 +147,15 @@ export const FeedItem = memo(({
     const id = ++seqRef.current;
     const isStale = () => id !== seqRef.current;
 
-    // Hard-reset helper — fully releases video element
-    const hardReset = () => {
+    // === NOT ACTIVE — fully release all resources ===
+    if (!(isActive && hasEntered)) {
       stopWatching();
       detachSource(videoEl);
       setHasStartedPlaying(false);
       setPlaybackFailed(false);
-    };
-
-    // Not in range at all — fully detach
-    const shouldAttachSource = isActive || shouldPreload || shouldPreloadMeta;
-    if (!shouldAttachSource) {
-      hardReset();
-      return;
-    }
-
-    // In range but not active — attach source for preloading only, don't play
-    if (!(isActive && hasEntered)) {
-      setHasStartedPlaying(false);
-      setPlaybackFailed(false);
-      videoEl.pause();
-      attachSource(videoEl);
-      return;
+      return () => {
+        seqRef.current++;
+      };
     }
 
     // === ACTIVE VIDEO — attach source and play ===
@@ -172,7 +164,7 @@ export const FeedItem = memo(({
     retryCountRef.current = 0;
     markLoadStart();
 
-    // Attach fresh HLS source
+    // Attach fresh HLS source (destroys any previous instance first)
     attachSource(videoEl);
     videoEl.currentTime = 0;
 
@@ -192,7 +184,8 @@ export const FeedItem = memo(({
         if (retryCountRef.current <= 3) {
           setTimeout(() => {
             if (isStale()) return;
-            // Re-attach from scratch to avoid poisoned state
+            // Full teardown + re-attach to get a clean MediaSource
+            detachSource(videoEl);
             attachSource(videoEl);
             attemptPlay();
           }, 300 * retryCountRef.current);
@@ -205,13 +198,13 @@ export const FeedItem = memo(({
 
     const handleError = () => {
       if (isStale()) return;
-      // If already playing, ignore stale errors
       if (!videoEl.paused && videoEl.currentTime > 0) return;
 
       retryCountRef.current += 1;
       if (retryCountRef.current <= 3) {
         setTimeout(() => {
           if (isStale()) return;
+          detachSource(videoEl);
           attachSource(videoEl);
           attemptPlay();
         }, 300 * retryCountRef.current);
@@ -221,9 +214,31 @@ export const FeedItem = memo(({
       setPlaybackFailed(true);
     };
 
+    // Detect dead first-frame: video thinks it's playing but stuck at 0
+    let stuckCheckTimer: ReturnType<typeof setTimeout> | null = null;
+    const handlePlaying = () => {
+      if (isStale()) return;
+      clearFail();
+      // After play event fires, check if actually making progress
+      stuckCheckTimer = setTimeout(() => {
+        if (isStale()) return;
+        if (videoEl && !videoEl.paused && videoEl.currentTime === 0) {
+          console.warn('[FeedItem] Dead first-frame detected, resetting');
+          retryCountRef.current += 1;
+          if (retryCountRef.current <= 3) {
+            detachSource(videoEl);
+            attachSource(videoEl);
+            attemptPlay();
+          } else {
+            setPlaybackFailed(true);
+          }
+        }
+      }, 1500);
+    };
+
     videoEl.addEventListener('loadeddata', clearFail);
     videoEl.addEventListener('canplay', clearFail);
-    videoEl.addEventListener('playing', clearFail);
+    videoEl.addEventListener('playing', handlePlaying);
     videoEl.addEventListener('error', handleError);
 
     attemptPlay();
@@ -231,14 +246,17 @@ export const FeedItem = memo(({
     return () => {
       // Increment seq so any in-flight async ops become stale
       seqRef.current++;
+      if (stuckCheckTimer) clearTimeout(stuckCheckTimer);
       videoEl.removeEventListener('loadeddata', clearFail);
       videoEl.removeEventListener('canplay', clearFail);
-      videoEl.removeEventListener('playing', clearFail);
+      videoEl.removeEventListener('playing', handlePlaying);
       videoEl.removeEventListener('error', handleError);
-      // Pause but don't detach — the next effect run will decide
-      videoEl.pause();
+      // CRITICAL: fully release resources on deactivation
+      // so we don't leak MediaSource instances
+      stopWatching();
+      detachSource(videoEl);
     };
-  }, [isActive, hasEntered, shouldPreload, shouldPreloadMeta, markLoadStart, markStartupFailure, stopWatching, attachSource, detachSource, video.cloudflare_video_id]);
+  }, [isActive, hasEntered, markLoadStart, markStartupFailure, stopWatching, attachSource, detachSource]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
@@ -537,10 +555,10 @@ export const FeedItem = memo(({
             x5-video-player-type="h5"
             x5-video-player-fullscreen="false"
             muted={isMuted}
-            preload={isActive || shouldPreload ? "auto" : shouldPreloadMeta ? "metadata" : "none"}
+            preload={isActive ? "auto" : "none"}
             aria-hidden={!isActive}
             style={{
-              opacity: isActive && hasStartedPlaying ? 1 : 0,
+              opacity: hasStartedPlaying ? 1 : 0,
               transition: 'opacity 150ms ease',
             }}
             onClick={handleVideoTap}
