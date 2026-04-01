@@ -56,18 +56,40 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
       videoEl.src = hlsUrl;
     } else if (Hls.isSupported()) {
       const hls = new Hls({
-        maxBufferLength: 4,          // start with 4s buffer (faster startup)
-        maxMaxBufferLength: 20,      // can grow to 20s
+        maxBufferLength: 4,
+        maxMaxBufferLength: 20,
         maxBufferSize: 30 * 1000 * 1000,
-        startLevel: 0,               // start at lowest quality for instant first frame
+        startLevel: 0,
         capLevelToPlayerSize: true,
         testBandwidth: true,
         lowLatencyMode: false,
         backBufferLength: 5,
         enableWorker: true,
-        abrEwmaDefaultEstimate: 1_000_000, // assume 1Mbps initially (conservative, fast start)
-        startFragPrefetch: true,     // prefetch first segment immediately
+        abrEwmaDefaultEstimate: 1_000_000,
+        startFragPrefetch: true,
       });
+
+      // CRITICAL: Handle HLS.js fatal errors to prevent poisoned MediaSource
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal) return;
+        
+        console.warn('[HLS] Fatal error:', data.type, data.details);
+        
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          // Try to recover from media errors (decoder issues, etc.)
+          console.log('[HLS] Attempting media error recovery');
+          hls.recoverMediaError();
+        } else {
+          // Network errors or other fatal errors — destroy and release MediaSource
+          console.log('[HLS] Destroying poisoned HLS instance');
+          hls.destroy();
+          hlsRef.current = null;
+          attachedIdRef.current = null;
+          // Dispatch error on video element so FeedItem/ModalVideoItem retry logic kicks in
+          videoEl.dispatchEvent(new Event('error'));
+        }
+      });
+
       hls.loadSource(hlsUrl);
       hls.attachMedia(videoEl);
       hlsRef.current = hls;
