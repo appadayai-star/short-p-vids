@@ -116,10 +116,7 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return () => {};
 
-    // iOS: reflect session-based sound state
-    if (IS_IOS_WEB) {
-      setIsMuted(!getIosUserWantsSound());
-    }
+    setIsMuted(getEffectiveMuted());
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
@@ -128,9 +125,11 @@ export const FeedItem = memo(({
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
-        // Sync UI mute state with what the controller decided
-        if (IS_IOS_WEB && videoEl) {
-          setIsMuted(videoEl.muted);
+        // Restore audio AFTER verified playback
+        const wantsMuted = getEffectiveMuted();
+        if (videoEl) {
+          videoEl.muted = wantsMuted;
+          setIsMuted(wantsMuted);
         }
       },
       onFailed: () => {
