@@ -57,17 +57,22 @@ function pollReady(el: HTMLVideoElement, ms: number): Promise<boolean> {
   });
 }
 
-/** Verify playback actually started — returns true if playing, false if silent failure */
+/** Verify playback actually started — checks currentTime ADVANCES from its initial value */
 function verifyPlayback(el: HTMLVideoElement, ms: number): Promise<boolean> {
   return new Promise(resolve => {
-    const start = Date.now();
+    const startTime = Date.now();
+    const initialCT = el.currentTime;
+    log("verify:start", "verify", { initialCT, paused: el.paused, readyState: el.readyState });
     const interval = setInterval(() => {
-      const playing = !el.paused && el.currentTime > 0;
-      if (playing || Date.now() - start > ms) {
+      const elapsed = Date.now() - startTime;
+      const advanced = el.currentTime > initialCT + 0.01;
+      const playing = !el.paused && advanced;
+      if (playing || elapsed > ms) {
         clearInterval(interval);
+        log("verify:result", "verify", { playing, ct: el.currentTime, initialCT, paused: el.paused, elapsed });
         resolve(playing);
       }
-    }, 80);
+    }, 60);
   });
 }
 
