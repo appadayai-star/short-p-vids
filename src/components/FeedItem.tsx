@@ -112,6 +112,28 @@ export const FeedItem = memo(({
    * 3. On error, retry up to 2 times with full teardown
    * 4. On deactivation, fully release everything
    */
+  const doActivate = useCallback(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return () => {};
+
+    if (IS_IOS_WEB) setIsMuted(true);
+    setPlaybackFailed(false);
+    setIsPlaying(false);
+    markLoadStart();
+
+    return activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
+      onPlaying: () => {
+        setIsPlaying(true);
+        setPlaybackFailed(false);
+      },
+      onFailed: () => {
+        markStartupFailure(10000);
+        setPlaybackFailed(true);
+      },
+    });
+  }, [video.cloudflare_video_id, video.video_url, video.id, markLoadStart, markStartupFailure]);
+
+  // Core activation lifecycle
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -124,29 +146,46 @@ export const FeedItem = memo(({
       return;
     }
 
-    // iOS: reset mute state per video — always start muted
-    if (IS_IOS_WEB) setIsMuted(true);
-
-    setPlaybackFailed(false);
-    setIsPlaying(false);
-    markLoadStart();
-
-    const cancel = activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
-      onPlaying: () => {
-        setIsPlaying(true);
-        setPlaybackFailed(false);
-      },
-      onFailed: () => {
-        markStartupFailure(10000);
-        setPlaybackFailed(true);
-      },
-    });
+    const cancel = doActivate();
 
     return () => {
       cancel();
       stopWatching();
     };
   }, [isActive, hasEntered, video.id]);
+
+  // Resume playback on app foreground (visibilitychange + pageshow)
+  useEffect(() => {
+    if (!isActive || !hasEntered) return;
+
+    let cancelRef: (() => void) | null = null;
+
+    const handleResume = () => {
+      const videoEl = videoRef.current;
+      if (!videoEl) return;
+      // Only re-activate if video is actually paused/stuck
+      if (!videoEl.paused && videoEl.currentTime > 0) return;
+      console.log('[FeedItem] resume:reactivate', video.id.slice(0, 8));
+      cancelRef?.();
+      cancelRef = doActivate();
+    };
+
+    const onVisChange = () => {
+      if (document.visibilityState === 'visible') handleResume();
+    };
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) handleResume();
+    };
+
+    document.addEventListener('visibilitychange', onVisChange);
+    window.addEventListener('pageshow', onPageShow);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisChange);
+      window.removeEventListener('pageshow', onPageShow);
+      cancelRef?.();
+    };
+  }, [isActive, hasEntered, video.id, doActivate]);
 
   const handleRetry = useCallback(() => {
     const videoEl = videoRef.current;
