@@ -85,11 +85,16 @@ export function activate(
     await delay(RELEASE_GAP_MS);
     if (stale()) return;
 
-    // 2. Attach
+    // 2. Attach — set ALL autoplay-required attributes BEFORE src
     activeEl = el;
+    el.muted = true;
+    el.defaultMuted = true;
     el.playsInline = true;
     el.autoplay = true;
     el.preload = "auto";
+    el.setAttribute("muted", "");
+    el.setAttribute("playsinline", "");
+    el.setAttribute("autoplay", "");
 
     let hlsReady = false;
 
@@ -192,9 +197,9 @@ export function activate(
 }
 
 export function deactivateVideo(el: HTMLVideoElement) {
-  const myToken = ++token;
+  // Do NOT increment token — only activate() owns the token.
+  // This just queues a teardown if this element is still active.
   chain = chain.then(() => {
-    if (myToken !== token) return;
     if (activeEl === el) { teardown("deactivate"); } else { hardRelease(el); }
   }).catch(() => {});
 }
