@@ -162,19 +162,15 @@ export function activate(
     // 4. Attempt play with verification
     const attemptPlay = async (attempt: number): Promise<boolean> => {
       if (stale()) return false;
-      el.muted = attempt === 1 ? true : getGlobalMuted();
+      el.muted = true; // ALWAYS muted for autoplay compliance on all attempts
       log(`play:attempt${attempt}`, id, { readyState: el.readyState, paused: el.paused, muted: el.muted });
       
       try {
         el.currentTime = 0;
         await el.play();
       } catch (err: any) {
-        if (err.name === "AbortError" || err.name === "NotAllowedError") {
-          log("play:autoplay-blocked", id, { name: err.name, attempt });
-          return true; // treat as success for UI
-        }
         log("play:threw", id, { name: err.name, attempt });
-        return false;
+        return false; // ALL errors are failures — including NotAllowedError
       }
       
       if (stale()) return false;
