@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, useEffect, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -14,6 +14,7 @@ interface UploadContextType {
   uploadState: UploadState;
   startUpload: (file: File, description: string, categories: string[], userId: string) => void;
   dismiss: () => void;
+  isUploading: boolean;
 }
 
 const UploadContext = createContext<UploadContextType | null>(null);
@@ -33,6 +34,19 @@ export const UploadProvider = ({ children }: { children: ReactNode }) => {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const isUploading = uploadState.status === 'uploading' || uploadState.status === 'processing';
+
+  // Warn user before closing tab during active upload
+  useEffect(() => {
+    if (!isUploading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isUploading]);
 
   const cleanup = useCallback(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -92,6 +106,12 @@ export const UploadProvider = ({ children }: { children: ReactNode }) => {
   }, [cleanup]);
 
   const startUpload = useCallback(async (file: File, description: string, categories: string[], userId: string) => {
+    // Block starting a new upload while one is in progress
+    if (isUploading) {
+      toast.error("Please wait for the current upload to finish.");
+      return;
+    }
+
     cleanup();
     setUploadState({ status: 'uploading', progress: 0, videoId: null });
     simulateProgress('uploading');
@@ -133,10 +153,10 @@ export const UploadProvider = ({ children }: { children: ReactNode }) => {
       toast.error(error.message || "Failed to upload video");
       setTimeout(() => setUploadState({ status: 'idle', progress: 0, videoId: null }), 3000);
     }
-  }, [cleanup, simulateProgress, pollProcessing]);
+  }, [isUploading, cleanup, simulateProgress, pollProcessing]);
 
   return (
-    <UploadContext.Provider value={{ uploadState, startUpload, dismiss }}>
+    <UploadContext.Provider value={{ uploadState, startUpload, dismiss, isUploading }}>
       {children}
     </UploadContext.Provider>
   );
