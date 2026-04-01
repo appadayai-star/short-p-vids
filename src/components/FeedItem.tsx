@@ -56,6 +56,7 @@ export const FeedItem = memo(({
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const hasAudioRef = useRef(true); // assume yes until proven otherwise
   
 
   const {
@@ -211,29 +212,36 @@ export const FeedItem = memo(({
     fetchStates();
   }, [video.id, currentUserId]);
 
-  // Detect if the video element has an audio track
-  const videoHasAudio = useCallback((): boolean => {
+  // Detect audio track via events — updates ref so it's always current
+  useEffect(() => {
     const v = videoRef.current;
-    if (!v) return true; // assume yes if we can't check
-    // Safari/WebKit
-    if (typeof (v as any).webkitAudioDecodedByteCount !== "undefined") {
-      return (v as any).webkitAudioDecodedByteCount > 0;
-    }
-    // Firefox
-    if (typeof (v as any).mozHasAudio !== "undefined") {
-      return (v as any).mozHasAudio;
-    }
-    // Standard (Chrome/Edge)
-    if ((v as any).audioTracks?.length) {
-      return (v as any).audioTracks.length > 0;
-    }
-    return true; // can't detect, assume has audio
-  }, []);
+    if (!v) return;
+    hasAudioRef.current = true; // reset on video change
+    const detect = () => {
+      if (typeof (v as any).webkitAudioDecodedByteCount === 'number') {
+        hasAudioRef.current = (v as any).webkitAudioDecodedByteCount > 0;
+      } else if (typeof (v as any).mozHasAudio === 'boolean') {
+        hasAudioRef.current = (v as any).mozHasAudio;
+      } else if ((v as any).audioTracks) {
+        hasAudioRef.current = (v as any).audioTracks.length > 0;
+      }
+    };
+    v.addEventListener('loadedmetadata', detect);
+    v.addEventListener('canplay', detect);
+    // Also check on timeupdate for webkitAudioDecodedByteCount (needs frames decoded)
+    const detectOnce = () => { detect(); v.removeEventListener('timeupdate', detectOnce); };
+    v.addEventListener('timeupdate', detectOnce);
+    return () => {
+      v.removeEventListener('loadedmetadata', detect);
+      v.removeEventListener('canplay', detect);
+      v.removeEventListener('timeupdate', detectOnce);
+    };
+  }, [video.id]);
 
-  // Mute handlers — iOS: per-video only, other: global
+  // Mute handlers
   const unmute = useCallback(() => {
     if (!isMuted) return;
-    if (!videoHasAudio()) {
+    if (!hasAudioRef.current) {
       toast("This video has no sound", { duration: 1500 });
       return;
     }
@@ -242,10 +250,10 @@ export const FeedItem = memo(({
     setIsMuted(false);
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
-  }, [isMuted, videoHasAudio]);
+  }, [isMuted]);
 
   const toggleMute = useCallback(() => {
-    if (isMuted && !videoHasAudio()) {
+    if (isMuted && !hasAudioRef.current) {
       toast("This video has no sound", { duration: 1500 });
       return;
     }
@@ -255,7 +263,7 @@ export const FeedItem = memo(({
     setIsMuted(newMuted);
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
-  }, [isMuted, videoHasAudio]);
+  }, [isMuted]);
   
   const triggerHeartAnimation = useCallback((x: number, y: number) => {
     const heartId = Date.now();
