@@ -119,96 +119,34 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    const myId = ++activationIdRef.current;
-    const isStale = () => myId !== activationIdRef.current;
-
-    // ONLY the active video gets a source. Everything else is fully released.
-    // No pre-attach, no isNextUp buffering — one source at a time, always.
+    // Not active: full release
     if (!isActive || !hasEntered) {
-      videoEl.pause();
-      videoEl.srcObject = null;
-      videoEl.removeAttribute('src');
-      videoEl.load();
+      deactivate(videoEl);
       stopWatching();
       setIsPlaying(false);
       setPlaybackFailed(false);
       return;
     }
 
-    // ACTIVE: attach and play
+    // ACTIVE: use the race-safe activate flow
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
 
-    let retryCount = 0;
-    const MAX_RETRIES = 2;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const startPlayback = () => {
-      if (isStale()) return;
-      attachSource(videoEl);
-      videoEl.currentTime = 0;
-      videoEl.play().catch(err => {
-        if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-      });
-    };
-
-    const tryPlay = () => {
-      if (isStale()) return;
-      videoEl.play().catch(err => {
-        if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-        handlePlaybackError();
-      });
-    };
-
-    const handlePlaying = () => {
-      if (isStale()) return;
-      setIsPlaying(true);
-      setPlaybackFailed(false);
-    };
-
-    const handlePlaybackError = () => {
-      if (isStale()) return;
-      if (!videoEl.paused && videoEl.currentTime > 0) return;
-      retryCount++;
-      if (retryCount <= MAX_RETRIES) {
-        // Full teardown before retry
-        videoEl.pause();
-        videoEl.srcObject = null;
-        videoEl.removeAttribute('src');
-        videoEl.load();
-        retryTimer = setTimeout(() => {
-          if (isStale()) return;
-          startPlayback();
-        }, 500);
-      } else {
+    const cleanup = activate(videoEl, {
+      onPlaying: () => {
+        setIsPlaying(true);
+        setPlaybackFailed(false);
+      },
+      onFailed: () => {
         markStartupFailure(10000);
         setPlaybackFailed(true);
-      }
-    };
-
-    const handleError = () => handlePlaybackError();
-
-    videoEl.addEventListener('canplay', tryPlay);
-    videoEl.addEventListener('loadeddata', tryPlay);
-    videoEl.addEventListener('playing', handlePlaying);
-    videoEl.addEventListener('error', handleError);
-
-    startPlayback();
+      },
+    });
 
     return () => {
-      activationIdRef.current++;
-      if (retryTimer) clearTimeout(retryTimer);
-      videoEl.removeEventListener('canplay', tryPlay);
-      videoEl.removeEventListener('loadeddata', tryPlay);
-      videoEl.removeEventListener('playing', handlePlaying);
-      videoEl.removeEventListener('error', handleError);
+      cleanup();
       stopWatching();
-      // Full hard teardown
-      videoEl.pause();
-      videoEl.srcObject = null;
-      videoEl.removeAttribute('src');
-      videoEl.load();
     };
   }, [isActive, hasEntered, video.id]);
 
