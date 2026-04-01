@@ -66,7 +66,7 @@ export const ModalVideoItem = memo(({
     videoIndex: index, feedSource: 'modal',
   });
 
-  const [isMuted, setIsMuted] = useState(getGlobalMuted());
+  const [isMuted, setIsMuted] = useState(IS_IOS_WEB ? !getIosUserWantsSound() : getGlobalMuted());
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
