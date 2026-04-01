@@ -159,35 +159,57 @@ export function activate(
 
     if (stale()) return;
 
-    // 4. ALWAYS try play
-    log("play:call", id, { readyState: el.readyState, paused: el.paused });
-    try {
-      el.currentTime = 0;
-      await el.play();
-      if (stale()) return;
-      log("play:ok", id);
-      // Restore global mute state — activation starts muted for autoplay compliance,
-      // but user may have unmuted previously
-      el.muted = getGlobalMuted();
-      callbacks.onPlaying();
-    } catch (err: any) {
-      if (stale()) return;
-      if (err.name === "AbortError" || err.name === "NotAllowedError") {
-        log("play:autoplay-blocked", id, { name: err.name });
-        callbacks.onPlaying(); // still show as playing for UI
-        return;
+    // 4. Attempt play with verification
+    const attemptPlay = async (attempt: number): Promise<boolean> => {
+      if (stale()) return false;
+      el.muted = attempt === 1 ? true : getGlobalMuted();
+      log(`play:attempt${attempt}`, id, { readyState: el.readyState, paused: el.paused, muted: el.muted });
+      
+      try {
+        el.currentTime = 0;
+        await el.play();
+      } catch (err: any) {
+        if (err.name === "AbortError" || err.name === "NotAllowedError") {
+          log("play:autoplay-blocked", id, { name: err.name, attempt });
+          return true; // treat as success for UI
+        }
+        log("play:threw", id, { name: err.name, attempt });
+        return false;
       }
-      log("play:error", id, { name: err.name, message: err.message });
+      
+      if (stale()) return false;
+      
+      // VERIFY playback actually started (catches silent iOS failures)
+      const verified = await verifyPlayback(el, 400);
+      log(`play:verify${attempt}`, id, { verified, paused: el.paused, currentTime: el.currentTime });
+      return verified;
+    };
 
-      // One retry: teardown, re-attach, try again
-      log("retry:start", id);
+    // Attempt 1: standard play
+    let success = await attemptPlay(1);
+    
+    if (!success && !stale()) {
+      // Attempt 2: simple retry
+      log("recovery:retry", id);
+      await delay(100);
+      if (!stale()) success = await attemptPlay(2);
+    }
+
+    if (!success && !stale()) {
+      // Attempt 3: full re-attach
+      log("recovery:reattach", id);
       destroyHls();
       hardRelease(el);
-      await delay(150);
+      await delay(200);
       if (stale()) return;
 
-      // Re-attach simply
-      if (cloudflareVideoId && Hls.isSupported()) {
+      el.muted = true;
+      el.defaultMuted = true;
+      el.playsInline = true;
+      el.autoplay = true;
+      el.preload = "auto";
+
+      if (cloudflareVideoId && !supportsHlsNatively() && Hls.isSupported()) {
         const h2 = new Hls({ maxBufferLength: 4, startLevel: 0, enableWorker: true });
         hls = h2;
         h2.attachMedia(el);
@@ -197,14 +219,18 @@ export function activate(
       }
 
       await pollReady(el, 2000);
-      if (stale()) return;
+      if (!stale()) success = await attemptPlay(3);
+    }
 
-      try {
-        await el.play();
-        if (!stale()) { log("retry:ok", id); el.muted = getGlobalMuted(); callbacks.onPlaying(); }
-      } catch {
-        if (!stale()) { log("retry:failed", id); callbacks.onFailed(); }
-      }
+    if (stale()) return;
+
+    if (success) {
+      el.muted = getGlobalMuted();
+      log("play:confirmed", id, { muted: el.muted });
+      callbacks.onPlaying();
+    } else {
+      log("play:allFailed", id);
+      callbacks.onFailed();
     }
   }).catch((err) => {
     log("chain:error", id, { error: String(err) });
