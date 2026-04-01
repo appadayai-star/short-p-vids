@@ -142,25 +142,17 @@ export const ModalVideoItem = memo(({
 
   const unmute = useCallback(() => {
     if (!isMuted) return;
-    if (IS_IOS_WEB) {
-      setIosUserWantsSound(true);
-      if (videoRef.current) videoRef.current.muted = false;
-      setIsMuted(false);
-    } else {
-      setGlobalMuted(false);
-    }
+    setEffectiveMuted(false);
+    if (videoRef.current) videoRef.current.muted = false;
+    setIsMuted(false);
     setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
-    if (IS_IOS_WEB) {
-      setIosUserWantsSound(!newMuted);
-      if (videoRef.current) videoRef.current.muted = newMuted;
-      setIsMuted(newMuted);
-    } else {
-      setGlobalMuted(newMuted);
-    }
+    setEffectiveMuted(newMuted);
+    if (videoRef.current) videoRef.current.muted = newMuted;
+    setIsMuted(newMuted);
     setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 

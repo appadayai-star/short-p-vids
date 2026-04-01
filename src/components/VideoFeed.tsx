@@ -6,7 +6,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { useEntryGate } from "./EntryGate";
 
 import { createAdPicker, type Ad } from "@/lib/adRotation";
-import { prefetchHlsManifest } from "@/hooks/use-hls-player";
+import { prefetchHlsManifest } from "@/lib/prefetch";
 
 const PAGE_SIZE = 10;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
