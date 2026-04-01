@@ -1,12 +1,8 @@
 /**
- * Global Serialized Playback Controller v2
+ * Global Serialized Playback Controller v3
  * 
- * RULES:
- * - ONE HLS instance, ONE active video at any time
- * - All operations serialized via promise chain — no overlap possible
- * - Every await is bounded — chain NEVER deadlocks
- * - On timeout, we STILL attempt play() — never block playback
- * - finally{} ensures chain always proceeds even on errors
+ * DEADLOCK-PROOF: Every await bounded. Chain always proceeds via finally{}.
+ * Play always attempted even if readiness events don't fire.
  */
 
 import Hls from "hls.js";
@@ -15,8 +11,7 @@ import { getCloudflareStreamUrl, supportsHlsNatively } from "@/lib/cloudinary";
 const IS_MOBILE = /iPhone|iPad|iPod|Android|Mobile/i.test(
   typeof navigator !== "undefined" ? navigator.userAgent : ""
 );
-const RELEASE_GAP_MS = IS_MOBILE ? 100 : 10;
-const READY_TIMEOUT_MS = 1500; // Short — we'll try play() regardless
+const RELEASE_GAP_MS = IS_MOBILE ? 80 : 10;
 
 // ---- Singleton state ----
 let hls: Hls | null = null;
@@ -25,10 +20,10 @@ let token = 0;
 let chain: Promise<void> = Promise.resolve();
 
 const log = (tag: string, id: string, extra: Record<string, unknown> = {}) => {
-  console.debug(`[PC:${tag}]`, id.slice(0, 8), { ...extra, t: Date.now() % 100000 });
+  console.log(`[PC:${tag}]`, id.slice(0, 8), { ...extra, t: Date.now() % 100000 });
 };
 
-// ---- Internal helpers ----
+// ---- Helpers ----
 
 function hardRelease(el: HTMLVideoElement) {
   try { el.pause(); } catch { /* */ }
@@ -45,16 +40,20 @@ function teardown(id: string) {
   if (activeEl) { hardRelease(activeEl); activeEl = null; }
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
-}
+const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
-/** Race a promise against a timeout. Resolves to 'timeout' if it expires, otherwise the promise result. */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | 'timeout'> {
-  return Promise.race([
-    promise,
-    new Promise<'timeout'>(r => setTimeout(() => r('timeout'), ms)),
-  ]);
+/** Poll until condition or timeout. Never rejects. */
+function pollReady(el: HTMLVideoElement, ms: number): Promise<boolean> {
+  return new Promise(resolve => {
+    if (el.readyState >= 2) { resolve(true); return; }
+    const start = Date.now();
+    const interval = setInterval(() => {
+      if (el.readyState >= 2 || Date.now() - start > ms) {
+        clearInterval(interval);
+        resolve(el.readyState >= 2);
+      }
+    }, 50);
+  });
 }
 
 // ---- Public API ----
@@ -75,95 +74,73 @@ export function activate(
   let cancelled = false;
   const stale = () => myToken !== token || cancelled;
 
-  log("activate:queue", id);
+  log("activate:queued", id);
 
   chain = chain.then(async () => {
-    if (stale()) return;
+    if (stale()) { log("activate:stale-skip", id); return; }
+    log("activate:start", id);
 
-    // 1. Teardown previous
+    // 1. Teardown
     teardown(id);
-
-    // 2. Release gap
     await delay(RELEASE_GAP_MS);
     if (stale()) return;
 
-    // 3. Attach source
+    // 2. Attach
     activeEl = el;
     el.playsInline = true;
+    el.autoplay = true;
     el.preload = "auto";
-    log("attach:start", id);
 
-    try {
-      if (!cloudflareVideoId) {
-        // Direct src fallback
-        el.src = fallbackUrl;
-        log("attach:fallback", id);
-      } else if (supportsHlsNatively()) {
-        // Safari/iOS native HLS
-        el.src = getCloudflareStreamUrl(cloudflareVideoId);
-        log("attach:native", id);
-      } else if (Hls.isSupported()) {
-        // hls.js for Chrome/Firefox
-        const hlsUrl = getCloudflareStreamUrl(cloudflareVideoId);
-        const hlsInstance = new Hls({
-          maxBufferLength: 4,
-          maxMaxBufferLength: 15,
-          maxBufferSize: 20 * 1000 * 1000,
-          startLevel: 0,
-          capLevelToPlayerSize: true,
-          lowLatencyMode: false,
-          backBufferLength: 3,
-          enableWorker: true,
-        });
-        hls = hlsInstance;
+    let hlsReady = false;
 
-        hlsInstance.attachMedia(el);
+    if (!cloudflareVideoId) {
+      el.src = fallbackUrl;
+      log("attach:fallback", id);
+    } else if (supportsHlsNatively()) {
+      el.src = getCloudflareStreamUrl(cloudflareVideoId);
+      log("attach:native", id);
+    } else if (Hls.isSupported()) {
+      const hlsUrl = getCloudflareStreamUrl(cloudflareVideoId);
+      const hlsInstance = new Hls({
+        maxBufferLength: 4,
+        maxMaxBufferLength: 15,
+        maxBufferSize: 20 * 1000 * 1000,
+        startLevel: 0,
+        capLevelToPlayerSize: true,
+        lowLatencyMode: false,
+        backBufferLength: 3,
+        enableWorker: true,
+      });
+      hls = hlsInstance;
 
-        // Wait for MEDIA_ATTACHED — bounded
-        const attachResult = await withTimeout(
-          new Promise<'attached'>(res => hlsInstance.once(Hls.Events.MEDIA_ATTACHED, () => res('attached'))),
-          1000
-        );
-        log("media-attached", id, { result: attachResult });
-        if (stale()) return;
+      // Listen for manifest parsed (non-blocking)
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        hlsReady = true;
+        log("manifest-parsed", id);
+      });
 
-        hlsInstance.loadSource(hlsUrl);
-        log("attach:hls.js", id);
+      hlsInstance.on(Hls.Events.ERROR, (_e, data) => {
+        if (data.fatal) log("hls:fatal", id, { type: data.type, details: data.details });
+      });
 
-        // Wait for MANIFEST_PARSED — bounded
-        const manifestResult = await withTimeout(
-          new Promise<'parsed'>(res => hlsInstance.once(Hls.Events.MANIFEST_PARSED, () => res('parsed'))),
-          READY_TIMEOUT_MS
-        );
-        log("manifest", id, { result: manifestResult });
-      } else {
-        el.src = fallbackUrl;
-        log("attach:fallback-nosupport", id);
-      }
-    } catch (err: any) {
-      log("attach:error", id, { error: err.message });
-      // Don't return — still try to play
+      hlsInstance.attachMedia(el);
+      hlsInstance.loadSource(hlsUrl);
+      log("attach:hls.js", id);
+    } else {
+      el.src = fallbackUrl;
+      log("attach:fallback2", id);
     }
 
     if (stale()) return;
 
-    // 4. Wait briefly for readiness (but DON'T block on it)
-    if (el.readyState < 2) {
-      const readyResult = await withTimeout(
-        new Promise<'ready'>(res => {
-          const cb = () => { el.removeEventListener('canplay', cb); el.removeEventListener('loadeddata', cb); res('ready'); };
-          el.addEventListener('canplay', cb, { once: true });
-          el.addEventListener('loadeddata', cb, { once: true });
-        }),
-        READY_TIMEOUT_MS
-      );
-      log("readiness", id, { result: readyResult, readyState: el.readyState });
-    }
+    // 3. Wait for readiness — poll-based, never blocks forever
+    const ready = await pollReady(el, 1500);
+    log("readiness", id, { ready, hlsReady, readyState: el.readyState, networkState: el.networkState });
 
     if (stale()) return;
 
-    // 5. ALWAYS attempt play
-    log("play:call", id, { readyState: el.readyState, networkState: el.networkState, paused: el.paused });
+    // 4. ALWAYS try play
+    log("play:call", id, { readyState: el.readyState, paused: el.paused });
     try {
       el.currentTime = 0;
       await el.play();
@@ -173,15 +150,40 @@ export function activate(
     } catch (err: any) {
       if (stale()) return;
       if (err.name === "AbortError" || err.name === "NotAllowedError") {
-        log("play:benign", id, { name: err.name });
-        callbacks.onPlaying(); // autoplay policy — still counts
+        log("play:autoplay-blocked", id, { name: err.name });
+        callbacks.onPlaying(); // still show as playing for UI
         return;
       }
-      log("play:failed", id, { name: err.name, message: err.message });
-      callbacks.onFailed();
+      log("play:error", id, { name: err.name, message: err.message });
+
+      // One retry: teardown, re-attach, try again
+      log("retry:start", id);
+      destroyHls();
+      hardRelease(el);
+      await delay(150);
+      if (stale()) return;
+
+      // Re-attach simply
+      if (cloudflareVideoId && Hls.isSupported()) {
+        const h2 = new Hls({ maxBufferLength: 4, startLevel: 0, enableWorker: true });
+        hls = h2;
+        h2.attachMedia(el);
+        h2.loadSource(getCloudflareStreamUrl(cloudflareVideoId));
+      } else {
+        el.src = cloudflareVideoId ? getCloudflareStreamUrl(cloudflareVideoId) : fallbackUrl;
+      }
+
+      await pollReady(el, 2000);
+      if (stale()) return;
+
+      try {
+        await el.play();
+        if (!stale()) { log("retry:ok", id); callbacks.onPlaying(); }
+      } catch {
+        if (!stale()) { log("retry:failed", id); callbacks.onFailed(); }
+      }
     }
   }).catch((err) => {
-    // CRITICAL: catch ensures chain NEVER stalls
     log("chain:error", id, { error: String(err) });
     if (!stale()) callbacks.onFailed();
   });
