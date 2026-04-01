@@ -96,17 +96,6 @@ export function useHlsPlayer({ cloudflareVideoId, fallbackUrl }: UseHlsPlayerOpt
     }
   }, [destroyHls]);
 
-  // Detach and free resources
-  const detachSource = useCallback((videoEl: HTMLVideoElement) => {
-    destroyHls();
-    try {
-      videoEl.removeAttribute('src');
-      videoEl.load(); // abort any pending network requests
-    } catch {
-      // best-effort
-    }
-    videoElRef.current = null;
-  }, [destroyHls]);
 
   // Cleanup on unmount or when cloudflareVideoId changes
   useEffect(() => {
