@@ -168,10 +168,9 @@ export function activate(
     const attemptPlay = async (attempt: number): Promise<boolean> => {
       if (stale()) return false;
       el.muted = true; // ALWAYS muted for autoplay compliance on all attempts
-      log(`play:attempt${attempt}`, id, { readyState: el.readyState, paused: el.paused, muted: el.muted });
+      log(`play:attempt${attempt}`, id, { readyState: el.readyState, paused: el.paused, muted: el.muted, currentTime: el.currentTime });
       
       try {
-        el.currentTime = 0;
         await el.play();
       } catch (err: any) {
         log("play:threw", id, { name: err.name, attempt });
@@ -180,8 +179,8 @@ export function activate(
       
       if (stale()) return false;
       
-      // VERIFY playback actually started (catches silent iOS failures)
-      const verified = await verifyPlayback(el, 400);
+      // VERIFY playback actually started — require currentTime to ADVANCE
+      const verified = await verifyPlayback(el, 800);
       log(`play:verify${attempt}`, id, { verified, paused: el.paused, currentTime: el.currentTime });
       return verified;
     };
