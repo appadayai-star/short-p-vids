@@ -8,7 +8,7 @@ import { ShareDrawer } from "./ShareDrawer";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
-import { activate as activateVideo, deactivateVideo } from "@/lib/playbackController";
+import { activate as activateVideo, deactivateVideo, IS_IOS_WEB } from "@/lib/playbackController";
 import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
 import { getGuestClientId, getGuestLikes, setGuestLikes } from "@/lib/guestLikes";
 import {
@@ -94,8 +94,9 @@ export const FeedItem = memo(({
 
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
-  // Sync global mute
+  // Sync global mute (non-iOS only; iOS uses per-video mute)
   useEffect(() => {
+    if (IS_IOS_WEB) return;
     return onMuteChange((muted) => {
       setIsMuted(muted);
       if (videoRef.current) videoRef.current.muted = muted;
@@ -122,6 +123,9 @@ export const FeedItem = memo(({
       setPlaybackFailed(false);
       return;
     }
+
+    // iOS: reset mute state per video — always start muted
+    if (IS_IOS_WEB) setIsMuted(true);
 
     setPlaybackFailed(false);
     setIsPlaying(false);
@@ -181,17 +185,27 @@ export const FeedItem = memo(({
     fetchStates();
   }, [video.id, currentUserId]);
 
-  // Mute handlers
+  // Mute handlers — iOS: per-video only, other: global
   const unmute = useCallback(() => {
-    if (isMuted) {
+    if (!isMuted) return;
+    if (IS_IOS_WEB) {
+      if (videoRef.current) videoRef.current.muted = false;
+      setIsMuted(false);
+    } else {
       setGlobalMuted(false);
-      setShowMuteIcon(true);
-      setTimeout(() => setShowMuteIcon(false), 500);
     }
+    setShowMuteIcon(true);
+    setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
   const toggleMute = useCallback(() => {
-    setGlobalMuted(!isMuted);
+    const newMuted = !isMuted;
+    if (IS_IOS_WEB) {
+      if (videoRef.current) videoRef.current.muted = newMuted;
+      setIsMuted(newMuted);
+    } else {
+      setGlobalMuted(newMuted);
+    }
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);

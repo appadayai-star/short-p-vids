@@ -3,7 +3,7 @@ import { Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
-import { activate as activateVideo, deactivateVideo } from "@/lib/playbackController";
+import { activate as activateVideo, deactivateVideo, IS_IOS_WEB } from "@/lib/playbackController";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
 import { ShareDrawer } from "./ShareDrawer";
@@ -83,6 +83,7 @@ export const ModalVideoItem = memo(({
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   useEffect(() => {
+    if (IS_IOS_WEB) return;
     return onMuteChange((muted) => {
       setIsMuted(muted);
       if (videoRef.current) videoRef.current.muted = muted;
@@ -100,6 +101,9 @@ export const ModalVideoItem = memo(({
       setPlaybackFailed(false);
       return;
     }
+
+    // iOS: reset mute state per video
+    if (IS_IOS_WEB) setIsMuted(true);
 
     setPlaybackFailed(false);
     setIsPlaying(false);
@@ -137,11 +141,25 @@ export const ModalVideoItem = memo(({
   }, [video.cloudflare_video_id, video.video_url]);
 
   const unmute = useCallback(() => {
-    if (isMuted) { setGlobalMuted(false); setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500); }
+    if (!isMuted) return;
+    if (IS_IOS_WEB) {
+      if (videoRef.current) videoRef.current.muted = false;
+      setIsMuted(false);
+    } else {
+      setGlobalMuted(false);
+    }
+    setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
   const toggleMute = useCallback(() => {
-    setGlobalMuted(!isMuted); setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
+    const newMuted = !isMuted;
+    if (IS_IOS_WEB) {
+      if (videoRef.current) videoRef.current.muted = newMuted;
+      setIsMuted(newMuted);
+    } else {
+      setGlobalMuted(newMuted);
+    }
+    setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
   const triggerHeartAnimation = useCallback((x: number, y: number) => {
