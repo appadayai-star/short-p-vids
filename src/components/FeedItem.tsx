@@ -42,6 +42,7 @@ interface FeedItemProps {
   video: Video;
   index: number;
   isActive: boolean;
+  isNextUp?: boolean; // pre-attach HLS so transition is instant
   hasEntered: boolean;
   currentUserId: string | null;
   feedSource?: string | null;
