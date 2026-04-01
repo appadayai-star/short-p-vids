@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo, useCallback } from "react";
 import { Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
+import { getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { useHlsPlayer } from "@/hooks/use-hls-player";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
 import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
