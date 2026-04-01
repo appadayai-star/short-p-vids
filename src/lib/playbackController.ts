@@ -225,8 +225,15 @@ export function activate(
     if (stale()) return;
 
     if (success) {
-      el.muted = getGlobalMuted();
-      log("play:confirmed", id, { muted: el.muted });
+      // iOS: always stay muted on autoplay transitions — user must tap unmute per video
+      // Other platforms: restore global mute preference
+      if (IS_IOS) {
+        el.muted = true;
+        log("play:confirmed:ios-muted", id);
+      } else {
+        el.muted = getGlobalMuted();
+        log("play:confirmed", id, { muted: el.muted });
+      }
       callbacks.onPlaying();
     } else {
       log("play:allFailed", id);
