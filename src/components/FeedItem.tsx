@@ -97,7 +97,7 @@ export const FeedItem = memo(({
     cloudflareVideoId: video.cloudflare_video_id,
     fallbackUrl: video.video_url,
   });
-  const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
+  
 
   // Sync global mute
   useEffect(() => {

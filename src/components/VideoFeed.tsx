@@ -233,17 +233,9 @@ export const VideoFeed = ({ searchQuery, categoryFilter, userId }: VideoFeedProp
           resultVideos.forEach((v: Video) => loadedIdsRef.current.add(v.id));
           setVideos(resultVideos);
           setHasMore(data?.hasMore ?? resultVideos.length >= PAGE_SIZE);
-          // Only preload thumbnails on initial load — do NOT prefetch HLS for video[0]
-          // because HLS.js will fetch the same manifest+segments when it attaches,
-          // causing duplicate requests and network contention that slows TTFF.
-          if (resultVideos.length > 0) {
-            preloadImage(getThumbnailUrl(resultVideos[0].cloudflare_video_id, resultVideos[0].thumbnail_url));
-          }
-          // Low-priority prefetch for video[1] (next video) — uses 'low' priority
-          // so it doesn't compete with HLS.js playing video[0]
+          // Pre-warm HLS manifest for video[1] so transition is fast
           if (resultVideos.length > 1) {
             prefetchHlsManifest(resultVideos[1].cloudflare_video_id);
-            preloadImage(getThumbnailUrl(resultVideos[1].cloudflare_video_id, resultVideos[1].thumbnail_url));
           }
         }
       } catch (err) {
