@@ -80,7 +80,7 @@ export const ModalVideoItem = memo(({
   const lastTapTimeRef = useRef<number>(0);
   const singleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { attachSource, detachSource } = useHlsPlayer({
+  const { activate, deactivate } = useHlsPlayer({
     cloudflareVideoId: video.cloudflare_video_id,
     fallbackUrl: video.video_url,
   });
@@ -93,16 +93,13 @@ export const ModalVideoItem = memo(({
     });
   }, []);
 
-  // Core playback lifecycle — identical logic to FeedItem
+  // Core playback lifecycle — uses race-safe activate
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    const myId = ++activationIdRef.current;
-    const isStale = () => myId !== activationIdRef.current;
-
     if (!isActive) {
-      detachSource(videoEl);
+      deactivate(videoEl);
       stopWatching();
       setIsPlaying(false);
       setPlaybackFailed(false);
@@ -113,61 +110,20 @@ export const ModalVideoItem = memo(({
     setIsPlaying(false);
     markLoadStart();
 
-    let retryCount = 0;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const startPlayback = () => {
-      if (isStale()) return;
-      attachSource(videoEl);
-      videoEl.currentTime = 0;
-      videoEl.play().catch(err => {
-        if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-      });
-    };
-
-    const tryPlay = () => {
-      if (isStale()) return;
-      videoEl.play().catch(err => {
-        if (isStale() || err.name === 'AbortError' || err.name === 'NotAllowedError') return;
-        handlePlaybackError();
-      });
-    };
-
-    const handlePlaying = () => {
-      if (isStale()) return;
-      setIsPlaying(true);
-      setPlaybackFailed(false);
-    };
-
-    const handlePlaybackError = () => {
-      if (isStale()) return;
-      if (!videoEl.paused && videoEl.currentTime > 0) return;
-      retryCount++;
-      if (retryCount <= 2) {
-        detachSource(videoEl);
-        retryTimer = setTimeout(() => { if (!isStale()) startPlayback(); }, 500);
-      } else {
+    const cleanup = activate(videoEl, {
+      onPlaying: () => {
+        setIsPlaying(true);
+        setPlaybackFailed(false);
+      },
+      onFailed: () => {
         markStartupFailure(10000);
         setPlaybackFailed(true);
-      }
-    };
-
-    videoEl.addEventListener('canplay', tryPlay);
-    videoEl.addEventListener('loadeddata', tryPlay);
-    videoEl.addEventListener('playing', handlePlaying);
-    videoEl.addEventListener('error', handlePlaybackError);
-
-    startPlayback();
+      },
+    });
 
     return () => {
-      activationIdRef.current++;
-      if (retryTimer) clearTimeout(retryTimer);
-      videoEl.removeEventListener('canplay', tryPlay);
-      videoEl.removeEventListener('loadeddata', tryPlay);
-      videoEl.removeEventListener('playing', handlePlaying);
-      videoEl.removeEventListener('error', handlePlaybackError);
+      cleanup();
       stopWatching();
-      detachSource(videoEl);
     };
   }, [isActive, video.id]);
 
@@ -176,16 +132,14 @@ export const ModalVideoItem = memo(({
     if (!videoEl) return;
     setPlaybackFailed(false);
     setIsPlaying(false);
-    activationIdRef.current++;
-    detachSource(videoEl);
-    attachSource(videoEl);
-    videoEl.currentTime = 0;
-    const onCanPlay = () => {
-      videoEl.removeEventListener('canplay', onCanPlay);
-      videoEl.play().catch(() => setPlaybackFailed(true));
-    };
-    videoEl.addEventListener('canplay', onCanPlay);
-  }, [attachSource, detachSource]);
+    activate(videoEl, {
+      onPlaying: () => {
+        setIsPlaying(true);
+        setPlaybackFailed(false);
+      },
+      onFailed: () => setPlaybackFailed(true),
+    });
+  }, [activate]);
 
   const unmute = useCallback(() => {
     if (isMuted) { setGlobalMuted(false); setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500); }

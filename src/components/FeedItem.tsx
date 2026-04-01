@@ -155,17 +155,17 @@ export const FeedItem = memo(({
     if (!videoEl) return;
     setPlaybackFailed(false);
     setIsPlaying(false);
-    // Trigger re-activation by bumping the activation ID and re-running
-    activationIdRef.current++;
-    detachSource(videoEl);
-    attachSource(videoEl);
-    videoEl.currentTime = 0;
-    const onCanPlay = () => {
-      videoEl.removeEventListener('canplay', onCanPlay);
-      videoEl.play().catch(() => setPlaybackFailed(true));
-    };
-    videoEl.addEventListener('canplay', onCanPlay);
-  }, [attachSource, detachSource]);
+    // Full re-activate
+    const cleanup = activate(videoEl, {
+      onPlaying: () => {
+        setIsPlaying(true);
+        setPlaybackFailed(false);
+      },
+      onFailed: () => setPlaybackFailed(true),
+    });
+    // Store cleanup ref if needed (cleanup runs on next effect cycle anyway)
+    return cleanup;
+  }, [activate]);
 
   // Guest likes check
   useEffect(() => {

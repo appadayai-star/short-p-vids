@@ -27,7 +27,7 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
   const navOffset = 'calc(64px + env(safe-area-inset-bottom, 0px))';
 
   // Use HLS player for adaptive streaming
-  const { attachSource, detachSource } = useHlsPlayer({
+  const { activate, deactivate } = useHlsPlayer({
     cloudflareVideoId: ad.cloudflare_video_id,
     fallbackUrl: ad.video_url,
   });
@@ -51,32 +51,23 @@ export const LivestreamAdItem = memo(({ ad, index, isActive, shouldPreload = fal
     return () => clearInterval(interval);
   }, [isActive]);
 
-  // Attach/detach source based on proximity (same pattern as FeedItem)
-  const shouldAttachSource = isActive || shouldPreload;
+  // Activate/deactivate using race-safe lifecycle
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    if (shouldAttachSource) {
-      attachSource(videoEl);
-    } else {
-      videoEl.pause();
-      detachSource(videoEl);
+    if (!isActive) {
+      deactivate(videoEl);
+      return;
     }
-  }, [shouldAttachSource, attachSource, detachSource]);
 
-  // Play/pause
-  useEffect(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
+    const cleanup = activate(videoEl, {
+      onPlaying: () => {},
+      onFailed: () => {},
+    });
 
-    if (isActive) {
-      videoEl.currentTime = 0;
-      videoEl.play().catch(() => {});
-    } else {
-      videoEl.pause();
-    }
-  }, [isActive]);
+    return cleanup;
+  }, [isActive, ad.id, activate, deactivate]);
 
   // Track ad view
   useEffect(() => {
