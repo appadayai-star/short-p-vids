@@ -187,6 +187,16 @@ export const FeedItem = memo(({
     const handleError = () => {
       if (!isActive) return;
       if (!videoEl.paused && videoEl.currentTime > 0) return;
+      // Silent auto-retry before showing error UI
+      retryCountRef.current += 1;
+      if (retryCountRef.current <= 3) {
+        setTimeout(() => {
+          if (!isActive) return;
+          videoEl.load();
+          attemptPlay();
+        }, 300 * retryCountRef.current);
+        return;
+      }
       markStartupFailure(10000);
       setPlaybackFailed(true);
     };
@@ -196,11 +206,12 @@ export const FeedItem = memo(({
         if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;
 
         retryCountRef.current += 1;
-        if (retryCountRef.current <= 1) {
+        if (retryCountRef.current <= 3) {
           setTimeout(() => {
+            if (!isActive) return;
             videoEl.load();
             attemptPlay();
-          }, 250);
+          }, 300 * retryCountRef.current);
           return;
         }
 
@@ -217,9 +228,32 @@ export const FeedItem = memo(({
     startupTimeoutRef.current = setTimeout(() => {
       if (!isActive) return;
       if (!videoEl.paused && videoEl.currentTime > 0) return;
+      // If video is buffering (readyState > 0), give it more time
+      if (videoEl.readyState > 0 && videoEl.readyState < 4) {
+        startupTimeoutRef.current = setTimeout(() => {
+          if (!isActive) return;
+          if (!videoEl.paused && videoEl.currentTime > 0) return;
+          markStartupFailure(10000);
+          setPlaybackFailed(true);
+        }, 6000);
+        return;
+      }
+      // Silent retry once before showing error
+      if (retryCountRef.current <= 3) {
+        retryCountRef.current += 1;
+        videoEl.load();
+        attemptPlay();
+        startupTimeoutRef.current = setTimeout(() => {
+          if (!isActive) return;
+          if (!videoEl.paused && videoEl.currentTime > 0) return;
+          markStartupFailure(10000);
+          setPlaybackFailed(true);
+        }, 5000);
+        return;
+      }
       markStartupFailure(10000);
       setPlaybackFailed(true);
-    }, 4500);
+    }, 8000);
 
     attemptPlay();
 
