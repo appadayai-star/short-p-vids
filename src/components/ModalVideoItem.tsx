@@ -131,10 +131,11 @@ export const ModalVideoItem = memo(({
     if (!videoEl) return;
     setPlaybackFailed(false);
     setIsPlaying(false);
-    activateVideo(videoEl, video.cloudflare_video_id, video.video_url, {
-      onPlaying: () => {
+    activateVideo(videoEl, video.cloudflare_video_id, video.video_url, getEffectiveMuted(), {
+      onPlaying: (actuallyMuted: boolean) => {
         setIsPlaying(true);
         setPlaybackFailed(false);
+        setIsMuted(actuallyMuted);
       },
       onFailed: () => setPlaybackFailed(true),
     });
