@@ -115,6 +115,10 @@ export function activate(
 
   log("activate:queued", id);
 
+  // HARD AUDIO HANDOVER: immediately silence previous video BEFORE queuing
+  // This prevents any overlap window while the chain processes
+  silencePrevious(id);
+
   chain = chain.then(async () => {
     if (stale()) { log("activate:stale-skip", id); return; }
     log("activate:start", id);
