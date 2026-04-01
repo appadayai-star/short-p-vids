@@ -217,12 +217,11 @@ export const FeedItem = memo(({
     if (!videoEl) return;
     retryCountRef.current = 0;
     setPlaybackFailed(false);
-    videoEl.load();
-    videoEl.play().catch(() => {
-      markStartupFailure(10000);
-      setPlaybackFailed(true);
-    });
-  }, [markStartupFailure]);
+    // Re-attach HLS source from scratch (handles poisoned MediaSource)
+    detachSource(videoEl);
+    attachSource(videoEl);
+    videoEl.play().catch(() => {});
+  }, [attachSource, detachSource]);
 
   // Check if guest has liked this video
   useEffect(() => {
