@@ -139,7 +139,7 @@ export const FeedItem = memo(({
     });
   }, [video.cloudflare_video_id, video.video_url, video.id, markLoadStart, markStartupFailure]);
 
-  // Core activation lifecycle with watchdog
+  // Core activation lifecycle
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -152,46 +152,23 @@ export const FeedItem = memo(({
       return;
     }
 
-    let cancel = doActivate();
-    let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
-    let watchdogFired = false;
-
-    // Watchdog: if video has no progress after 4s, do a full re-activate
-    // (same path that works reliably on Safari foreground return)
-    watchdogTimer = setTimeout(() => {
-      if (!videoEl || watchdogFired) return;
-      const stuck = videoEl.paused || videoEl.currentTime < 0.01;
-      if (stuck) {
-        watchdogFired = true;
-        console.log('[FeedItem] watchdog:reactivate', video.id.slice(0, 8), {
-          paused: videoEl.paused, ct: videoEl.currentTime, readyState: videoEl.readyState
-        });
-        cancel();
-        cancel = doActivate();
-      }
-    }, 4000);
-
+    const cancel = doActivate();
     return () => {
       cancel();
-      if (watchdogTimer) clearTimeout(watchdogTimer);
       stopWatching();
     };
   }, [isActive, hasEntered, video.id]);
 
-  // Resume playback on app foreground (visibilitychange + pageshow)
+  // Resume playback on app foreground
   useEffect(() => {
     if (!isActive || !hasEntered) return;
-
-    let cancelRef: (() => void) | null = null;
 
     const handleResume = () => {
       const videoEl = videoRef.current;
       if (!videoEl) return;
-      // Only re-activate if video is actually paused/stuck
       if (!videoEl.paused && videoEl.currentTime > 0) return;
-      console.log('[FeedItem] resume:reactivate', video.id.slice(0, 8));
-      cancelRef?.();
-      cancelRef = doActivate();
+      console.log('[FeedItem] resume:foreground', video.id.slice(0, 8));
+      doActivate();
     };
 
     const onVisChange = () => {
@@ -207,7 +184,6 @@ export const FeedItem = memo(({
     return () => {
       document.removeEventListener('visibilitychange', onVisChange);
       window.removeEventListener('pageshow', onPageShow);
-      cancelRef?.();
     };
   }, [isActive, hasEntered, video.id, doActivate]);
 
