@@ -127,12 +127,15 @@ export const FeedItem = memo(({
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
-        // Restore audio AFTER verified playback
+        // Restore audio AFTER verified playback, deferred to next frame
+        // to ensure the browser has fully committed the playing state
         const wantsMuted = getEffectiveMuted();
-        if (videoEl) {
-          videoEl.muted = wantsMuted;
-          setIsMuted(wantsMuted);
-        }
+        requestAnimationFrame(() => {
+          if (videoEl && !videoEl.paused) {
+            videoEl.muted = wantsMuted;
+            setIsMuted(wantsMuted);
+          }
+        });
       },
       onFailed: () => {
         markStartupFailure(10000);
