@@ -10,7 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 
 const Feed = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const searchQuery = searchParams.get('search') || '';
   const categoryFilter = searchParams.get('category') || '';
@@ -40,8 +40,13 @@ const Feed = () => {
         />
         {categoryFilter && (
           <button
-            onClick={() => navigate("/feed", { replace: true })}
-            className="fixed top-4 left-4 z-50 px-4 py-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors flex items-center gap-2"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setSearchParams({}, { replace: true });
+              setRefreshKey(prev => prev + 1);
+            }}
+            className="fixed top-4 left-4 z-[60] px-4 py-2 bg-black/50 backdrop-blur-sm hover:bg-black/70 rounded-full transition-colors flex items-center gap-2"
           >
             <span className="text-white font-medium capitalize">{categoryFilter}</span>
             <X className="h-5 w-5 text-white" />
