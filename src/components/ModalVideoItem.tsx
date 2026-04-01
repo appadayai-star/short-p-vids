@@ -83,6 +83,7 @@ export const ModalVideoItem = memo(({
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
   useEffect(() => {
+    if (IS_IOS_WEB) return;
     return onMuteChange((muted) => {
       setIsMuted(muted);
       if (videoRef.current) videoRef.current.muted = muted;
