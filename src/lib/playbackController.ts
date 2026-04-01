@@ -7,6 +7,7 @@
 
 import Hls from "hls.js";
 import { getCloudflareStreamUrl, supportsHlsNatively } from "@/lib/cloudinary";
+import { getGlobalMuted } from "@/lib/globalMute";
 
 const IS_MOBILE = /iPhone|iPad|iPod|Android|Mobile/i.test(
   typeof navigator !== "undefined" ? navigator.userAgent : ""
