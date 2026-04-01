@@ -9,9 +9,9 @@ import Hls from "hls.js";
 import { getCloudflareStreamUrl, supportsHlsNatively } from "@/lib/cloudinary";
 import { getGlobalMuted } from "@/lib/globalMute";
 
-const IS_MOBILE = /iPhone|iPad|iPod|Android|Mobile/i.test(
-  typeof navigator !== "undefined" ? navigator.userAgent : ""
-);
+const UA = typeof navigator !== "undefined" ? navigator.userAgent : "";
+const IS_MOBILE = /iPhone|iPad|iPod|Android|Mobile/i.test(UA);
+const IS_IOS = /iPhone|iPad|iPod/i.test(UA) || (typeof navigator !== "undefined" && /Macintosh/i.test(UA) && navigator.maxTouchPoints > 1);
 const RELEASE_GAP_MS = IS_MOBILE ? 80 : 10;
 
 // ---- Singleton state ----
