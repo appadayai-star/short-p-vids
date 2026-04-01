@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Home, PlusSquare, User, LogIn, Inbox, Grid3x3, LayoutDashboard } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate, useLocation } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
 interface BottomNavProps {
   isAuthenticated: boolean;

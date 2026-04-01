@@ -187,7 +187,7 @@ export function activate(
 
       try {
         await el.play();
-        if (!stale()) { log("retry:ok", id); callbacks.onPlaying(); }
+        if (!stale()) { log("retry:ok", id); el.muted = getGlobalMuted(); callbacks.onPlaying(); }
       } catch {
         if (!stale()) { log("retry:failed", id); callbacks.onFailed(); }
       }
