@@ -8,8 +8,8 @@ import { ShareDrawer } from "./ShareDrawer";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
 import { EditVideoDialog } from "./EditVideoDialog";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
-import { activate as activateVideo, deactivateVideo, IS_IOS_WEB, getIosUserWantsSound, setIosUserWantsSound } from "@/lib/playbackController";
-import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
+import { activate as activateVideo, deactivateVideo, IS_IOS_WEB } from "@/lib/playbackController";
+import { getEffectiveMuted, setEffectiveMuted, onMuteChange } from "@/lib/globalMute";
 import { getGuestClientId, getGuestLikes, setGuestLikes } from "@/lib/guestLikes";
 import {
   DropdownMenu,
@@ -75,7 +75,7 @@ export const FeedItem = memo(({
   const [isSaved, setIsSaved] = useState(false);
   const [savesCount, setSavesCount] = useState(0);
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [isMuted, setIsMuted] = useState(IS_IOS_WEB ? !getIosUserWantsSound() : getGlobalMuted());
+  const [isMuted, setIsMuted] = useState(getEffectiveMuted());
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -94,9 +94,9 @@ export const FeedItem = memo(({
 
   const posterSrc = getThumbnailUrl(video.cloudflare_video_id, video.thumbnail_url);
 
-  // Sync global mute (non-iOS only; iOS uses per-video mute)
+  // Sync global mute state
   useEffect(() => {
-    if (IS_IOS_WEB) return;
+    if (IS_IOS_WEB) return; // iOS uses per-video mute via effectiveMuted
     return onMuteChange((muted) => {
       setIsMuted(muted);
       if (videoRef.current) videoRef.current.muted = muted;
@@ -116,10 +116,7 @@ export const FeedItem = memo(({
     const videoEl = videoRef.current;
     if (!videoEl) return () => {};
 
-    // iOS: reflect session-based sound state
-    if (IS_IOS_WEB) {
-      setIsMuted(!getIosUserWantsSound());
-    }
+    setIsMuted(getEffectiveMuted());
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
@@ -128,9 +125,11 @@ export const FeedItem = memo(({
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
-        // Sync UI mute state with what the controller decided
-        if (IS_IOS_WEB && videoEl) {
-          setIsMuted(videoEl.muted);
+        // Restore audio AFTER verified playback
+        const wantsMuted = getEffectiveMuted();
+        if (videoEl) {
+          videoEl.muted = wantsMuted;
+          setIsMuted(wantsMuted);
         }
       },
       onFailed: () => {
@@ -140,7 +139,7 @@ export const FeedItem = memo(({
     });
   }, [video.cloudflare_video_id, video.video_url, video.id, markLoadStart, markStartupFailure]);
 
-  // Core activation lifecycle with watchdog
+  // Core activation lifecycle
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -153,46 +152,23 @@ export const FeedItem = memo(({
       return;
     }
 
-    let cancel = doActivate();
-    let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
-    let watchdogFired = false;
-
-    // Watchdog: if video has no progress after 4s, do a full re-activate
-    // (same path that works reliably on Safari foreground return)
-    watchdogTimer = setTimeout(() => {
-      if (!videoEl || watchdogFired) return;
-      const stuck = videoEl.paused || videoEl.currentTime < 0.01;
-      if (stuck) {
-        watchdogFired = true;
-        console.log('[FeedItem] watchdog:reactivate', video.id.slice(0, 8), {
-          paused: videoEl.paused, ct: videoEl.currentTime, readyState: videoEl.readyState
-        });
-        cancel();
-        cancel = doActivate();
-      }
-    }, 4000);
-
+    const cancel = doActivate();
     return () => {
       cancel();
-      if (watchdogTimer) clearTimeout(watchdogTimer);
       stopWatching();
     };
   }, [isActive, hasEntered, video.id]);
 
-  // Resume playback on app foreground (visibilitychange + pageshow)
+  // Resume playback on app foreground
   useEffect(() => {
     if (!isActive || !hasEntered) return;
-
-    let cancelRef: (() => void) | null = null;
 
     const handleResume = () => {
       const videoEl = videoRef.current;
       if (!videoEl) return;
-      // Only re-activate if video is actually paused/stuck
       if (!videoEl.paused && videoEl.currentTime > 0) return;
-      console.log('[FeedItem] resume:reactivate', video.id.slice(0, 8));
-      cancelRef?.();
-      cancelRef = doActivate();
+      console.log('[FeedItem] resume:foreground', video.id.slice(0, 8));
+      doActivate();
     };
 
     const onVisChange = () => {
@@ -208,7 +184,6 @@ export const FeedItem = memo(({
     return () => {
       document.removeEventListener('visibilitychange', onVisChange);
       window.removeEventListener('pageshow', onPageShow);
-      cancelRef?.();
     };
   }, [isActive, hasEntered, video.id, doActivate]);
 
@@ -242,26 +217,18 @@ export const FeedItem = memo(({
   // Mute handlers — iOS: per-video only, other: global
   const unmute = useCallback(() => {
     if (!isMuted) return;
-    if (IS_IOS_WEB) {
-      setIosUserWantsSound(true);
-      if (videoRef.current) videoRef.current.muted = false;
-      setIsMuted(false);
-    } else {
-      setGlobalMuted(false);
-    }
+    setEffectiveMuted(false);
+    if (videoRef.current) videoRef.current.muted = false;
+    setIsMuted(false);
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
-    if (IS_IOS_WEB) {
-      setIosUserWantsSound(!newMuted);
-      if (videoRef.current) videoRef.current.muted = newMuted;
-      setIsMuted(newMuted);
-    } else {
-      setGlobalMuted(newMuted);
-    }
+    setEffectiveMuted(newMuted);
+    if (videoRef.current) videoRef.current.muted = newMuted;
+    setIsMuted(newMuted);
     setShowMuteIcon(true);
     setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);

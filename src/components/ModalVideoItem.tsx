@@ -3,9 +3,9 @@ import { Heart, Share2, Bookmark, Volume2, VolumeX, MoreVertical, Trash2, Pencil
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { getThumbnailUrl, getOptimizedAvatarUrl } from "@/lib/cloudinary";
-import { activate as activateVideo, deactivateVideo, IS_IOS_WEB, getIosUserWantsSound, setIosUserWantsSound } from "@/lib/playbackController";
+import { activate as activateVideo, deactivateVideo, IS_IOS_WEB } from "@/lib/playbackController";
 import { useWatchMetrics } from "@/hooks/use-watch-metrics";
-import { getGlobalMuted, setGlobalMuted, onMuteChange } from "@/lib/globalMute";
+import { getEffectiveMuted, setEffectiveMuted, onMuteChange } from "@/lib/globalMute";
 import { ShareDrawer } from "./ShareDrawer";
 import { EditVideoDialog } from "./EditVideoDialog";
 import {
@@ -66,7 +66,7 @@ export const ModalVideoItem = memo(({
     videoIndex: index, feedSource: 'modal',
   });
 
-  const [isMuted, setIsMuted] = useState(IS_IOS_WEB ? !getIosUserWantsSound() : getGlobalMuted());
+  const [isMuted, setIsMuted] = useState(getEffectiveMuted());
   const [showMuteIcon, setShowMuteIcon] = useState(false);
   const [playbackFailed, setPlaybackFailed] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -102,11 +102,7 @@ export const ModalVideoItem = memo(({
       return;
     }
 
-    // iOS: reflect session-based sound state
-    if (IS_IOS_WEB) {
-      setIsMuted(!getIosUserWantsSound());
-    }
-
+    setIsMuted(getEffectiveMuted());
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();
@@ -115,9 +111,8 @@ export const ModalVideoItem = memo(({
       onPlaying: () => {
         setIsPlaying(true);
         setPlaybackFailed(false);
-        if (IS_IOS_WEB && videoEl) {
-          setIsMuted(videoEl.muted);
-        }
+        const wantsMuted = getEffectiveMuted();
+        if (videoEl) { videoEl.muted = wantsMuted; setIsMuted(wantsMuted); }
       },
       onFailed: () => {
         markStartupFailure(10000);
@@ -147,25 +142,17 @@ export const ModalVideoItem = memo(({
 
   const unmute = useCallback(() => {
     if (!isMuted) return;
-    if (IS_IOS_WEB) {
-      setIosUserWantsSound(true);
-      if (videoRef.current) videoRef.current.muted = false;
-      setIsMuted(false);
-    } else {
-      setGlobalMuted(false);
-    }
+    setEffectiveMuted(false);
+    if (videoRef.current) videoRef.current.muted = false;
+    setIsMuted(false);
     setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
-    if (IS_IOS_WEB) {
-      setIosUserWantsSound(!newMuted);
-      if (videoRef.current) videoRef.current.muted = newMuted;
-      setIsMuted(newMuted);
-    } else {
-      setGlobalMuted(newMuted);
-    }
+    setEffectiveMuted(newMuted);
+    if (videoRef.current) videoRef.current.muted = newMuted;
+    setIsMuted(newMuted);
     setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 

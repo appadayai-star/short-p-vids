@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { getThumbnailUrl } from "@/lib/cloudinary";
 import { getGuestClientId, getGuestLikes, setGuestLikes } from "@/lib/guestLikes";
-import { prefetchHlsManifest } from "@/hooks/use-hls-player";
+import { prefetchHlsManifest } from "@/lib/prefetch";
 import { preloadImage } from "@/lib/cloudinary";
 import { ModalVideoItem } from "./ModalVideoItem";
 
