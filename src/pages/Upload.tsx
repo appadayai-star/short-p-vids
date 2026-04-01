@@ -99,10 +99,6 @@ const Upload = () => {
 
   const handleSubmit = () => {
     if (!videoFile || !user) return;
-    if (uploadState.status === 'uploading' || uploadState.status === 'processing') {
-      toast.error("A video is already uploading");
-      return;
-    }
 
     startUpload(videoFile, description, selectedCategories, user.id);
     toast.success("Upload started! You can keep browsing.");

@@ -4,10 +4,20 @@ import { toast } from "sonner";
 
 type UploadStatus = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
 
+interface QueuedUpload {
+  file: File;
+  description: string;
+  categories: string[];
+  userId: string;
+}
+
 interface UploadState {
   status: UploadStatus;
   progress: number;
   videoId: string | null;
+  queueCount: number; // how many are waiting (excluding current)
+  currentIndex: number; // 1-based index of current upload in batch
+  totalInBatch: number; // total uploads in this batch
 }
 
 interface UploadContextType {
@@ -25,19 +35,28 @@ export const useUpload = () => {
   return ctx;
 };
 
+const initialState: UploadState = {
+  status: 'idle',
+  progress: 0,
+  videoId: null,
+  queueCount: 0,
+  currentIndex: 0,
+  totalInBatch: 0,
+};
+
 export const UploadProvider = ({ children }: { children: ReactNode }) => {
-  const [uploadState, setUploadState] = useState<UploadState>({
-    status: 'idle',
-    progress: 0,
-    videoId: null,
-  });
+  const [uploadState, setUploadState] = useState<UploadState>(initialState);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const queueRef = useRef<QueuedUpload[]>([]);
+  const isProcessingRef = useRef(false);
+  const batchTotalRef = useRef(0);
+  const batchIndexRef = useRef(0);
 
   const isUploading = uploadState.status === 'uploading' || uploadState.status === 'processing';
 
-  // Warn user before closing tab during active upload
+  // Warn before closing tab during active upload
   useEffect(() => {
     if (!isUploading) return;
     const handler = (e: BeforeUnloadEvent) => {
@@ -48,16 +67,20 @@ export const UploadProvider = ({ children }: { children: ReactNode }) => {
     return () => window.removeEventListener('beforeunload', handler);
   }, [isUploading]);
 
-  const cleanup = useCallback(() => {
+  const cleanupTimers = useCallback(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
     if (progressRef.current) { clearInterval(progressRef.current); progressRef.current = null; }
   }, []);
 
   const dismiss = useCallback(() => {
-    cleanup();
-    setUploadState({ status: 'idle', progress: 0, videoId: null });
-  }, [cleanup]);
+    cleanupTimers();
+    queueRef.current = [];
+    isProcessingRef.current = false;
+    batchTotalRef.current = 0;
+    batchIndexRef.current = 0;
+    setUploadState(initialState);
+  }, [cleanupTimers]);
 
   const simulateProgress = useCallback((stage: 'uploading' | 'processing') => {
     if (progressRef.current) clearInterval(progressRef.current);
@@ -75,53 +98,34 @@ export const UploadProvider = ({ children }: { children: ReactNode }) => {
     }, interval);
   }, []);
 
-  const pollProcessing = useCallback((videoId: string) => {
-    pollRef.current = setInterval(async () => {
-      const { data } = await supabase
-        .from('videos')
-        .select('processing_status')
-        .eq('id', videoId)
-        .single();
-
-      if (data?.processing_status === 'completed') {
-        cleanup();
-        setUploadState({ status: 'complete', progress: 100, videoId });
-        toast.success("Video uploaded successfully!");
-        setTimeout(() => setUploadState({ status: 'idle', progress: 0, videoId: null }), 3000);
-      } else if (data?.processing_status === 'failed') {
-        cleanup();
-        setUploadState({ status: 'error', progress: 0, videoId });
-        toast.error("Video processing failed.");
-        setTimeout(() => setUploadState({ status: 'idle', progress: 0, videoId: null }), 3000);
-      }
-    }, 2000);
-
-    // Timeout after 2 min — assume success
-    timeoutRef.current = setTimeout(() => {
-      cleanup();
-      setUploadState({ status: 'complete', progress: 100, videoId });
-      toast.success("Video uploaded! Processing continues in background.");
-      setTimeout(() => setUploadState({ status: 'idle', progress: 0, videoId: null }), 3000);
-    }, 120000);
-  }, [cleanup]);
-
-  const startUpload = useCallback(async (file: File, description: string, categories: string[], userId: string) => {
-    // Block starting a new upload while one is in progress
-    if (isUploading) {
-      toast.error("Please wait for the current upload to finish.");
+  const processNext = useCallback(async () => {
+    if (queueRef.current.length === 0) {
+      isProcessingRef.current = false;
+      batchTotalRef.current = 0;
+      batchIndexRef.current = 0;
       return;
     }
 
-    cleanup();
-    setUploadState({ status: 'uploading', progress: 0, videoId: null });
+    isProcessingRef.current = true;
+    const item = queueRef.current.shift()!;
+    batchIndexRef.current += 1;
+
+    setUploadState({
+      status: 'uploading',
+      progress: 0,
+      videoId: null,
+      queueCount: queueRef.current.length,
+      currentIndex: batchIndexRef.current,
+      totalInBatch: batchTotalRef.current,
+    });
     simulateProgress('uploading');
 
     try {
-      const fileExt = file.name.split(".").pop();
+      const fileExt = item.file.name.split(".").pop();
       const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-      const filePath = `${userId}/${fileName}`;
+      const filePath = `${item.userId}/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage.from("videos").upload(filePath, file);
+      const { error: uploadError } = await supabase.storage.from("videos").upload(filePath, item.file);
       if (uploadError) throw uploadError;
 
       setUploadState(prev => ({ ...prev, progress: 50 }));
@@ -129,31 +133,100 @@ export const UploadProvider = ({ children }: { children: ReactNode }) => {
       const { data: { publicUrl } } = supabase.storage.from("videos").getPublicUrl(filePath);
 
       const { data: insertData, error: insertError } = await supabase.from("videos").insert({
-        user_id: userId,
+        user_id: item.userId,
         title: `Video ${Date.now()}`,
-        description: description.trim() || null,
+        description: item.description.trim() || null,
         video_url: publicUrl,
-        tags: categories.length > 0 ? categories : null,
+        tags: item.categories.length > 0 ? item.categories : null,
         processing_status: 'pending',
       }).select('id').single();
 
       if (insertError) throw insertError;
 
-      setUploadState({ status: 'processing', progress: 50, videoId: insertData.id });
+      setUploadState(prev => ({
+        ...prev,
+        status: 'processing',
+        progress: 50,
+        videoId: insertData.id,
+      }));
       simulateProgress('processing');
-      pollProcessing(insertData.id);
 
+      // Fire processing in background
       supabase.functions.invoke('process-video-cloudflare', {
         body: { videoUrl: publicUrl, videoId: insertData.id }
       }).catch(err => console.error('Video processing error:', err));
 
+      // Poll for completion, then move to next
+      await new Promise<void>((resolve) => {
+        const startTime = Date.now();
+        pollRef.current = setInterval(async () => {
+          const { data } = await supabase
+            .from('videos')
+            .select('processing_status')
+            .eq('id', insertData.id)
+            .single();
+
+          if (data?.processing_status === 'completed' || data?.processing_status === 'failed') {
+            cleanupTimers();
+            if (data.processing_status === 'completed') {
+              toast.success(`Video ${batchIndexRef.current}/${batchTotalRef.current} uploaded!`);
+            } else {
+              toast.error(`Video ${batchIndexRef.current}/${batchTotalRef.current} processing failed.`);
+            }
+            resolve();
+          } else if (Date.now() - startTime > 120000) {
+            // Timeout — assume success and move on
+            cleanupTimers();
+            toast.success(`Video ${batchIndexRef.current}/${batchTotalRef.current} uploaded!`);
+            resolve();
+          }
+        }, 2000);
+      });
+
     } catch (error: any) {
-      cleanup();
-      setUploadState({ status: 'error', progress: 0, videoId: null });
-      toast.error(error.message || "Failed to upload video");
-      setTimeout(() => setUploadState({ status: 'idle', progress: 0, videoId: null }), 3000);
+      cleanupTimers();
+      toast.error(error.message || `Upload ${batchIndexRef.current} failed`);
     }
-  }, [isUploading, cleanup, simulateProgress, pollProcessing]);
+
+    // Process next in queue or finish
+    if (queueRef.current.length > 0) {
+      processNext();
+    } else {
+      setUploadState({
+        status: 'complete',
+        progress: 100,
+        videoId: null,
+        queueCount: 0,
+        currentIndex: batchIndexRef.current,
+        totalInBatch: batchTotalRef.current,
+      });
+      setTimeout(() => {
+        setUploadState(initialState);
+        isProcessingRef.current = false;
+        batchTotalRef.current = 0;
+        batchIndexRef.current = 0;
+      }, 3000);
+    }
+  }, [cleanupTimers, simulateProgress]);
+
+  const startUpload = useCallback((file: File, description: string, categories: string[], userId: string) => {
+    queueRef.current.push({ file, description, categories, userId });
+    batchTotalRef.current += 1;
+
+    // Update queue count in UI
+    setUploadState(prev => ({
+      ...prev,
+      queueCount: queueRef.current.length,
+      totalInBatch: batchTotalRef.current,
+    }));
+
+    // If nothing is currently processing, start
+    if (!isProcessingRef.current) {
+      processNext();
+    } else {
+      toast.success("Added to upload queue");
+    }
+  }, [processNext]);
 
   return (
     <UploadContext.Provider value={{ uploadState, startUpload, dismiss, isUploading }}>
