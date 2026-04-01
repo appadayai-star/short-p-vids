@@ -26,6 +26,15 @@ const log = (tag: string, id: string, extra: Record<string, unknown> = {}) => {
 
 // ---- Helpers ----
 
+// ---- iOS session-based sound state ----
+let iosUserWantsSound = false;
+
+export function getIosUserWantsSound() { return iosUserWantsSound; }
+export function setIosUserWantsSound(wants: boolean) {
+  iosUserWantsSound = wants;
+  log("iosUserWantsSound", "global", { wants });
+}
+
 function hardRelease(el: HTMLVideoElement) {
   try { el.pause(); } catch { /* */ }
   try { el.srcObject = null; el.removeAttribute("src"); el.load(); } catch { /* */ }
@@ -35,8 +44,18 @@ function destroyHls() {
   if (hls) { try { hls.destroy(); } catch { /* */ } hls = null; }
 }
 
+/** HARD AUDIO HANDOVER: mute + pause previous video immediately */
+function silencePrevious(id: string) {
+  if (activeEl) {
+    try { activeEl.muted = true; } catch { /* */ }
+    try { activeEl.pause(); } catch { /* */ }
+    log("silence:previous", id);
+  }
+}
+
 function teardown(id: string) {
   log("teardown", id);
+  silencePrevious(id);
   destroyHls();
   if (activeEl) { hardRelease(activeEl); activeEl = null; }
 }
