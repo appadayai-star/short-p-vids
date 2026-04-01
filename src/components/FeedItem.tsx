@@ -124,6 +124,9 @@ export const FeedItem = memo(({
       return;
     }
 
+    // iOS: reset mute state per video — always start muted
+    if (IS_IOS_WEB) setIsMuted(true);
+
     setPlaybackFailed(false);
     setIsPlaying(false);
     markLoadStart();

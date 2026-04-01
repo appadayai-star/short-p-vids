@@ -141,11 +141,25 @@ export const ModalVideoItem = memo(({
   }, [video.cloudflare_video_id, video.video_url]);
 
   const unmute = useCallback(() => {
-    if (isMuted) { setGlobalMuted(false); setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500); }
+    if (!isMuted) return;
+    if (IS_IOS_WEB) {
+      if (videoRef.current) videoRef.current.muted = false;
+      setIsMuted(false);
+    } else {
+      setGlobalMuted(false);
+    }
+    setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
   const toggleMute = useCallback(() => {
-    setGlobalMuted(!isMuted); setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
+    const newMuted = !isMuted;
+    if (IS_IOS_WEB) {
+      if (videoRef.current) videoRef.current.muted = newMuted;
+      setIsMuted(newMuted);
+    } else {
+      setGlobalMuted(newMuted);
+    }
+    setShowMuteIcon(true); setTimeout(() => setShowMuteIcon(false), 500);
   }, [isMuted]);
 
   const triggerHeartAnimation = useCallback((x: number, y: number) => {
