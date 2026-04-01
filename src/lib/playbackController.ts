@@ -57,6 +57,20 @@ function pollReady(el: HTMLVideoElement, ms: number): Promise<boolean> {
   });
 }
 
+/** Verify playback actually started — returns true if playing, false if silent failure */
+function verifyPlayback(el: HTMLVideoElement, ms: number): Promise<boolean> {
+  return new Promise(resolve => {
+    const start = Date.now();
+    const interval = setInterval(() => {
+      const playing = !el.paused && el.currentTime > 0;
+      if (playing || Date.now() - start > ms) {
+        clearInterval(interval);
+        resolve(playing);
+      }
+    }, 80);
+  });
+}
+
 // ---- Public API ----
 
 export interface ActivateCallbacks {
