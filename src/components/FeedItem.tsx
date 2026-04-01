@@ -56,6 +56,7 @@ export const FeedItem = memo(({
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const hasAudioRef = useRef(true); // assume yes until proven otherwise
   
 
   const {
